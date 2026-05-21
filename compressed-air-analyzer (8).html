@@ -1,0 +1,1485 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Compressed Air System Analyzer</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap');
+  :root {
+    --bg:#0d1117;--surface:#161b22;--surface2:#1c2330;--surface3:#21262d;
+    --border:#30363d;--border2:#444c56;--text:#e6edf3;--text2:#8b949e;--text3:#6e7681;
+    --accent:#00d4aa;--accent2:#0096ff;--warn:#f0a93a;--danger:#f85149;
+    --success:#3fb950;--purple:#bc8cff;--pink:#ff7b72;
+    --comp-compressor:#1a3a4a;--comp-compressor-b:#00d4aa;
+    --comp-dryer:#2a1a3a;--comp-dryer-b:#bc8cff;
+    --comp-filter:#1a2a3a;--comp-filter-b:#0096ff;
+    --comp-receiver:#2a3a1a;--comp-receiver-b:#3fb950;
+    --comp-load:#3a2a1a;--comp-load-b:#f0a93a;
+    --comp-leak:#3a1a1a;--comp-leak-b:#f85149;
+    --comp-lineloss:#1e2a1e;--comp-lineloss-b:#8b949e;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{background:var(--bg);color:var(--text);font-family:'IBM Plex Sans',sans-serif;font-size:13px;height:100vh;display:flex;flex-direction:column;overflow:hidden;}
+  .header{display:flex;align-items:center;padding:0 16px;height:48px;background:var(--surface);border-bottom:1px solid var(--border);gap:16px;flex-shrink:0;}
+  .header-logo{font-family:'IBM Plex Mono',monospace;font-weight:600;font-size:14px;color:var(--accent);letter-spacing:-0.5px;}
+  .header-logo span{color:var(--text2);font-weight:400;}
+  .header-sep{width:1px;height:24px;background:var(--border);}
+  .header-tabs{display:flex;gap:2px;}
+  .tab{padding:5px 12px;border-radius:6px;cursor:pointer;color:var(--text2);font-size:12px;font-weight:500;transition:all .15s;border:1px solid transparent;}
+  .tab:hover{background:var(--surface3);color:var(--text);}
+  .tab.active{background:var(--surface3);color:var(--text);border-color:var(--border);}
+  .header-right{margin-left:auto;display:flex;gap:8px;align-items:center;}
+  .btn{padding:5px 12px;border-radius:6px;border:1px solid var(--border);background:var(--surface3);color:var(--text);font-size:12px;font-family:inherit;cursor:pointer;transition:all .15s;font-weight:500;}
+  .btn:hover{border-color:var(--border2);background:var(--surface2);}
+  .btn.primary{background:var(--accent);color:#000;border-color:var(--accent);}
+  .btn.primary:hover{filter:brightness(1.1);}
+  .btn.danger-btn{border-color:var(--danger);color:var(--danger);}
+  .btn.danger-btn:hover{background:rgba(248,81,73,.1);}
+  .main{display:flex;flex:1;overflow:hidden;}
+  .palette{width:180px;background:var(--surface);border-right:1px solid var(--border);overflow-y:auto;flex-shrink:0;display:flex;flex-direction:column;}
+  .palette-section{padding:10px 12px 6px;}
+  .palette-label{font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;}
+  .palette-item{display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:6px;border:1px solid var(--border);margin-bottom:4px;cursor:grab;transition:all .15s;background:var(--surface2);user-select:none;}
+  .palette-item:hover{border-color:var(--border2);transform:translateX(2px);}
+  .palette-item:active{cursor:grabbing;}
+  .pi-icon{width:24px;height:24px;border-radius:5px;display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0;}
+  .pi-label{font-size:12px;font-weight:500;}
+  .pi-compressor .pi-icon{background:var(--comp-compressor);border:1px solid var(--comp-compressor-b);color:var(--comp-compressor-b);}
+  .pi-dryer .pi-icon{background:var(--comp-dryer);border:1px solid var(--comp-dryer-b);color:var(--comp-dryer-b);}
+  .pi-filter .pi-icon{background:var(--comp-filter);border:1px solid var(--comp-filter-b);color:var(--comp-filter-b);}
+  .pi-receiver .pi-icon{background:var(--comp-receiver);border:1px solid var(--comp-receiver-b);color:var(--comp-receiver-b);}
+  .pi-load .pi-icon{background:var(--comp-load);border:1px solid var(--comp-load-b);color:var(--comp-load-b);}
+  .pi-leak .pi-icon{background:var(--comp-leak);border:1px solid var(--comp-leak-b);color:var(--comp-leak-b);}
+  .pi-lineloss .pi-icon{background:var(--comp-lineloss);border:1px solid var(--comp-lineloss-b);color:var(--comp-lineloss-b);}
+  /* Compact lineloss node */
+  .node-compact{min-width:0;width:88px;}
+  .node-compact .node-header{padding:5px 7px 4px;gap:5px;}
+  .node-compact .node-icon{width:16px;height:16px;font-size:10px;border-radius:3px;}
+  .node-compact .node-name{font-size:10px;}
+  .node-compact .node-body{padding:3px 7px 2px;}
+  .node-compact .node-metric{font-size:10px;margin-bottom:1px;}
+  .node-compact .node-ports{padding:0 4px 4px;}
+  .node-compact .port{width:10px;height:10px;}
+  /* Mode toggle button in panel */
+  .mode-toggle{display:flex;border:1px solid var(--border);border-radius:6px;overflow:hidden;margin-bottom:12px;}
+  .mode-toggle-btn{flex:1;padding:5px 0;font-size:11px;font-family:inherit;background:transparent;color:var(--text2);border:none;cursor:pointer;transition:all .15s;font-weight:500;}
+  .mode-toggle-btn.active{background:var(--surface3);color:var(--text);}
+  .mode-toggle-btn:first-child{border-right:1px solid var(--border);}
+  .mode-note{font-size:10px;color:var(--text3);line-height:1.5;margin-top:6px;padding:6px 8px;background:var(--surface2);border-radius:5px;}
+  /* Canvas area */
+  .canvas-area{flex:1;position:relative;overflow:hidden;background:radial-gradient(circle at 50% 50%,rgba(0,212,170,.03) 0%,transparent 60%),var(--bg);}
+  .canvas-grid{position:absolute;inset:0;background-image:linear-gradient(var(--border) 1px,transparent 1px),linear-gradient(90deg,var(--border) 1px,transparent 1px);background-size:40px 40px;opacity:.3;pointer-events:none;}
+  /* Canvas 2D layer for connections - sits below nodes */
+  #connCanvas{position:absolute;inset:0;z-index:5;cursor:default;}
+  /* Pending line SVG - pointer-events none, sits above canvas, below nodes */
+  #pendingSvg{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:8;}
+  /* Nodes sit above both */
+  #nodesContainer{position:absolute;inset:0;z-index:10;}
+  /* Node styles */
+  .node{position:absolute;border-radius:8px;border:1px solid var(--border);background:var(--surface);min-width:130px;cursor:move;user-select:none;transition:box-shadow .15s,border-color .15s;}
+  .node:hover{border-color:var(--border2);box-shadow:0 4px 20px rgba(0,0,0,.4);}
+  .node.selected{border-color:var(--accent)!important;box-shadow:0 0 0 2px rgba(0,212,170,.15),0 4px 20px rgba(0,0,0,.4);}
+  .node-header{display:flex;align-items:center;gap:8px;padding:8px 10px 6px;border-bottom:1px solid var(--border);}
+  .node-icon{width:22px;height:22px;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:12px;flex-shrink:0;}
+  .node-name{font-size:11px;font-weight:600;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .node-body{padding:7px 10px;}
+  .node-metric{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:3px;font-size:11px;}
+  .node-metric-label{color:var(--text2);}
+  .node-metric-value{font-family:'IBM Plex Mono',monospace;font-weight:500;font-size:11px;}
+  .node-ports{display:flex;justify-content:space-between;padding:0 6px 6px;}
+  .port{width:12px;height:12px;border-radius:50%;border:2px solid var(--border2);background:var(--surface2);cursor:crosshair;transition:all .1s;position:relative;}
+  .port:hover{transform:scale(1.4);}
+  .port.output{background:var(--accent);border-color:var(--accent);}
+  .port-label{position:absolute;font-size:9px;color:var(--text3);white-space:nowrap;top:-14px;left:50%;transform:translateX(-50%);}
+  /* Right panel */
+  .panel{width:270px;background:var(--surface);border-left:1px solid var(--border);overflow-y:auto;flex-shrink:0;display:flex;flex-direction:column;}
+  .panel-section{padding:12px 14px;border-bottom:1px solid var(--border);}
+  .panel-title{font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.8px;margin-bottom:12px;display:flex;align-items:center;gap:6px;}
+  .panel-title::after{content:'';flex:1;height:1px;background:var(--border);}
+  .prop-row{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;gap:8px;}
+  .prop-label{font-size:12px;color:var(--text2);flex:1;}
+  .prop-input{width:90px;padding:4px 8px;background:var(--surface3);border:1px solid var(--border);border-radius:5px;color:var(--text);font-size:12px;font-family:'IBM Plex Mono',monospace;text-align:right;transition:border-color .1s;}
+  .prop-input:focus{outline:none;border-color:var(--accent);}
+  .prop-unit{font-size:11px;color:var(--text3);min-width:32px;}
+  .metrics-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
+  .metric-card{background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px 10px 8px;}
+  .metric-card-label{font-size:10px;color:var(--text3);margin-bottom:4px;}
+  .metric-card-value{font-family:'IBM Plex Mono',monospace;font-size:18px;font-weight:600;line-height:1;margin-bottom:2px;}
+  .metric-card-sub{font-size:10px;color:var(--text2);}
+  .metric-card.good .metric-card-value{color:var(--success);}
+  .metric-card.warn .metric-card-value{color:var(--warn);}
+  .metric-card.bad  .metric-card-value{color:var(--danger);}
+  .metric-card.info .metric-card-value{color:var(--accent2);}
+  .eff-bar-wrap{margin-top:8px;}
+  .eff-bar-label{display:flex;justify-content:space-between;font-size:11px;margin-bottom:4px;}
+  .eff-bar-label span:first-child{color:var(--text2);}
+  .eff-bar-track{height:6px;background:var(--surface3);border-radius:3px;overflow:hidden;}
+  .eff-bar-fill{height:100%;border-radius:3px;transition:width .4s ease;}
+  .flow-row{display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid rgba(48,54,61,.5);}
+  .flow-row:last-child{border-bottom:none;}
+  .flow-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;}
+  .flow-name{flex:1;font-size:11px;color:var(--text2);}
+  .flow-val{font-family:'IBM Plex Mono',monospace;font-size:11px;}
+  .scenario-btn{display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-size:12px;font-family:inherit;cursor:pointer;width:100%;margin-bottom:5px;transition:all .15s;text-align:left;}
+  .scenario-btn:hover{border-color:var(--border2);background:var(--surface3);}
+  .scenario-btn .scn-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;}
+  .scenario-btn .scn-label{flex:1;}
+  .scenario-btn .scn-delta{font-family:'IBM Plex Mono',monospace;font-size:11px;}
+  .alert{display:flex;gap:8px;padding:8px 10px;border-radius:6px;border:1px solid;margin-bottom:6px;font-size:11px;line-height:1.4;}
+  .alert-warn{background:rgba(240,169,58,.08);border-color:rgba(240,169,58,.3);color:var(--warn);}
+  .alert-ok  {background:rgba(63,185,80,.08); border-color:rgba(63,185,80,.3); color:var(--success);}
+  .alert-info{background:rgba(0,150,255,.08); border-color:rgba(0,150,255,.3); color:var(--accent2);}
+  .alert-err {background:rgba(248,81,73,.08); border-color:rgba(248,81,73,.3); color:var(--danger);}
+  .alert-icon{flex-shrink:0;font-size:13px;margin-top:1px;}
+  .empty-state{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;pointer-events:none;opacity:.4;z-index:1;}
+  .empty-icon{font-size:48px;margin-bottom:12px;}
+  .empty-text{font-size:13px;color:var(--text2);text-align:center;line-height:1.6;}
+  .path-row{background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:8px 10px;margin-bottom:6px;font-size:11px;}
+  .path-row-title{font-weight:600;margin-bottom:4px;color:var(--text);display:flex;justify-content:space-between;}
+  .path-row-detail{color:var(--text2);margin-bottom:2px;display:flex;justify-content:space-between;}
+  .path-row-detail span:last-child{font-family:'IBM Plex Mono',monospace;color:var(--text);}
+  .pipe-props{background:rgba(0,150,255,.06);border:1px solid rgba(0,150,255,.2);border-radius:6px;padding:10px;margin-bottom:8px;}
+  .pipe-props-title{font-size:11px;color:var(--accent2);font-weight:600;margin-bottom:8px;}
+  ::-webkit-scrollbar{width:6px;}
+  ::-webkit-scrollbar-track{background:transparent;}
+  ::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px;}
+  ::-webkit-scrollbar-thumb:hover{background:var(--border2);}
+</style>
+</head>
+<body>
+<div class="header">
+  <div class="header-logo">CAS<span>·Analyzer</span></div>
+  <div class="header-sep"></div>
+  <div class="header-tabs">
+    <div class="tab active" onclick="setTab('design')">System Design</div>
+    <div class="tab" onclick="setTab('analysis')">Energy Analysis</div>
+    <div class="tab" onclick="setTab('scenarios')">Scenarios</div>
+  </div>
+  <div class="header-right">
+    <button class="btn" onclick="clearAll()">Clear</button>
+    <button class="btn" onclick="loadExample()">Load Example</button>
+    <button class="btn primary" onclick="runAnalysis()">&#9654; Analyze</button>
+  </div>
+</div>
+
+<div class="main">
+  <!-- Left palette -->
+  <div class="palette">
+    <div class="palette-section">
+      <div class="palette-label">Supply</div>
+      <div class="palette-item pi-compressor" draggable="true" ondragstart="startDrag(event,'compressor')"><div class="pi-icon">&#9881;</div><div class="pi-label">Compressor</div></div>
+      <div class="palette-item pi-dryer"      draggable="true" ondragstart="startDrag(event,'dryer')"     ><div class="pi-icon">&#10052;</div><div class="pi-label">Dryer</div></div>
+      <div class="palette-item pi-filter"     draggable="true" ondragstart="startDrag(event,'filter')"    ><div class="pi-icon">&#9635;</div><div class="pi-label">Filter</div></div>
+      <div class="palette-item pi-receiver"   draggable="true" ondragstart="startDrag(event,'receiver')"  ><div class="pi-icon">&#9677;</div><div class="pi-label">Receiver</div></div>
+    </div>
+    <div class="palette-section">
+      <div class="palette-label">Demand</div>
+      <div class="palette-item pi-load" draggable="true" ondragstart="startDrag(event,'load')"><div class="pi-icon">&#9889;</div><div class="pi-label">Load / Tool</div></div>
+      <div class="palette-item pi-leak" draggable="true" ondragstart="startDrag(event,'leak')"><div class="pi-icon">&#9888;</div><div class="pi-label">Leak Point</div></div>
+    </div>
+    <div class="palette-section">
+      <div class="palette-label">Losses</div>
+      <div class="palette-item pi-lineloss" draggable="true" ondragstart="startDrag(event,'lineloss')"><div class="pi-icon">&#9660;</div><div class="pi-label">Line Loss</div></div>
+    </div>
+    <div class="palette-section" style="margin-top:auto;">
+      <div class="palette-label">Tips</div>
+      <div style="font-size:11px;color:var(--text3);line-height:1.7;">
+        Drag components onto canvas.<br>
+        Click node to select &amp; edit.<br>
+        Drag green port &#8594; gray port to connect.<br>
+        Insert <strong style="color:var(--text2)">Line Loss</strong> in series to model pressure drops.<br>
+        Click a connection to select it.<br>
+        <strong style="color:var(--text2)">Double-click</strong> a connection to delete it.
+      </div>
+    </div>
+  </div>
+
+  <!-- Canvas area -->
+  <div class="canvas-area" id="canvasArea"
+       ondragover="event.preventDefault()"
+       ondrop="dropComponent(event)">
+    <div class="canvas-grid"></div>
+    <!-- Canvas 2D for connections (z-index 5) -->
+    <canvas id="connCanvas"></canvas>
+    <!-- SVG for pending connection line only (pointer-events:none) -->
+    <svg id="pendingSvg">
+      <defs>
+        <marker id="arr-pending" markerWidth="8" markerHeight="6" refX="6" refY="3" orient="auto">
+          <polygon points="0 0,8 3,0 6" fill="#00d4aa"/>
+        </marker>
+      </defs>
+      <path id="pendingPath" fill="none" stroke="#00d4aa" stroke-width="1.5"
+            stroke-dasharray="5 3" marker-end="url(#arr-pending)" d=""/>
+    </svg>
+    <!-- Node HTML divs (z-index 10) -->
+    <div id="nodesContainer"></div>
+    <div class="empty-state" id="emptyState">
+      <div class="empty-icon">&#127744;</div>
+      <div class="empty-text">Drag components from the palette<br>to build your compressed air system</div>
+    </div>
+  </div>
+
+  <!-- Right panel -->
+  <div class="panel">
+    <div id="panelDesign">
+      <!-- Connection editor - select to delete only -->
+      <div class="panel-section" id="connEditor" style="display:none">
+        <div class="panel-title">Connection</div>
+        <div style="font-size:11px;color:var(--text2);margin-bottom:12px;line-height:1.6;">Connection selected. To model pressure losses on this segment, insert a <strong style="color:var(--text)">Line Loss</strong> element in series.</div>
+        <button class="btn danger-btn" style="width:100%" onclick="deleteSelectedConn()">Delete Connection</button>
+      </div>
+      <!-- Node property editor -->
+      <div class="panel-section" id="propEditor" style="display:none">
+        <div class="panel-title">Properties</div>
+        <div id="propFields"></div>
+        <button class="btn danger-btn" style="width:100%;margin-top:8px" onclick="deleteSelected()">Delete Component</button>
+      </div>
+      <!-- No-selection summary -->
+      <div class="panel-section" id="noSelection">
+        <div class="panel-title">System Summary</div>
+        <div class="metrics-grid">
+          <div class="metric-card info"><div class="metric-card-label">Components</div><div class="metric-card-value" id="m-components">0</div><div class="metric-card-sub">on canvas</div></div>
+          <div class="metric-card info"><div class="metric-card-label">Connections</div><div class="metric-card-value" id="m-connections">0</div><div class="metric-card-sub">total</div></div>
+          <div class="metric-card good"><div class="metric-card-label">Total Supply</div><div class="metric-card-value" id="m-supply">0</div><div class="metric-card-sub">scfm</div></div>
+          <div class="metric-card warn"><div class="metric-card-label">Total Demand</div><div class="metric-card-value" id="m-demand">0</div><div class="metric-card-sub">scfm</div></div>
+        </div>
+      </div>
+      <div class="panel-section" id="alertsSection">
+        <div class="panel-title">Alerts</div>
+        <div id="alertsList"><div class="alert alert-info"><div class="alert-icon">i</div><div>Add components and click Analyze.</div></div></div>
+      </div>
+    </div>
+
+    <!-- Analysis tab -->
+    <div id="panelAnalysis" style="display:none">
+      <div class="panel-section">
+        <div class="panel-title">Energy Summary</div>
+        <div class="metrics-grid">
+          <div class="metric-card info"><div class="metric-card-label">Installed Power</div><div class="metric-card-value" id="a-power">--</div><div class="metric-card-sub">kW total</div></div>
+          <div class="metric-card good"><div class="metric-card-label">Annual Cost</div><div class="metric-card-value" id="a-cost">--</div><div class="metric-card-sub">$/year est.</div></div>
+          <div class="metric-card warn"><div class="metric-card-label">Leak Waste</div><div class="metric-card-value" id="a-leak">--</div><div class="metric-card-sub">% of supply</div></div>
+          <div class="metric-card good"><div class="metric-card-label">System Eff.</div><div class="metric-card-value" id="a-eff">--</div><div class="metric-card-sub">%</div></div>
+        </div>
+      </div>
+      <div class="panel-section"><div class="panel-title">Flow Balance</div><div id="flowBalance"><div style="font-size:11px;color:var(--text3)">Run analysis to see flow data</div></div></div>
+      <div class="panel-section"><div class="panel-title">Path Pressure Analysis</div><div id="pathPressure"><div style="font-size:11px;color:var(--text3)">Run analysis to see per-path pressure data</div></div></div>
+      <div class="panel-section"><div class="panel-title">Efficiency</div><div id="effBars"><div style="font-size:11px;color:var(--text3)">Run analysis</div></div></div>
+    </div>
+
+    <!-- Scenarios tab -->
+    <div id="panelScenarios" style="display:none">
+      <div class="panel-section">
+        <div class="panel-title">What-If Scenarios</div>
+        <button class="scenario-btn" onclick="runScenario('fix_leaks')"><span class="scn-dot" style="background:var(--success)"></span><span class="scn-label">Fix All Leaks</span><span class="scn-delta" id="scn-leaks">--</span></button>
+        <button class="scenario-btn" onclick="runScenario('reduce_pressure')"><span class="scn-dot" style="background:var(--accent2)"></span><span class="scn-label">Reduce Pressure 10 psi</span><span class="scn-delta" id="scn-pressure">--</span></button>
+        <button class="scenario-btn" onclick="runScenario('vsd')"><span class="scn-dot" style="background:var(--purple)"></span><span class="scn-label">Add VSD Compressor</span><span class="scn-delta" id="scn-vsd">--</span></button>
+        <button class="scenario-btn" onclick="runScenario('heat_recovery')"><span class="scn-dot" style="background:var(--warn)"></span><span class="scn-label">Heat Recovery</span><span class="scn-delta" id="scn-heat">--</span></button>
+        <button class="scenario-btn" onclick="runScenario('night_off')"><span class="scn-dot" style="background:var(--pink)"></span><span class="scn-label">Shut Down Nights/Weekends</span><span class="scn-delta" id="scn-night">--</span></button>
+      </div>
+      <div class="panel-section"><div class="panel-title">Scenario Results</div><div id="scenarioResults"><div style="font-size:11px;color:var(--text3)">Click a scenario above</div></div></div>
+      <div class="panel-section">
+        <div class="panel-title">Settings</div>
+        <div class="prop-row"><span class="prop-label">Electricity rate</span><input class="prop-input" type="number" id="elec-rate" value="0.10" step="0.01" onchange="runAnalysis()"><span class="prop-unit">$/kWh</span></div>
+        <div class="prop-row"><span class="prop-label">Hours / year</span><input class="prop-input" type="number" id="hours-year" value="6000" step="100" onchange="runAnalysis()"><span class="prop-unit">hr</span></div>
+        <div class="prop-row"><span class="prop-label">Specific power</span><input class="prop-input" type="number" id="specific-power" value="0.20" step="0.01" onchange="runAnalysis()"><span class="prop-unit">kW/scfm</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════
+// CONSTANTS & COLOURS (resolved once)
+// ═══════════════════════════════════════════
+const CLR = {
+  bg:       '#0d1117', surface:  '#161b22', surface2: '#1c2330', surface3: '#21262d',
+  border:   '#30363d', border2:  '#444c56', text:     '#e6edf3', text2:    '#8b949e',
+  text3:    '#6e7681', accent:   '#00d4aa', accent2:  '#0096ff', warn:     '#f0a93a',
+  danger:   '#f85149', success:  '#3fb950', purple:   '#bc8cff',
+  compressor:'#00d4aa', dryer:'#bc8cff', filter:'#0096ff',
+  receiver: '#3fb950', load:'#f0a93a', leak:'#f85149', lineloss:'#8b949e'
+};
+
+// ═══════════════════════════════════════════
+// STATE
+// ═══════════════════════════════════════════
+let nodes=[], connections=[], selectedNode=null, selectedConn=null;
+let nodeCounter=0, draggingNode=null, dragOffset={x:0,y:0};
+let connectingPort=null, dragType=null, currentTab='design', analysisRan=false;
+// Canvas hover state for cursor changes
+let hoveredConnId=null;
+
+// ═══════════════════════════════════════════
+// CANVAS 2D SETUP
+// ═══════════════════════════════════════════
+const canvas = document.getElementById('connCanvas');
+const ctx    = canvas.getContext('2d');
+const DPR    = window.devicePixelRatio || 1;
+
+function resizeCanvas() {
+  const area = document.getElementById('canvasArea');
+  canvas.width  = area.clientWidth  * DPR;
+  canvas.height = area.clientHeight * DPR;
+  canvas.style.width  = area.clientWidth  + 'px';
+  canvas.style.height = area.clientHeight + 'px';
+  ctx.scale(DPR, DPR);
+  renderConnections();
+}
+
+new ResizeObserver(resizeCanvas).observe(document.getElementById('canvasArea'));
+
+// ═══════════════════════════════════════════
+// COMPONENT DEFINITIONS
+// ═══════════════════════════════════════════
+const compDefs = {
+  compressor:{label:'Compressor',icon:'&#9881;',color:CLR.compressor,bgColor:'#1a3a4a',
+    defaultProps:{name:'Compressor',flowRate:100,pressure:125,power:25,efficiency:92,load:75},
+    propLabels:{flowRate:['Flow Rate','scfm'],pressure:['Discharge Pressure','psi'],power:['Motor Power','kW'],efficiency:['Efficiency','%'],load:['Load Factor','%']},
+    metrics:['flowRate','pressure','power']},
+  dryer:{label:'Dryer',icon:'&#10052;',color:CLR.dryer,bgColor:'#2a1a3a',
+    defaultProps:{name:'Dryer',flowRate:100,pressureDrop:2,power:1.5,dewPoint:-40},
+    propLabels:{flowRate:['Flow Capacity','scfm'],pressureDrop:['Rated dP','psi'],power:['Power Draw','kW'],dewPoint:['Dew Point','degF']},
+    metrics:['pressureDrop','dewPoint']},
+  filter:{label:'Filter',icon:'&#9635;',color:CLR.filter,bgColor:'#1a2a3a',
+    defaultProps:{name:'Filter',flowRate:100,pressureDrop:1,micronRating:5},
+    propLabels:{flowRate:['Flow Capacity','scfm'],pressureDrop:['Rated dP','psi'],micronRating:['Micron Rating','um']},
+    metrics:['pressureDrop']},
+  receiver:{label:'Receiver',icon:'&#9677;',color:CLR.receiver,bgColor:'#2a3a1a',
+    defaultProps:{name:'Receiver',volume:120,maxPressure:150,workingPressure:125},
+    propLabels:{volume:['Tank Volume','gal'],maxPressure:['Max Pressure','psi'],workingPressure:['Working Pressure','psi']},
+    metrics:['volume','workingPressure']},
+  load:{label:'Load',icon:'&#9889;',color:CLR.load,bgColor:'#3a2a1a',
+    defaultProps:{name:'Load',flowRate:20,pressure:90,dutyCycle:80},
+    propLabels:{flowRate:['Flow Demand','scfm'],pressure:['Required Pressure','psi'],dutyCycle:['Duty Cycle','%']},
+    metrics:['flowRate','pressure']},
+  leak:{label:'Leak Point',icon:'&#9888;',color:CLR.leak,bgColor:'#3a1a1a',
+    defaultProps:{name:'Leak',flowRate:5,pressure:100},
+    propLabels:{flowRate:['Leak Rate','scfm'],pressure:['Line Pressure','psi']},
+    metrics:['flowRate']},
+  lineloss:{label:'Line Loss',icon:'&#9660;',color:CLR.lineloss,bgColor:'#1e2a1e',
+    defaultProps:{name:'Line Loss',ratedDp:2,ratedFlow:100,measured:false},
+    propLabels:{ratedDp:['Rated dP','psi'],ratedFlow:['Rated Flow','scfm']},
+    metrics:['ratedDp']}
+};
+
+// ═══════════════════════════════════════════
+// BEZIER HELPERS
+// ═══════════════════════════════════════════
+// Our cubic: M x1,y1  C cx,y1  cx,y2  x2,y2  (cx = midpoint x)
+function bezierPoint(t, x1,y1,x2,y2) {
+  const cx = (x1+x2)/2;
+  const mt = 1-t;
+  return {
+    x: mt*mt*mt*x1 + 3*mt*mt*t*cx + 3*mt*t*t*cx + t*t*t*x2,
+    y: mt*mt*mt*y1 + 3*mt*mt*t*y1 + 3*mt*t*t*y2 + t*t*t*y2
+  };
+}
+
+function bezierTangent(t, x1,y1,x2,y2) {
+  const cx = (x1+x2)/2;
+  const mt = 1-t;
+  // Derivative of cubic bezier
+  const dx = 3*(mt*mt*(cx-x1) + 2*mt*t*(cx-cx) + t*t*(x2-cx));
+  const dy = 3*(mt*mt*(y1-y1) + 2*mt*t*(y2-y1) + t*t*(y2-y2));
+  // Simplified for our symmetric control points:
+  // P0=(x1,y1) P1=(cx,y1) P2=(cx,y2) P3=(x2,y2)
+  const dxA = 3*(mt*mt*(cx-x1) + 2*mt*t*(cx-cx) + t*t*(x2-cx));
+  const dyA = 3*(mt*mt*(y1-y1) + 2*mt*t*(y2-y1) + t*t*(y2-y2));
+  return { x: dxA, y: dyA };
+}
+
+// Point-to-bezier distance (sample N steps)
+function distToBezier(px, py, x1,y1,x2,y2, steps=40) {
+  let minD = Infinity;
+  for (let i=0; i<=steps; i++) {
+    const p = bezierPoint(i/steps, x1,y1,x2,y2);
+    const d = Math.hypot(px-p.x, py-p.y);
+    if (d < minD) minD = d;
+  }
+  return minD;
+}
+
+// Draw arrowhead at end of bezier (t close to 1)
+function drawArrowhead(x2,y2,x1,y1, color, size=8) {
+  // approximate end tangent using near-end bezier points
+  const p1 = bezierPoint(0.95, x1,y1,x2,y2);
+  const angle = Math.atan2(y2-p1.y, x2-p1.x);
+  ctx.save();
+  ctx.translate(x2, y2);
+  ctx.rotate(angle);
+  ctx.beginPath();
+  ctx.moveTo(0, 0);
+  ctx.lineTo(-size, -size*0.4);
+  ctx.lineTo(-size, size*0.4);
+  ctx.closePath();
+  ctx.fillStyle = color;
+  ctx.fill();
+  ctx.restore();
+}
+
+// ═══════════════════════════════════════════
+// PORT POSITION HELPER
+// ═══════════════════════════════════════════
+function getPortXY(nodeId, portType) {
+  const el = document.getElementById(nodeId);
+  if (!el) return null;
+  const port = el.querySelector('.port.' + portType);
+  if (!port) return null;
+  const cRect = document.getElementById('canvasArea').getBoundingClientRect();
+  const pRect = port.getBoundingClientRect();
+  return { x: pRect.left + 6 - cRect.left, y: pRect.top + 6 - cRect.top };
+}
+
+// ═══════════════════════════════════════════
+// CANVAS 2D RENDER CONNECTIONS
+// ═══════════════════════════════════════════
+function renderConnections() {
+  const w = canvas.width  / DPR;
+  const h = canvas.height / DPR;
+  ctx.clearRect(0, 0, w, h);
+
+  connections.forEach(conn => {
+    const p1 = getPortXY(conn.from, 'output');
+    const p2 = getPortXY(conn.to,   'input');
+    if (!p1 || !p2) return;
+
+    const x1=p1.x, y1=p1.y, x2=p2.x, y2=p2.y;
+    const cx = (x1+x2)/2;
+    const mx = (x1+x2)/2, my = (y1+y2)/2;
+
+    const actualFlow = conn._actualFlow || 0;
+    const capFlow    = conn._capFlow    || 0;
+    const isSelected = selectedConn && selectedConn.id === conn.id;
+    const isHovered  = hoveredConnId === conn.id;
+
+    // Stroke colour by utilisation
+    let strokeColor = CLR.border2;
+    if (actualFlow > 0) {
+      const util = capFlow > 0 ? actualFlow / capFlow : 0;
+      strokeColor = util > 0.9 ? CLR.danger : util > 0.7 ? CLR.warn : CLR.accent;
+    }
+
+    // Selection glow
+    if (isSelected) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.moveTo(x1,y1);
+      ctx.bezierCurveTo(cx,y1,cx,y2,x2,y2);
+      ctx.strokeStyle = CLR.accent;
+      ctx.lineWidth   = 8;
+      ctx.globalAlpha = 0.18;
+      ctx.stroke();
+      ctx.restore();
+    } else if (isHovered) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.moveTo(x1,y1);
+      ctx.bezierCurveTo(cx,y1,cx,y2,x2,y2);
+      ctx.strokeStyle = CLR.text2;
+      ctx.lineWidth   = 6;
+      ctx.globalAlpha = 0.12;
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    // Main curve
+    ctx.save();
+    ctx.beginPath();
+    ctx.moveTo(x1,y1);
+    ctx.bezierCurveTo(cx,y1,cx,y2,x2,y2);
+    ctx.strokeStyle = isSelected ? CLR.accent : strokeColor;
+    ctx.lineWidth   = isSelected ? 2.5 : 1.5;
+    ctx.globalAlpha = 1;
+    if (!actualFlow && !isSelected) {
+      ctx.setLineDash([4,3]);
+    }
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.restore();
+
+    // Arrowhead — pull back from endpoint to not overlap node border
+    const arrowPt = bezierPoint(0.92, x1,y1,x2,y2);
+    drawArrowhead(x2, y2, x1, y1, isSelected ? CLR.accent : strokeColor);
+
+    // Flow labels background pill
+    if (actualFlow > 0 || capFlow > 0) {
+      const lines = [];
+      if (actualFlow > 0) lines.push({text: actualFlow.toFixed(1)+' scfm', color: strokeColor, size: 11, bold: true});
+      if (capFlow > 0 && Math.abs(capFlow-actualFlow) > 0.5) lines.push({text: 'cap: '+capFlow.toFixed(0), color: CLR.text3, size: 10, bold: false});
+
+      if (lines.length > 0) {
+        const lineH = 14, padV = 5, padH = 8;
+        const bh = lines.length * lineH + padV;
+        const bw = 76;
+        const bx = mx - bw/2, by = my - bh/2;
+
+        // Background
+        ctx.save();
+        ctx.globalAlpha = 0.95;
+        ctx.fillStyle   = CLR.surface;
+        roundRect(ctx, bx, by, bw, bh, 4);
+        ctx.fill();
+        ctx.strokeStyle = isSelected ? CLR.accent : CLR.border;
+        ctx.lineWidth   = isSelected ? 1 : 0.5;
+        ctx.stroke();
+        ctx.restore();
+
+        // Text lines
+        lines.forEach((ln, i) => {
+          ctx.save();
+          ctx.globalAlpha = 1;
+          ctx.fillStyle  = ln.color;
+          ctx.font       = (ln.bold ? '600 ' : '400 ') + ln.size + 'px "IBM Plex Mono",monospace';
+          ctx.textAlign  = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(ln.text, mx, by + padV/2 + (i+0.5)*lineH);
+          ctx.restore();
+        });
+      }
+    }
+  });
+}
+
+function roundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x+r, y);
+  ctx.lineTo(x+w-r, y);
+  ctx.arcTo(x+w, y, x+w, y+r, r);
+  ctx.lineTo(x+w, y+h-r);
+  ctx.arcTo(x+w, y+h, x+w-r, y+h, r);
+  ctx.lineTo(x+r, y+h);
+  ctx.arcTo(x, y+h, x, y+h-r, r);
+  ctx.lineTo(x, y+r);
+  ctx.arcTo(x, y, x+r, y, r);
+  ctx.closePath();
+}
+
+// ═══════════════════════════════════════════
+// HIT TEST — find connection near point
+// ═══════════════════════════════════════════
+const HIT_THRESHOLD = 9; // px
+
+function hitTestConnections(px, py) {
+  // Test in reverse draw order so top-drawn (last) wins
+  for (let i = connections.length-1; i >= 0; i--) {
+    const conn = connections[i];
+    const p1 = getPortXY(conn.from, 'output');
+    const p2 = getPortXY(conn.to,   'input');
+    if (!p1 || !p2) continue;
+    const d = distToBezier(px, py, p1.x, p1.y, p2.x, p2.y);
+    if (d <= HIT_THRESHOLD) return conn;
+  }
+  return null;
+}
+
+// ═══════════════════════════════════════════
+// CANVAS MOUSE EVENTS — attached to canvasArea so nodesContainer doesn't block them
+// ═══════════════════════════════════════════
+const canvasArea = document.getElementById('canvasArea');
+canvasArea.addEventListener('mousedown', canvasMouseDown);
+canvasArea.addEventListener('mousemove', canvasMouseMove);
+canvasArea.addEventListener('mouseup',   canvasMouseUp);
+canvasArea.addEventListener('click',     canvasClick);
+canvasArea.addEventListener('dblclick',  canvasDblClick);
+
+function canvasXY(e) {
+  const r = document.getElementById('canvasArea').getBoundingClientRect();
+  return { x: e.clientX - r.left, y: e.clientY - r.top };
+}
+
+function canvasMouseDown(e) {
+  if (e.target.closest('.node')) return; // let nodeMouseDown handle it
+  const {x,y} = canvasXY(e);
+  const hit = hitTestConnections(x, y);
+  if (!hit) {
+    selectNode(null);
+    selectConn(null);
+  }
+}
+
+function canvasMouseMove(e) {
+  if (e.target.closest('.node')) return;
+  const {x,y} = canvasXY(e);
+
+  // Update pending line if connecting
+  if (connectingPort) {
+    const cx = (connectingPort.startX + x) / 2;
+    document.getElementById('pendingPath').setAttribute('d',
+      `M${connectingPort.startX} ${connectingPort.startY} C${cx} ${connectingPort.startY},${cx} ${y},${x} ${y}`);
+  }
+
+  // Hover hit test for cursor
+  const hit = hitTestConnections(x, y);
+  const newHover = hit ? hit.id : null;
+  if (newHover !== hoveredConnId) {
+    hoveredConnId = newHover;
+    canvasArea.style.cursor = newHover ? 'pointer' : 'default';
+    renderConnections();
+  }
+}
+
+function canvasMouseUp(e) {
+  if (e.target.closest('.node')) return;
+  if (connectingPort) {
+    document.getElementById('pendingPath').setAttribute('d','');
+    connectingPort = null;
+    renderConnections();
+  }
+}
+
+function canvasClick(e) {
+  if (e.target.closest('.node')) return;
+  const {x,y} = canvasXY(e);
+  const hit = hitTestConnections(x, y);
+  if (hit) {
+    selectConn(hit);
+  } else {
+    selectNode(null);
+    selectConn(null);
+  }
+}
+
+function canvasDblClick(e) {
+  if (e.target.closest('.node')) return;
+  const {x,y} = canvasXY(e);
+  const hit = hitTestConnections(x, y);
+  if (hit) {
+    connections = connections.filter(c => c.id !== hit.id);
+    selectConn(null);
+    renderConnections();
+    updateSummary();
+    if (analysisRan) runAnalysis();
+  }
+}
+
+// ═══════════════════════════════════════════
+// NODE EVENTS  (nodes are HTML divs above canvas)
+// ═══════════════════════════════════════════
+function nodeMouseDown(e) {
+  if (e.target.closest('.port')) return;
+  e.preventDefault();
+  e.stopPropagation();
+  const el = e.currentTarget;
+  const node = nodes.find(n => n.id === el.id);
+  selectNode(node);
+  draggingNode = { node, el };
+  const r = el.getBoundingClientRect();
+  const cr = document.getElementById('canvasArea').getBoundingClientRect();
+  dragOffset.x = e.clientX - cr.left - node.x;
+  dragOffset.y = e.clientY - cr.top  - node.y;
+
+  const onMove = ev => {
+    const x = ev.clientX - cr.left, y = ev.clientY - cr.top;
+    const nx = Math.round((x - dragOffset.x) / 10) * 10;
+    const ny = Math.round((y - dragOffset.y) / 10) * 10;
+    draggingNode.node.x = Math.max(0, nx);
+    draggingNode.node.y = Math.max(0, ny);
+    draggingNode.el.style.left = draggingNode.node.x + 'px';
+    draggingNode.el.style.top  = draggingNode.node.y + 'px';
+    renderConnections();
+  };
+  const onUp = () => {
+    draggingNode = null;
+    document.removeEventListener('mousemove', onMove);
+    document.removeEventListener('mouseup',   onUp);
+  };
+  document.addEventListener('mousemove', onMove);
+  document.addEventListener('mouseup',   onUp);
+}
+
+function portMouseDown(e) {
+  e.stopPropagation();
+  e.preventDefault();
+  const port = e.currentTarget;
+  if (port.dataset.port !== 'out') return;
+
+  const cRect = document.getElementById('canvasArea').getBoundingClientRect();
+  const pRect = port.getBoundingClientRect();
+  connectingPort = {
+    el: port, nodeId: port.dataset.node, port: 'out',
+    startX: pRect.left + 6 - cRect.left,
+    startY: pRect.top  + 6 - cRect.top
+  };
+
+  const onMove = ev => {
+    const x = ev.clientX - cRect.left, y = ev.clientY - cRect.top;
+    const cx = (connectingPort.startX + x) / 2;
+    document.getElementById('pendingPath').setAttribute('d',
+      `M${connectingPort.startX} ${connectingPort.startY} C${cx} ${connectingPort.startY},${cx} ${y},${x} ${y}`);
+  };
+  const onUp = ev => {
+    document.removeEventListener('mousemove', onMove);
+    document.removeEventListener('mouseup',   onUp);
+    document.getElementById('pendingPath').setAttribute('d','');
+
+    // Check if released on an input port
+    const target = document.elementFromPoint(ev.clientX, ev.clientY);
+    const tPort  = target && target.closest('.port');
+    if (tPort && tPort.dataset.port === 'in' && tPort.dataset.node !== connectingPort.nodeId) {
+      const toNode = tPort.dataset.node;
+      const exists = connections.find(c => c.from===connectingPort.nodeId && c.to===toNode);
+      if (!exists) {
+        connections.push({
+          id:'c'+(++nodeCounter), from:connectingPort.nodeId, to:toNode,
+          _actualFlow:0, _capFlow:0
+        });
+        updateSummary();
+        if (analysisRan) runAnalysis();
+      }
+    }
+    connectingPort = null;
+    renderConnections();
+  };
+  document.addEventListener('mousemove', onMove);
+  document.addEventListener('mouseup',   onUp);
+}
+
+// ═══════════════════════════════════════════
+// DRAG FROM PALETTE
+// ═══════════════════════════════════════════
+function startDrag(e, type) { dragType=type; e.dataTransfer.setData('type',type); }
+
+function dropComponent(e) {
+  e.preventDefault();
+  const type = e.dataTransfer.getData('type') || dragType;
+  if (!type) return;
+  const r = document.getElementById('canvasArea').getBoundingClientRect();
+  const x = Math.round((e.clientX - r.left - 65) / 20) * 20;
+  const y = Math.round((e.clientY - r.top  - 30) / 20) * 20;
+  addNode(type, Math.max(0,x), Math.max(0,y));
+  dragType = null;
+}
+
+// ═══════════════════════════════════════════
+// ADD / RENDER NODES
+// ═══════════════════════════════════════════
+function addNode(type, x, y) {
+  const def = compDefs[type]; if (!def) return;
+  nodeCounter++;
+  const id   = 'n'+nodeCounter;
+  const props = {...def.defaultProps, name: def.label+' '+nodeCounter};
+  nodes.push({id, type, x, y, props});
+  renderNode(nodes[nodes.length-1]);
+  updateSummary();
+  document.getElementById('emptyState').style.display = 'none';
+}
+
+function renderNode(node) {
+  const def = compDefs[node.type];
+  const old = document.getElementById(node.id);
+  if (old) old.remove();
+
+  const el = document.createElement('div');
+  el.id        = node.id;
+  el.className = 'node' + (node.type === 'lineloss' ? ' node-compact' : '');
+  el.style.left = node.x+'px';
+  el.style.top  = node.y+'px';
+
+  let metrics = '';
+  if (node.type === 'lineloss') {
+    const dpVal = node._lastActualDp !== undefined ? node._lastActualDp : node.props.ratedDp;
+    const modeTag = node.props.measured ? ' [M]' : '';
+    metrics = `<div class="node-metric">
+      <span class="node-metric-value" style="color:${def.color};font-size:11px">-${(dpVal||0).toFixed(2)} psi${modeTag}</span>
+    </div>`;
+  } else {
+    def.metrics.forEach(k => {
+      const [lbl,unit] = def.propLabels[k]||[k,''];
+      metrics += `<div class="node-metric">
+        <span class="node-metric-label">${lbl}</span>
+        <span class="node-metric-value" style="color:${def.color}">${node.props[k]??'--'}<span style="color:var(--text3);font-size:9px"> ${unit}</span></span>
+      </div>`;
+    });
+  }
+
+  const hasIn  = node.type !== 'compressor';
+  const hasOut = node.type !== 'load' && node.type !== 'leak';
+
+  el.innerHTML = `
+    <div class="node-header" style="border-bottom:1px solid ${def.color}40">
+      <div class="node-icon" style="background:${def.bgColor};border:1px solid ${def.color}60;color:${def.color}">${def.icon}</div>
+      <div class="node-name">${node.props.name||def.label}</div>
+    </div>
+    <div class="node-body">${metrics}</div>
+    <div class="node-ports">
+      ${hasIn  ? `<div class="port input"  data-node="${node.id}" data-port="in" ><span class="port-label">in</span></div>`  : '<div></div>'}
+      ${hasOut ? `<div class="port output" data-node="${node.id}" data-port="out"><span class="port-label">out</span></div>` : '<div></div>'}
+    </div>`;
+
+  el.addEventListener('mousedown', nodeMouseDown);
+  el.querySelectorAll('.port').forEach(p => p.addEventListener('mousedown', portMouseDown));
+  document.getElementById('nodesContainer').appendChild(el);
+}
+
+// ═══════════════════════════════════════════
+// SELECTION
+// ═══════════════════════════════════════════
+function selectNode(node) {
+  document.querySelectorAll('.node').forEach(el=>el.classList.remove('selected'));
+  selectedNode=node; selectedConn=null;
+  document.getElementById('connEditor').style.display  = 'none';
+  document.getElementById('propEditor').style.display  = node ? '' : 'none';
+  document.getElementById('noSelection').style.display = node ? 'none' : '';
+  if (node) {
+    document.getElementById(node.id).classList.add('selected');
+    showProperties(node);
+  }
+  renderConnections();
+}
+
+function selectConn(conn) {
+  document.querySelectorAll('.node').forEach(el=>el.classList.remove('selected'));
+  selectedConn=conn; selectedNode=null;
+  document.getElementById('propEditor').style.display  = 'none';
+  document.getElementById('noSelection').style.display = 'none';
+  document.getElementById('connEditor').style.display  = conn ? '' : 'none';
+  if (!conn) { document.getElementById('noSelection').style.display=''; }
+  renderConnections();
+}
+
+function deleteSelectedConn() {
+  if (!selectedConn) return;
+  connections = connections.filter(c=>c.id!==selectedConn.id);
+  selectConn(null);
+  renderConnections();
+  updateSummary();
+  if (analysisRan) runAnalysis();
+}
+
+function showProperties(node) {
+  const def = compDefs[node.type];
+
+  // Special UI for lineloss
+  if (node.type === 'lineloss') {
+    const isMeasured = !!node.props.measured;
+    document.getElementById('propFields').innerHTML = `
+      <div class="mode-toggle">
+        <button class="mode-toggle-btn ${!isMeasured?'active':''}" onclick="setLinelossMode('${node.id}',false)">Flow-Scaled</button>
+        <button class="mode-toggle-btn ${isMeasured?'active':''}"  onclick="setLinelossMode('${node.id}',true)">Measured</button>
+      </div>
+      ${!isMeasured ? `
+        <div class="prop-row">
+          <span class="prop-label">Rated dP</span>
+          <input class="prop-input" type="number" value="${node.props.ratedDp??''}" step="0.1" min="0" onchange="updateProp('${node.id}','ratedDp',this.value)">
+          <span class="prop-unit">psi</span>
+        </div>
+        <div class="prop-row">
+          <span class="prop-label">Rated Flow</span>
+          <input class="prop-input" type="number" value="${node.props.ratedFlow??''}" step="1" min="0.1" onchange="updateProp('${node.id}','ratedFlow',this.value)">
+          <span class="prop-unit">scfm</span>
+        </div>
+        <div class="mode-note">dP scales quadratically: actual dP&nbsp;=&nbsp;rated dP &times; (Q / Q&#8345;)&sup2;</div>
+      ` : `
+        <div class="prop-row">
+          <span class="prop-label">Fixed dP</span>
+          <input class="prop-input" type="number" value="${node.props.ratedDp??''}" step="0.1" min="0" onchange="updateProp('${node.id}','ratedDp',this.value)">
+          <span class="prop-unit">psi</span>
+        </div>
+        <div class="mode-note">Measured mode: this exact dP is applied regardless of flow rate.</div>
+      `}
+      <div id="linelossActual" style="margin-top:8px;font-size:11px;color:var(--text2);"></div>`;
+    updateLinelossActualDisplay(node);
+    return;
+  }
+
+  let html = `<div class="prop-row">
+    <span class="prop-label">Name</span>
+    <input class="prop-input" type="text" value="${node.props.name||''}" style="width:130px" onchange="updateProp('${node.id}','name',this.value)">
+    <span class="prop-unit"></span>
+  </div>`;
+  Object.entries(def.propLabels).forEach(([k,[lbl,unit]]) => {
+    html += `<div class="prop-row">
+      <span class="prop-label">${lbl}</span>
+      <input class="prop-input" type="number" value="${node.props[k]??''}" step="1" onchange="updateProp('${node.id}','${k}',this.value)">
+      <span class="prop-unit">${unit}</span>
+    </div>`;
+  });
+  document.getElementById('propFields').innerHTML = html;
+}
+
+function setLinelossMode(id, measured) {
+  const node = nodes.find(n => n.id === id); if (!node) return;
+  node.props.measured = measured;
+  showProperties(node);
+  renderNode(node);
+  document.getElementById(id).classList.add('selected');
+  if (analysisRan) runAnalysis();
+}
+
+function updateLinelossActualDisplay(node) {
+  const el = document.getElementById('linelossActual');
+  if (!el) return;
+  const actual = node._lastActualDp;
+  if (actual === undefined || actual === null) {
+    el.innerHTML = '<span style="color:var(--text3)">Run Analyze to see actual dP at operating flow.</span>';
+  } else {
+    const clr = actual > (node.props.ratedDp||0)*0.9 ? CLR.warn : CLR.success;
+    el.innerHTML = `<div style="display:flex;justify-content:space-between">
+      <span>Actual dP at operating flow</span>
+      <span style="font-family:monospace;color:${clr}">${actual.toFixed(3)} psi</span>
+    </div>`;
+  }
+}
+
+function updateProp(id, key, val) {
+  const node = nodes.find(n=>n.id===id); if (!node) return;
+  const num = parseFloat(val);
+  node.props[key] = isNaN(num) ? val : num;
+  renderNode(node);
+  document.getElementById(id).classList.add('selected');
+  updateSummary();
+  renderConnections();
+  if (analysisRan) runAnalysis();
+}
+
+function deleteSelected() {
+  if (!selectedNode) return;
+  connections = connections.filter(c=>c.from!==selectedNode.id&&c.to!==selectedNode.id);
+  nodes = nodes.filter(n=>n.id!==selectedNode.id);
+  document.getElementById(selectedNode.id)?.remove();
+  selectNode(null);
+  renderConnections();
+  updateSummary();
+  if (!nodes.length) document.getElementById('emptyState').style.display='';
+  if (analysisRan) runAnalysis();
+}
+
+// ═══════════════════════════════════════════
+// TOPOLOGY ENGINE
+// ═══════════════════════════════════════════
+function buildGraph() {
+  const dn={}, up={};
+  nodes.forEach(n=>{dn[n.id]=[]; up[n.id]=[];});
+  connections.forEach(c=>{
+    if(dn[c.from]) dn[c.from].push(c.to);
+    if(up[c.to])   up[c.to].push(c.from);
+  });
+  return {dn,up};
+}
+
+function detectCycle() {
+  const {dn}=buildGraph();
+  const WHITE=0,GRAY=1,BLACK=2;
+  const col={};
+  nodes.forEach(n=>col[n.id]=WHITE);
+  let cycle=null;
+  function dfs(id,path){
+    if(cycle) return;
+    col[id]=GRAY;
+    for(const nx of (dn[id]||[])){
+      if(col[nx]===GRAY){cycle=[...path,id,nx];return;}
+      if(col[nx]===WHITE) dfs(nx,[...path,id]);
+    }
+    col[id]=BLACK;
+  }
+  nodes.forEach(n=>{if(col[n.id]===WHITE) dfs(n.id,[]);});
+  return cycle;
+}
+
+function computeDownstreamDemand() {
+  const {dn}=buildGraph();
+  const memo={};
+  function nodeDemand(n){
+    if(n.type==='load') return (n.props.flowRate||0)*(n.props.dutyCycle||100)/100;
+    if(n.type==='leak') return n.props.flowRate||0;
+    return 0;
+  }
+  function calc(id, vis=new Set()){
+    if(memo[id]!==undefined) return memo[id];
+    if(vis.has(id)) return 0;
+    vis.add(id);
+    const node=nodes.find(n=>n.id===id);
+    if(!node) return 0;
+    let d=nodeDemand(node);
+    for(const nx of (dn[id]||[])) d+=calc(nx,new Set(vis));
+    memo[id]=d;
+    return d;
+  }
+  const demand={};
+  nodes.forEach(n=>{demand[n.id]=calc(n.id);});
+  return demand;
+}
+
+// Topological sort (Kahn's algorithm) — returns node ids in processing order
+function topoSort() {
+  const {dn, up} = buildGraph();
+  const inDegree = {};
+  nodes.forEach(n => inDegree[n.id] = (up[n.id]||[]).length);
+  const queue = nodes.filter(n => inDegree[n.id] === 0).map(n => n.id);
+  const order = [];
+  while (queue.length) {
+    const id = queue.shift();
+    order.push(id);
+    (dn[id]||[]).forEach(nxt => {
+      inDegree[nxt]--;
+      if (inDegree[nxt] === 0) queue.push(nxt);
+    });
+  }
+  return order;
+}
+
+function computeCapFlows() {
+  // Forward topo pass — capacities SUM at merge nodes, full cap available to each branch at splits.
+  // Returns: cap[connId] and nodeInCap[nodeId] (total capacity arriving at each node).
+  const {dn} = buildGraph();
+  const cap      = {};   // connId  → scfm capacity on that connector
+  const nodeInCap= {};   // nodeId  → sum of capacity arriving at this node from upstream
+  connections.forEach(c => cap[c.id] = 0);
+  nodes.forEach(n => nodeInCap[n.id] = 0);
+
+  // Sources seed their rated output as the capacity arriving at themselves
+  nodes.filter(n => n.type === 'compressor').forEach(src => {
+    nodeInCap[src.id] = src.props.flowRate || 0;
+  });
+
+  const order = topoSort();
+  order.forEach(fromId => {
+    const capAvail = nodeInCap[fromId];
+    if (capAvail <= 0) return;
+    (dn[fromId] || []).forEach(childId => {
+      const conn = connections.find(c => c.from === fromId && c.to === childId);
+      if (!conn) return;
+      // Each branch gets the full available capacity (parallel branches are independent)
+      let cc = capAvail;
+      const childNode = nodes.find(n => n.id === childId);
+      if (childNode && (childNode.type === 'dryer' || childNode.type === 'filter'))
+        cc = Math.min(cc, childNode.props.flowRate || Infinity);
+      cap[conn.id]        = (cap[conn.id]         || 0) + cc;
+      nodeInCap[childId]  = (nodeInCap[childId]    || 0) + cc;
+    });
+  });
+
+  return { cap, nodeInCap };
+}
+
+function computeActualFlows(nodeInCap, cap) {
+  // To correctly handle topologies where sources share downstream merge nodes
+  // AND have independent branches, we need each source to know its
+  // "effective demand" — the portion of downstream demand it is responsible for,
+  // accounting for capacity-fraction sharing at merge nodes.
+  //
+  // Algorithm:
+  //   1. Reverse topo pass: propagate "attributed demand" backward through the graph.
+  //      At merge nodes, split the attributed demand among upstream connectors by
+  //      capacity fraction. At split nodes, sum all outgoing attributed demands.
+  //   2. Each source's effective demand = sum of attributed demand arriving at it.
+  //   3. Forward topo pass: seed sources with min(supply, effective_demand).
+  //      Distribute using capacity fractions at merges, demand fractions at splits —
+  //      exactly what the attributed demand pass already encoded.
+
+  const {dn, up} = buildGraph();
+  const order    = topoSort();
+  const revOrder = [...order].reverse();
+
+  // ── STEP 1: reverse pass — attribute demand back to each connector ──────────
+  // attrDemand[connId] = scfm of actual demand attributable to this connector
+  const attrDemand  = {};
+  const nodeAttrDem = {};   // total attributed demand pulling through each node
+  connections.forEach(c => attrDemand[c.id] = 0);
+  nodes.forEach(n => nodeAttrDem[n.id] = 0);
+
+  // Seed sinks with their own demand
+  nodes.forEach(n => {
+    if (n.type === 'load') nodeAttrDem[n.id] = (n.props.flowRate||0) * (n.props.dutyCycle||100) / 100;
+    else if (n.type === 'leak') nodeAttrDem[n.id] = n.props.flowRate || 0;
+  });
+
+  revOrder.forEach(nodeId => {
+    const pullDown = nodeAttrDem[nodeId];
+    if (pullDown <= 0) return;
+    const parents = up[nodeId] || [];
+    if (!parents.length) return; // source — stop here
+
+    // Split demand among incoming connectors by capacity fraction
+    const totalCapIn = nodeInCap[nodeId] || 0;
+    parents.forEach(parentId => {
+      const conn = connections.find(c => c.from === parentId && c.to === nodeId);
+      if (!conn) return;
+      const fraction = totalCapIn > 0 ? (cap[conn.id] || 0) / totalCapIn : 1 / parents.length;
+      const attributed = pullDown * fraction;
+      attrDemand[conn.id] += attributed;
+      // Propagate attributed demand upward to the parent
+      nodeAttrDem[parentId] = (nodeAttrDem[parentId] || 0) + attributed;
+    });
+  });
+
+  // ── STEP 2: each source's effective demand is nodeAttrDem[src] ───────────────
+  // (already accumulated by the reverse pass)
+
+  // ── STEP 3: forward pass — propagate actual flow ─────────────────────────────
+  const flow       = {};
+  const nodeActOut = {};
+  connections.forEach(c => flow[c.id] = 0);
+  nodes.forEach(n => nodeActOut[n.id] = 0);
+
+  // Seed sources
+  nodes.filter(n => n.type === 'compressor').forEach(src => {
+    const supply = (src.props.flowRate || 0) * (src.props.load || 100) / 100;
+    nodeActOut[src.id] = Math.min(supply, nodeAttrDem[src.id] || 0);
+  });
+
+  order.forEach(fromId => {
+    const actOut = nodeActOut[fromId];
+    if (actOut <= 0) return;
+    const children = dn[fromId] || [];
+    if (!children.length) return;
+
+    // Distribute using the same attributed-demand fractions computed in reverse pass
+    // This guarantees forward and reverse passes are consistent.
+    const totalAttrOut = children.reduce((s, cid) => {
+      const conn = connections.find(c => c.from === fromId && c.to === cid);
+      return s + (conn ? (attrDemand[conn.id] || 0) : 0);
+    }, 0);
+
+    children.forEach(childId => {
+      const conn = connections.find(c => c.from === fromId && c.to === childId);
+      if (!conn) return;
+
+      const ratio = totalAttrOut > 0 ? (attrDemand[conn.id] || 0) / totalAttrOut : 1 / children.length;
+      let cf = actOut * ratio;
+
+      // Cap at treatment component rated capacity
+      const childNode = nodes.find(n => n.id === childId);
+      if (childNode && (childNode.type === 'dryer' || childNode.type === 'filter'))
+        cf = Math.min(cf, childNode.props.flowRate || Infinity);
+
+      flow[conn.id] += cf;
+      nodeActOut[childId] = (nodeActOut[childId] || 0) + cf;
+    });
+  });
+
+  return flow;
+}
+
+function enumeratePaths() {
+  const {dn}=buildGraph();
+  const sources=nodes.filter(n=>n.type==='compressor');
+  const sinkIds=nodes.filter(n=>n.type==='load'||n.type==='leak').map(n=>n.id);
+  const paths=[];
+  function dfs(id,nodePath,connPath,vis){
+    if(vis.has(id)) return;
+    vis.add(id);
+    if(sinkIds.includes(id)&&nodePath.length>1) paths.push({path:[...nodePath],conns:[...connPath]});
+    (dn[id]||[]).forEach(nxt=>{
+      const conn=connections.find(c=>c.from===id&&c.to===nxt);
+      if(conn) dfs(nxt,[...nodePath,nxt],[...connPath,conn.id],new Set(vis));
+    });
+  }
+  sources.forEach(s=>dfs(s.id,[s.id],[],new Set()));
+  return paths;
+}
+
+function analyzeSystem() {
+  const res={valid:true,errors:[],warnings:[],paths:[],
+    totalSupply:0,totalDemand:0,totalLeaks:0,surplus:0,leakPct:0,prodEff:0};
+
+  // Cycle check
+  const cycle=detectCycle();
+  if(cycle){
+    const names=cycle.map(id=>{const n=nodes.find(x=>x.id===id);return n?(n.props.name||compDefs[n.type].label):id;});
+    res.valid=false;
+    res.errors.push('Loop detected: '+names.join(' -> ')+'. Ring mains are not supported — remove the connection creating the loop.');
+    return res;
+  }
+
+  const demand               = computeDownstreamDemand();
+  const { cap, nodeInCap }   = computeCapFlows();
+  const actualFlow           = computeActualFlows(nodeInCap, cap);
+
+  // Stamp onto connections for rendering
+  connections.forEach(c=>{
+    c._actualFlow = actualFlow[c.id] || 0;
+    c._capFlow    = cap[c.id]        || 0;
+  });
+
+  const compressors=nodes.filter(n=>n.type==='compressor');
+  const loads      =nodes.filter(n=>n.type==='load');
+  const leaks      =nodes.filter(n=>n.type==='leak');
+  res.totalSupply =compressors.reduce((s,n)=>s+(n.props.flowRate||0)*(n.props.load||100)/100,0);
+  res.totalDemand =loads.reduce((s,n)=>s+(n.props.flowRate||0)*(n.props.dutyCycle||100)/100,0);
+  res.totalLeaks  =leaks.reduce((s,n)=>s+(n.props.flowRate||0),0);
+  res.surplus     =res.totalSupply-res.totalDemand-res.totalLeaks;
+  res.leakPct     =res.totalSupply>0?res.totalLeaks/res.totalSupply*100:0;
+  res.prodEff     =res.totalSupply>0?res.totalDemand/res.totalSupply*100:0;
+
+  if(res.surplus<-0.5)              res.warnings.push('Demand ('+( res.totalDemand+res.totalLeaks).toFixed(1)+' scfm) exceeds supply ('+res.totalSupply.toFixed(1)+' scfm).');
+  if(res.leakPct>10)                res.warnings.push('Leak flow is '+res.leakPct.toFixed(1)+'% of supply — exceeds 10% best-practice threshold.');
+  if(res.totalSupply>(res.totalDemand+res.totalLeaks)*1.5&&res.totalSupply>0)
+                                    res.warnings.push('Compressor capacity oversized >50%. Consider VSD or staging.');
+
+  // Per-path pressure
+  const allPaths=enumeratePaths();
+  res.paths=allPaths.map(p=>{
+    const srcNode =nodes.find(n=>n.id===p.path[0]);
+    const sinkNode=nodes.find(n=>n.id===p.path[p.path.length-1]);
+    const srcP    =srcNode?(srcNode.props.pressure||0):0;
+    let pathDrop=0;
+    const segs=[];
+
+    p.conns.forEach(connId=>{
+      const conn=connections.find(c=>c.id===connId);
+      if(!conn) return;
+      const Q=actualFlow[connId]||0;
+      const toNode=nodes.find(n=>n.id===conn.to);
+      let compDp=0;
+      if(toNode&&toNode.props.pressureDrop){
+        // Dryer / filter: rated dP scaled by (actual/rated)²
+        const ratedQ=toNode.props.flowRate||Q||1;
+        const ratio=ratedQ>0?Q/ratedQ:0;
+        compDp=toNode.props.pressureDrop*ratio*ratio;
+        segs.push({label:toNode.props.name||compDefs[toNode.type].label,dp:compDp,type:'component'});
+      } else if(toNode&&toNode.type==='lineloss') {
+        // Line loss: flow-scaled (quadratic) or fixed measured
+        const rDp   = toNode.props.ratedDp   || 0;
+        const rFlow = toNode.props.ratedFlow  || Q || 1;
+        if (toNode.props.measured) {
+          compDp = rDp; // fixed regardless of flow
+        } else {
+          const ratio = rFlow > 0 ? Q / rFlow : 0;
+          compDp = rDp * ratio * ratio;
+        }
+        toNode._lastActualDp = compDp;
+        segs.push({label: (toNode.props.name||'Line Loss') + (toNode.props.measured?' [M]':''), dp:compDp, type:'lineloss'});
+      }
+      pathDrop+=compDp;
+    });
+
+    const endP=srcP-pathDrop;
+    const reqP=sinkNode?(sinkNode.props.pressure||0):0;
+    const margin=endP-reqP;
+    if(margin<0) res.warnings.push('Path to "'+( sinkNode?sinkNode.props.name:'?')+'" delivers '+endP.toFixed(1)+' psi vs '+reqP+' psi required.');
+
+    return{
+      srcName:srcNode?(srcNode.props.name||'Source'):'?',
+      sinkName:sinkNode?(sinkNode.props.name||'Sink'):'?',
+      srcP,pathDrop,endP,reqP,margin,segs,
+      actualFlow: p.conns.length
+        ? Math.min(...p.conns.map(id => actualFlow[id]||0))
+        : 0
+    };
+  });
+
+  if(allPaths.length===0&&compressors.length>0&&(loads.length+leaks.length)>0)
+    res.warnings.push('No complete paths from compressors to loads. Check connections.');
+
+  return res;
+}
+
+// ═══════════════════════════════════════════
+// SUMMARY + ALERTS
+// ═══════════════════════════════════════════
+function updateSummary() {
+  document.getElementById('m-components').textContent=nodes.length;
+  document.getElementById('m-connections').textContent=connections.length;
+  const sup=nodes.filter(n=>n.type==='compressor').reduce((s,n)=>s+(n.props.flowRate||0)*(n.props.load||100)/100,0);
+  const dem=nodes.filter(n=>n.type==='load').reduce((s,n)=>s+(n.props.flowRate||0)*(n.props.dutyCycle||100)/100,0);
+  const lk =nodes.filter(n=>n.type==='leak').reduce((s,n)=>s+(n.props.flowRate||0),0);
+  document.getElementById('m-supply').textContent=sup.toFixed(0);
+  document.getElementById('m-demand').textContent=(dem+lk).toFixed(0);
+  const alerts=[];
+  if(!nodes.length) alerts.push({t:'info',m:'Add components and click Analyze.'});
+  else {
+    if(sup===0) alerts.push({t:'warn',m:'No compressors with flow configured.'});
+    if(lk>sup*0.1&&sup>0) alerts.push({t:'warn',m:`Leaks (${lk.toFixed(1)} scfm) exceed 10% of supply.`});
+    if(sup>0&&(dem+lk)>sup) alerts.push({t:'warn',m:`Demand exceeds supply by ${((dem+lk-sup)).toFixed(1)} scfm.`});
+    if(sup>0&&(dem+lk)<=sup&&lk<=sup*0.1) alerts.push({t:'ok',m:'System balanced.'});
+  }
+  document.getElementById('alertsList').innerHTML=alerts.map(a=>
+    `<div class="alert alert-${a.t}"><div class="alert-icon">${a.t==='warn'?'!':a.t==='ok'?'OK':'i'}</div><div>${a.m}</div></div>`
+  ).join('')||'<div class="alert alert-ok"><div class="alert-icon">OK</div><div>No issues.</div></div>';
+}
+
+// ═══════════════════════════════════════════
+// RUN ANALYSIS
+// ═══════════════════════════════════════════
+function runAnalysis() {
+  analysisRan=true;
+  const res=analyzeSystem();
+
+  if(!res.valid) {
+    document.getElementById('alertsList').innerHTML=res.errors.map(e=>
+      `<div class="alert alert-err"><div class="alert-icon">X</div><div>${e}</div></div>`).join('');
+    return;
+  }
+
+  renderConnections();
+  // Re-render lineloss nodes so dP value updates on canvas
+  nodes.filter(n=>n.type==='lineloss').forEach(n=>{
+    renderNode(n);
+    if(selectedNode&&selectedNode.id===n.id){
+      document.getElementById(n.id).classList.add('selected');
+      updateLinelossActualDisplay(n);
+    }
+  });
+
+  const rate =parseFloat(document.getElementById('elec-rate')?.value||0.10);
+  const hrs  =parseFloat(document.getElementById('hours-year')?.value||6000);
+  const spec =parseFloat(document.getElementById('specific-power')?.value||0.20);
+  const comps=nodes.filter(n=>n.type==='compressor');
+  const dryers=nodes.filter(n=>n.type==='dryer');
+  const totPwr=comps.reduce((s,n)=>s+(n.props.power||0),0)+dryers.reduce((s,n)=>s+(n.props.power||0),0);
+  const annCost=totPwr*hrs*rate;
+
+  document.getElementById('a-power').textContent=totPwr.toFixed(1);
+  document.getElementById('a-cost').textContent=annCost>1000?(annCost/1000).toFixed(1)+'k':annCost.toFixed(0);
+  document.getElementById('a-leak').textContent=res.leakPct.toFixed(1);
+  document.getElementById('a-eff').textContent=res.prodEff.toFixed(1);
+  document.getElementById('a-leak').closest('.metric-card').className='metric-card '+(res.leakPct>20?'bad':res.leakPct>10?'warn':'good');
+  document.getElementById('a-eff').closest('.metric-card').className='metric-card '+(res.prodEff>75?'good':res.prodEff>50?'warn':'bad');
+
+  // Flow balance
+  let fb='';
+  comps.forEach(n=>{const f=(n.props.flowRate||0)*(n.props.load||100)/100; fb+=`<div class="flow-row"><div class="flow-dot" style="background:${CLR.compressor}"></div><div class="flow-name">${n.props.name}</div><div class="flow-val" style="color:${CLR.success}">+${f.toFixed(1)} scfm</div></div>`;});
+  nodes.filter(n=>n.type==='load').forEach(n=>{const f=(n.props.flowRate||0)*(n.props.dutyCycle||100)/100; fb+=`<div class="flow-row"><div class="flow-dot" style="background:${CLR.load}"></div><div class="flow-name">${n.props.name}</div><div class="flow-val" style="color:${CLR.warn}">-${f.toFixed(1)} scfm</div></div>`;});
+  nodes.filter(n=>n.type==='leak').forEach(n=>{fb+=`<div class="flow-row"><div class="flow-dot" style="background:${CLR.leak}"></div><div class="flow-name">${n.props.name}</div><div class="flow-val" style="color:${CLR.danger}">-${n.props.flowRate||0} scfm</div></div>`;});
+  const bal=res.surplus;
+  fb+=`<div class="flow-row" style="margin-top:6px;border-top:1px solid var(--border);padding-top:8px"><div class="flow-dot" style="background:${bal>=0?CLR.success:CLR.danger}"></div><div class="flow-name" style="font-weight:600">Net Balance</div><div class="flow-val" style="color:${bal>=0?CLR.success:CLR.danger};font-weight:600">${bal>=0?'+':''}${bal.toFixed(1)} scfm</div></div>`;
+  document.getElementById('flowBalance').innerHTML=fb||'<div style="font-size:11px;color:var(--text3)">No components</div>';
+
+  // Path pressure
+  let pp='';
+  if(!res.paths.length) {
+    pp='<div style="font-size:11px;color:var(--text3)">No complete source to sink paths found.</div>';
+  } else {
+    res.paths.forEach(p=>{
+      const mc=p.margin>=10?CLR.success:p.margin>=0?CLR.warn:CLR.danger;
+      const mi=p.margin>=10?'OK':p.margin>=0?'~':'!';
+      let segs='';
+      p.segs.forEach(s=>{ segs+=`<div class="path-row-detail"><span>${s.type==='pipe'?'  pipe: ':'  '}${s.label}</span><span>-${s.dp.toFixed(3)} psi</span></div>`; });
+      pp+=`<div class="path-row">
+        <div class="path-row-title"><span>${p.srcName} to ${p.sinkName}</span><span style="color:${mc}">[${mi}]</span></div>
+        <div class="path-row-detail"><span>Flow</span><span>${p.actualFlow.toFixed(1)} scfm</span></div>
+        <div class="path-row-detail"><span>Source pressure</span><span>${p.srcP} psi</span></div>
+        ${segs}
+        <div class="path-row-detail"><span>Total path dP</span><span style="color:${CLR.purple}">-${p.pathDrop.toFixed(2)} psi</span></div>
+        <div class="path-row-detail"><span>Delivered</span><span style="color:${mc};font-weight:600">${p.endP.toFixed(1)} psi</span></div>
+        <div class="path-row-detail"><span>Required</span><span>${p.reqP} psi</span></div>
+        <div class="path-row-detail"><span>Margin</span><span style="color:${mc}">${p.margin>=0?'+':''}${p.margin.toFixed(1)} psi</span></div>
+      </div>`;
+    });
+  }
+  if(res.warnings.length) pp+=res.warnings.map(w=>`<div class="alert alert-warn" style="margin-top:6px"><div class="alert-icon">!</div><div>${w}</div></div>`).join('');
+  document.getElementById('pathPressure').innerHTML=pp;
+
+  // Efficiency bars
+  const avgEff=comps.length?comps.reduce((s,n)=>s+(n.props.efficiency||90),0)/comps.length:0;
+  document.getElementById('effBars').innerHTML=
+    bar('Compressor Avg Eff.',avgEff,avgEff>90?CLR.success:avgEff>80?CLR.warn:CLR.danger)+
+    bar('System Productive Eff.',res.prodEff,res.prodEff>75?CLR.success:res.prodEff>50?CLR.warn:CLR.danger)+
+    bar('Leak-Free Score',Math.max(0,100-res.leakPct),res.leakPct<10?CLR.success:res.leakPct<20?CLR.warn:CLR.danger);
+
+  // Scenario deltas
+  const fmt=v=>v>1000?'$'+(v/1000).toFixed(1)+'k/yr':'$'+v.toFixed(0)+'/yr';
+  document.getElementById('scn-leaks').textContent    =fmt(res.totalLeaks*spec*hrs*rate);
+  document.getElementById('scn-pressure').textContent =fmt(totPwr*0.05*hrs*rate);
+  document.getElementById('scn-vsd').textContent      =fmt(totPwr*0.15*hrs*rate);
+  document.getElementById('scn-heat').textContent     =fmt(totPwr*0.7*0.05*hrs*rate);
+  document.getElementById('scn-night').textContent    =fmt(annCost*0.25);
+
+  updateSummary();
+}
+
+function bar(lbl,val,clr){
+  return `<div class="eff-bar-wrap"><div class="eff-bar-label"><span>${lbl}</span><span style="color:${clr};font-family:monospace">${val.toFixed(1)}%</span></div><div class="eff-bar-track"><div class="eff-bar-fill" style="width:${Math.min(100,val)}%;background:${clr}"></div></div></div>`;
+}
+
+// ═══════════════════════════════════════════
+// SCENARIOS
+// ═══════════════════════════════════════════
+function runScenario(type) {
+  const rate=parseFloat(document.getElementById('elec-rate')?.value||0.10);
+  const hrs =parseFloat(document.getElementById('hours-year')?.value||6000);
+  const spec=parseFloat(document.getElementById('specific-power')?.value||0.20);
+  const comps=nodes.filter(n=>n.type==='compressor');
+  const leaks=nodes.filter(n=>n.type==='leak');
+  const pwr =comps.reduce((s,n)=>s+(n.props.power||0),0);
+  const lkF =leaks.reduce((s,n)=>s+(n.props.flowRate||0),0);
+  const cost=pwr*hrs*rate;
+  let title,details;
+  if(type==='fix_leaks'){const sav=lkF*spec*hrs*rate;const pb=sav>0?(500*leaks.length)/sav:0;title='Fix All Leaks';details=[`Leak flow eliminated: ${lkF.toFixed(1)} scfm`,`Energy savings: ${(lkF*spec).toFixed(2)} kW`,`Annual savings: $${sav.toFixed(0)}`,`Repair cost est.: $${(500*leaks.length).toFixed(0)}`,`Payback: ${pb>0?pb.toFixed(1)+' yr':'N/A'}`];}
+  else if(type==='reduce_pressure'){const sav=pwr*hrs*rate*0.05;title='Reduce Header Pressure 10 psi';details=['~0.5% power saved per 1 psi',`Annual savings: $${sav.toFixed(0)}`,'Check all end-use pressures first'];}
+  else if(type==='vsd'){const sav=pwr*hrs*rate*0.15;const pb=sav>0?(pwr*800)/sav:0;title='Variable Speed Drive';details=[`Estimated savings: $${sav.toFixed(0)}/yr`,`Capital est.: $${(pwr*800).toFixed(0)}`,`Payback: ${pb.toFixed(1)} yr`];}
+  else if(type==='heat_recovery'){const sav=pwr*0.7*0.05*hrs*rate;title='Heat Recovery';details=[`Recoverable: ~${(pwr*0.7).toFixed(1)} kW`,`Credit: ~$${sav.toFixed(0)}/yr`,'Install: $2k-$8k per unit'];}
+  else if(type==='night_off'){const sav=cost*0.25;title='Shut Down Nights & Weekends';details=[`Annual savings: $${sav.toFixed(0)}`,'Requires timer or BAS','Add receivers for start-up spikes'];}
+  document.getElementById('scenarioResults').innerHTML=`<div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:12px"><div style="font-size:12px;font-weight:600;margin-bottom:8px">${title}</div>${details.map(d=>`<div style="font-size:11px;color:var(--text2);margin-bottom:4px;display:flex;gap:6px"><span style="color:${CLR.accent}">+</span><span>${d}</span></div>`).join('')}</div>`;
+}
+
+// ═══════════════════════════════════════════
+// TABS
+// ═══════════════════════════════════════════
+function setTab(tab){
+  currentTab=tab;
+  document.querySelectorAll('.tab').forEach((t,i)=>t.classList.toggle('active',['design','analysis','scenarios'][i]===tab));
+  document.getElementById('panelDesign').style.display   =tab==='design'   ?'':'none';
+  document.getElementById('panelAnalysis').style.display =tab==='analysis' ?'':'none';
+  document.getElementById('panelScenarios').style.display=tab==='scenarios'?'':'none';
+  if((tab==='analysis'||tab==='scenarios')&&nodes.length) runAnalysis();
+}
+
+// ═══════════════════════════════════════════
+// CLEAR / EXAMPLE
+// ═══════════════════════════════════════════
+function clearAll(){
+  if(nodes.length&&!confirm('Clear all components?')) return;
+  nodes=[]; connections=[];
+  document.getElementById('nodesContainer').innerHTML='';
+  selectNode(null); selectConn(null);
+  ctx.clearRect(0,0,canvas.width/DPR,canvas.height/DPR);
+  updateSummary();
+  document.getElementById('emptyState').style.display='';
+  analysisRan=false;
+}
+
+function loadExample(){
+  clearAll();
+  setTimeout(()=>{
+    addNode('compressor', 60, 60);
+    addNode('compressor', 60, 210);
+    addNode('dryer',      250, 135);
+    addNode('lineloss',   390, 95);
+    addNode('filter',     490, 135);
+    addNode('receiver',   640, 60);
+    addNode('load',       640, 210);
+    addNode('load',       640, 330);
+    addNode('leak',       490, 300);
+    addNode('lineloss',   570, 210);
+
+    nodes[0].props={name:'Compressor 1',flowRate:100,pressure:125,power:25,efficiency:92,load:75};
+    nodes[1].props={name:'Compressor 2',flowRate:80, pressure:125,power:20,efficiency:90,load:60};
+    nodes[2].props={name:'Refrigerated Dryer',flowRate:180,pressureDrop:2,power:2,dewPoint:-40};
+    nodes[3].props={name:'Line Loss',ratedDp:1.5,ratedFlow:180,measured:false}; // header run
+    nodes[4].props={name:'Coalescing Filter', flowRate:180,pressureDrop:1,micronRating:5};
+    nodes[5].props={name:'Main Receiver',     volume:240,maxPressure:150,workingPressure:120};
+    nodes[6].props={name:'Pneumatic Tools',   flowRate:50,pressure:90,dutyCycle:80};
+    nodes[7].props={name:'Automation Line',   flowRate:30,pressure:80,dutyCycle:60};
+    nodes[8].props={name:'Fitting Leak',      flowRate:8, pressure:100};
+    nodes[9].props={name:'Line Loss',ratedDp:0.8,ratedFlow:80,measured:false}; // branch run
+
+    document.getElementById('nodesContainer').innerHTML='';
+    nodes.forEach(renderNode);
+
+    setTimeout(()=>{
+      connections=[
+        {id:'c1',from:'n1',to:'n3',_actualFlow:0,_capFlow:0},
+        {id:'c2',from:'n2',to:'n3',_actualFlow:0,_capFlow:0},
+        {id:'c3',from:'n3',to:'n4',_actualFlow:0,_capFlow:0},
+        {id:'c4',from:'n4',to:'n5',_actualFlow:0,_capFlow:0},
+        {id:'c5',from:'n5',to:'n6',_actualFlow:0,_capFlow:0},
+        {id:'c6',from:'n6',to:'n10',_actualFlow:0,_capFlow:0},
+        {id:'c7',from:'n10',to:'n7',_actualFlow:0,_capFlow:0},
+        {id:'c8',from:'n6',to:'n8',_actualFlow:0,_capFlow:0},
+        {id:'c9',from:'n5',to:'n9',_actualFlow:0,_capFlow:0},
+      ];
+      renderConnections();
+      updateSummary();
+      runAnalysis();
+    },60);
+  },10);
+}
+
+window.addEventListener('resize', renderConnections);
+updateSummary();
+</script>
+</body>
+</html>
