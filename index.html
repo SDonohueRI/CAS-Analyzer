@@ -81,6 +81,35 @@
   #reportOverlay.open{display:flex;}
   #reportFrame{background:#fff;border-radius:8px;width:90vw;max-width:900px;height:88vh;overflow-y:auto;padding:40px;color:#222;font-family:Arial,sans-serif;}
   @media print{body *{visibility:hidden;}#reportFrame,#reportFrame *{visibility:visible;}#reportFrame{position:fixed;inset:0;height:auto;border-radius:0;}}
+  /* Guide & Methods panels */
+  .ref-panel{padding:0;overflow-y:auto;flex:1;}
+  .ref-section{padding:14px 16px;border-bottom:1px solid var(--border);}
+  .ref-section:last-child{border-bottom:none;}
+  .ref-h1{font-size:15px;font-weight:700;color:var(--text);margin-bottom:4px;}
+  .ref-h2{font-size:12px;font-weight:600;color:var(--accent);margin:12px 0 6px;font-family:'IBM Plex Mono',monospace;text-transform:uppercase;letter-spacing:.5px;}
+  .ref-h3{font-size:11px;font-weight:600;color:var(--text);margin:10px 0 4px;}
+  .ref-p{font-size:11px;color:var(--text2);line-height:1.7;margin-bottom:6px;}
+  .ref-step{display:flex;gap:10px;margin-bottom:8px;font-size:11px;}
+  .ref-step-num{width:20px;height:20px;border-radius:50%;background:var(--accent);color:#000;font-weight:700;font-size:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:1px;}
+  .ref-step-body{flex:1;color:var(--text2);line-height:1.6;}
+  .ref-step-body strong{color:var(--text);}
+  .ref-link{color:var(--accent2);cursor:pointer;text-decoration:underline;font-size:10px;font-family:'IBM Plex Mono',monospace;white-space:nowrap;}
+  .ref-link:hover{color:var(--accent);}
+  .ref-tip{background:rgba(0,212,170,.06);border-left:3px solid var(--accent);padding:6px 10px;border-radius:0 4px 4px 0;font-size:11px;color:var(--text2);margin:6px 0;line-height:1.6;}
+  .ref-warn{background:rgba(240,169,58,.06);border-left:3px solid var(--warn);padding:6px 10px;border-radius:0 4px 4px 0;font-size:11px;color:var(--text2);margin:6px 0;line-height:1.6;}
+  /* Methods modal */
+  #methodsModal{display:none;position:fixed;inset:0;z-index:3000;background:rgba(0,0,0,.6);align-items:center;justify-content:center;}
+  #methodsModal.open{display:flex;}
+  #methodsModalBox{background:var(--surface);border:1px solid var(--border2);border-radius:10px;width:min(680px,92vw);max-height:80vh;overflow-y:auto;padding:20px 24px;}
+  .meth-title{font-size:14px;font-weight:700;color:var(--text);margin-bottom:4px;font-family:'IBM Plex Mono',monospace;}
+  .meth-purpose{font-size:11px;color:var(--text2);margin-bottom:10px;line-height:1.6;}
+  .meth-label{font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.8px;margin:10px 0 4px;font-family:'IBM Plex Mono',monospace;}
+  .meth-eq{background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:10px 14px;font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--accent);line-height:1.8;margin-bottom:8px;}
+  .meth-vars{font-size:11px;color:var(--text2);line-height:1.9;}
+  .meth-vars span{color:var(--accent2);font-family:'IBM Plex Mono',monospace;}
+  .meth-assume{font-size:11px;color:var(--text2);line-height:1.7;}
+  .meth-ref{font-size:10px;color:var(--text3);margin-top:10px;padding-top:8px;border-top:1px solid var(--border);line-height:1.6;}
+  .meth-close{float:right;background:none;border:none;color:var(--text2);cursor:pointer;font-size:16px;margin-left:8px;}
   /* Compact lineloss node */
   .node-compact{min-width:0;width:88px;}
   .node-compact .node-header{padding:5px 7px 4px;gap:5px;}
@@ -195,6 +224,8 @@
     <div class="tab active" onclick="setTab('design')">System Design</div>
     <div class="tab" onclick="setTab('analysis')">Energy Analysis</div>
     <div class="tab" onclick="setTab('scenarios')">Scenarios</div>
+    <div class="tab" onclick="setTab('guide')">Guide</div>
+    <div class="tab" onclick="setTab('methods')">Methods</div>
   </div>
   <div class="header-right">
     <button class="btn" onclick="clearAll()">Clear</button>
@@ -316,7 +347,259 @@
       </div>
     </div>
 
-    <!-- Analysis tab -->
+    <!-- Guide tab -->
+    <div id="panelGuide" class="ref-panel" style="display:none">
+      <div class="ref-section">
+        <div class="ref-h1">How to Use CAS&#183;Analyzer</div>
+        <div class="ref-p">A step-by-step guide to building, analyzing, and optimizing a compressed air system model.</div>
+      </div>
+
+      <div class="ref-section">
+        <div class="ref-h2">1 &#8212; Build Your System</div>
+        <div class="ref-step"><div class="ref-step-num">1</div><div class="ref-step-body"><strong>Drag components</strong> from the left palette onto the canvas. Start with your compressors, then add treatment equipment (dryer, filter, receiver) in flow order, then loads and leaks.</div></div>
+        <div class="ref-step"><div class="ref-step-num">2</div><div class="ref-step-body"><strong>Connect components</strong> by dragging from a green output port to a gray input port. Air flows left-to-right by convention. Double-click a connection to delete it.</div></div>
+        <div class="ref-step"><div class="ref-step-num">3</div><div class="ref-step-body"><strong>Click any component</strong> to select it and edit its properties in this panel. Enter CAGI data sheet values for compressors — rated capacity, package input power, rated pressure, and operating pressure.</div></div>
+        <div class="ref-step"><div class="ref-step-num">4</div><div class="ref-step-body"><strong>Add Line Loss nodes</strong> in series to model distribution pressure drops. Add <strong>Regulator</strong> nodes to define pressure zones. Add <strong>Drain</strong> nodes near receivers, dryers, and filters to model condensate removal losses.</div></div>
+        <div class="ref-tip">Tip: Set Site Conditions (climate zone, elevation) first — they affect compressor capacity correction and moisture analysis throughout.</div>
+      </div>
+
+      <div class="ref-section">
+        <div class="ref-h2">2 &#8212; Run the Analysis</div>
+        <div class="ref-step"><div class="ref-step-num">1</div><div class="ref-step-body"><strong>Click &#9654; Analyze</strong> in the header. The engine stages compressors against system demand, propagates flows through the topology, and computes path pressures. <span class="ref-link" onclick="showMethod('staging')">see: Staging Logic</span></div></div>
+        <div class="ref-step"><div class="ref-step-num">2</div><div class="ref-step-body"><strong>Review the flow balance</strong> in Energy Analysis. Each compressor shows its computed load fraction — this is a result, not an input. If supply exceeds identified demand, the difference is flagged as unaccounted demand (hidden leaks, unmapped loads). <span class="ref-link" onclick="showMethod('flowBalance')">see: Flow Balance</span></div></div>
+        <div class="ref-step"><div class="ref-step-num">3</div><div class="ref-step-body"><strong>Check Path Pressure Analysis</strong>. Every source&#8594;sink path shows delivered pressure vs required pressure with a margin indicator. Red paths mean a load may be starved. <span class="ref-link" onclick="showMethod('pathPressure')">see: Path Pressure Drop</span></div></div>
+        <div class="ref-step"><div class="ref-step-num">4</div><div class="ref-step-body"><strong>Toggle Pressure Zone colour</strong> (Analysis tab) to visualize where pressure is being spent across the system. Blue = high pressure, orange = low pressure.</div></div>
+        <div class="ref-step"><div class="ref-step-num">5</div><div class="ref-step-body"><strong>Review Pressure Reduction Opportunity</strong>. The tool finds the minimum header pressure that satisfies all loads and quantifies the energy savings available per psi of reduction. <span class="ref-link" onclick="showMethod('pressureReduction')">see: Pressure Reduction Analysis</span></div></div>
+        <div class="ref-step"><div class="ref-step-num">6</div><div class="ref-step-body"><strong>Review Moisture &amp; Drains</strong>. Condensate load at the aftercooler, dryer effectiveness, condensation risk downstream, and annual drain air loss cost. <span class="ref-link" onclick="showMethod('moisture')">see: Moisture Model</span></div></div>
+      </div>
+
+      <div class="ref-section">
+        <div class="ref-h2">3 &#8212; Compressor Inputs Explained</div>
+        <div class="ref-h3">CAGI Rated Pressure vs Operating Pressure</div>
+        <div class="ref-p">These are two distinct values. <strong>CAGI Rated Pressure</strong> is the discharge pressure printed on the data sheet — the condition under which rated flow and power were measured. <strong>Operating Pressure</strong> is the actual controller setpoint your system runs at. Most systems run 10–20 psi below the CAGI rated pressure. The tool corrects power for the difference using isentropic scaling. <span class="ref-link" onclick="showMethod('isentropicScale')">see: Isentropic Pressure Correction</span></div>
+        <div class="ref-h3">Staging Priority</div>
+        <div class="ref-p">Priority 1 = base load unit (fills demand first, runs at highest load fraction). Priority 2 = first trim unit, and so on. The staging engine fills demand from the lowest priority number upward. A warning appears if any unit's computed load fraction falls below its minimum stable load threshold. <span class="ref-link" onclick="showMethod('staging')">see: Staging Logic</span></div>
+        <div class="ref-h3">Control Type</div>
+        <div class="ref-p"><strong>Load/Unload (L/U):</strong> cycles between full load and unload power. Efficient at high loads, wasteful at part load. <strong>Modulating:</strong> throttles inlet valve — power stays high even at low flow. <strong>VSD:</strong> varies motor speed to match demand — power drops near-cubically with flow reduction. <span class="ref-link" onclick="showMethod('partLoad')">see: Part-Load Power Curves</span></div>
+        <div class="ref-warn">Load fraction is always computed from system demand — you cannot enter it directly. To force a specific operating point, adjust loads until the staging engine produces the desired result.</div>
+      </div>
+
+      <div class="ref-section">
+        <div class="ref-h2">4 &#8212; Pressure Zones &amp; Regulators</div>
+        <div class="ref-p">A <strong>Regulator</strong> node drops pressure to a fixed setpoint for a downstream zone. It passes full downstream demand flow with no restriction, provided upstream pressure exceeds the setpoint plus upstream margin (default 10 psi). If upstream pressure is insufficient, a "droop" warning fires.</div>
+        <div class="ref-p">Use regulators to protect low-pressure loads while running the header at a higher pressure for loads that need it — or to unlock header pressure reduction by isolating the one load that needs higher pressure.</div>
+        <div class="ref-tip">Tip: After adding regulators, re-run Analyze and check the Pressure Reduction Opportunity panel. Regulators at high-pressure loads often allow significant header pressure reduction.</div>
+      </div>
+
+      <div class="ref-section">
+        <div class="ref-h2">5 &#8212; 8760 Annual Simulation</div>
+        <div class="ref-step"><div class="ref-step-num">1</div><div class="ref-step-body"><strong>Open the simulation</strong> from the Scenarios tab. Define schedules — which compressors and loads are on during each shift. Compressor schedules are on/off per block; load schedules gate whether a load is active (duty cycle still applies when on).</div></div>
+        <div class="ref-step"><div class="ref-step-num">2</div><div class="ref-step-body"><strong>Assign equipment to schedules</strong> in the Equipment Assignment panel. All compressors default to Compressor Schedule 1; all loads to Load Schedule 1.</div></div>
+        <div class="ref-step"><div class="ref-step-num">3</div><div class="ref-step-body"><strong>Duplicate Pre&#8594;Post</strong> to create the post-improvement case. Modify component properties in the Post Case tab (e.g. set leak flow to zero, change a compressor's operating pressure, swap a timer drain to zero-loss). Modified fields are highlighted in amber.</div></div>
+        <div class="ref-step"><div class="ref-step-num">4</div><div class="ref-step-body"><strong>Run Simulation</strong> to compute all 8,760 hours. Results show annual energy (MWh), peak demand (kW), supply volume (Mscf), leak loss, average pressure, and specific energy (kWh/kscf). Pre and Post are compared side-by-side. <span class="ref-link" onclick="showMethod('sim8760')">see: 8760 Simulation Method</span></div></div>
+        <div class="ref-step"><div class="ref-step-num">5</div><div class="ref-step-body"><strong>Download CSV</strong> for the full 8,760-row hourly dataset for external analysis in Excel or other tools.</div></div>
+      </div>
+
+      <div class="ref-section">
+        <div class="ref-h2">6 &#8212; Reports</div>
+        <div class="ref-p">Generate reports from the Scenarios tab. <strong>Management Summary</strong> is a one-page executive report with headline numbers and top recommendations. <strong>Engineering Report</strong> includes full component inventory, flow balance table, path pressure analysis, and energy summary. Use the browser Print function (Ctrl+P / Cmd+P) to save as PDF.</div>
+      </div>
+    </div>
+
+    <!-- Methods tab -->
+    <div id="panelMethods" class="ref-panel" style="display:none">
+      <div class="ref-section">
+        <div class="ref-h1">Methods &amp; Calculations</div>
+        <div class="ref-p">Technical reference for all calculations performed by CAS&#183;Analyzer. Click any section to expand. Links in the Guide tab open the relevant section directly.</div>
+      </div>
+
+      <div class="ref-section" id="meth-siteCorr">
+        <div class="ref-h2">M1 &#8212; Site Correction Factor</div>
+        <div class="ref-p">Adjusts compressor rated flow capacity for site conditions (elevation, temperature) relative to CAGI standard test conditions.</div>
+        <div class="meth-label">Equation</div>
+        <div class="meth-eq">corr = (P_site / P_ref) &#215; &#8730;(T_ref / T_site)</div>
+        <div class="meth-vars">
+          <span>P_site</span> = site ambient pressure (psia)<br>
+          <span>P_ref</span>  = CAGI rated inlet pressure (psia, from data sheet)<br>
+          <span>T_ref</span>  = CAGI rated inlet temperature (&#176;R = &#176;F + 459.67)<br>
+          <span>T_site</span> = site ambient temperature (&#176;R)
+        </div>
+        <div class="meth-label">Application</div>
+        <div class="meth-assume">Applied to rated flow only: actual_flow = rated_flow &#215; corr &#215; load_fraction. Not applied to power — power is determined by isentropic work at the operating pressure ratio and load fraction, independent of inlet density.</div>
+        <div class="meth-label">Assumptions</div>
+        <div class="meth-assume">Inlet density scales linearly with pressure and inversely with the square root of absolute temperature (ideal gas). Compressor volumetric efficiency is constant across the site condition range.</div>
+        <div class="meth-ref">Reference: ISO 1217:2009 Displacement Compressors &#8212; Acceptance Tests, Annex C (Site condition correction).</div>
+      </div>
+
+      <div class="ref-section" id="meth-isentropicScale">
+        <div class="ref-h2">M2 &#8212; Isentropic Pressure Correction</div>
+        <div class="ref-p">Corrects compressor package input power for operation at a discharge pressure different from the CAGI rated test pressure.</div>
+        <div class="meth-label">Equation</div>
+        <div class="meth-eq">scale = [(P_op / P_in)^K &#8722; 1] / [(P_rated / P_in)^K &#8722; 1]<br><br>actual_power = rated_power &#215; scale &#215; part_load_factor<br><br>K = (k&#8722;1)/k = 0.286 &nbsp;&nbsp;(k = 1.4 for dry air)</div>
+        <div class="meth-vars">
+          <span>P_op</span>    = operating discharge pressure (psia = gauge + 14.696)<br>
+          <span>P_rated</span> = CAGI rated discharge pressure (psia)<br>
+          <span>P_in</span>    = CAGI rated inlet pressure (psia, typically 14.696)<br>
+          <span>k</span>       = ratio of specific heats for dry air (1.4)
+        </div>
+        <div class="meth-label">Pressure Reduction Savings</div>
+        <div class="meth-eq">savings_per_psi = rated_power &#215; PLF &#215; K &#215; (P_op/P_in)^(K&#8722;1) / [P_in &#215; iso_rated] &#215; hours &#215; rate</div>
+        <div class="meth-assume">This is the analytical derivative d(power)/d(P_op) evaluated at the current operating point — more accurate than the rule-of-thumb 0.5%/psi approximation, particularly at lower pressures.</div>
+        <div class="meth-label">Assumptions</div>
+        <div class="meth-assume">Isentropic compression with dry air (k constant at 1.4). Package mechanical and motor efficiency constant across the operating pressure range. Valid for operating pressures within &#177;30% of rated.</div>
+        <div class="meth-ref">Reference: ISO 1217:2009; Compressed Air Challenge &#8212; Fundamentals of Compressed Air Systems (2016), Section 3.</div>
+      </div>
+
+      <div class="ref-section" id="meth-partLoad">
+        <div class="ref-h2">M3 &#8212; Part-Load Power Curves</div>
+        <div class="ref-p">Models the relationship between compressor load fraction and power consumption for each control strategy.</div>
+        <div class="meth-label">Load/Unload (L/U)</div>
+        <div class="meth-eq">PLF = f &#215; 1.0 + (1&#8722;f) &#215; p_ul<br><br>f = load fraction (0&#8211;1) &nbsp;&nbsp; p_ul = unload power fraction (default 0.20)</div>
+        <div class="meth-assume">The compressor cycles between full-load power and unload power. At 50% average load with 20% unload power, PLF = 0.5&#215;1.0 + 0.5&#215;0.20 = 0.60. Unload power represents the power consumed running unloaded (compressing to atmosphere, no useful output).</div>
+        <div class="meth-label">Modulating (Inlet Throttle)</div>
+        <div class="meth-eq">PLF = 0.30 + 0.70 &#215; f</div>
+        <div class="meth-assume">Inlet modulation throttles the inlet valve to reduce flow. Power does not drop proportionally — the machine still turns at full speed. At 50% load, PLF = 0.65 (65% of rated power for 50% of rated flow).</div>
+        <div class="meth-label">Variable Speed Drive (VSD)</div>
+        <div class="meth-eq">PLF = f ^ 1.3</div>
+        <div class="meth-assume">VSD reduces motor speed to match demand. Power drops near-cubically. At 50% load, PLF = 0.5^1.3 &#8776; 0.41 (41% of rated power). Exponent 1.3 reflects real-world rotary screw performance (theoretical cubic applies to ideal fans, not compressors with fixed pressure ratio).</div>
+        <div class="meth-label">Minimum Stable Load Defaults</div>
+        <div class="meth-assume">L/U: 30% &#8226; Modulating: 40% &#8226; VSD: 20%. Below these thresholds a staging warning is issued. User-adjustable per machine.</div>
+        <div class="meth-ref">Reference: Compressed Air Challenge &#8212; Advanced Management of Compressed Air Systems (2016); CAGI Data Sheet methodology.</div>
+      </div>
+
+      <div class="ref-section" id="meth-staging">
+        <div class="ref-h2">M4 &#8212; Compressor Staging Logic</div>
+        <div class="ref-p">Determines each compressor&#39;s operating load fraction from system demand using priority-based staging. Load fraction is a computed result, not a user input.</div>
+        <div class="meth-label">Algorithm</div>
+        <div class="meth-eq">1. total_demand = load_demand + leak_flow + drain_loss<br>2. Sort online compressors by staging priority (1 = base load)<br>3. For each unit in order:<br>   if remaining &ge; rated_cap: unit runs at 100%, remaining -= rated_cap<br>   else: unit is trim unit, load_frac = remaining / rated_cap, remaining = 0<br>4. Units beyond demand: L/U stays at unload power; VSD/MOD go to zero</div>
+        <div class="meth-label">Unaccounted Demand</div>
+        <div class="meth-assume">When total staged supply exceeds identified demand + leaks + drains, the difference is reported as unaccounted demand. This indicates unmapped loads, unreported leaks, purge/blow-off points, or other consumption not modelled in the diagram.</div>
+        <div class="meth-label">Minimum Stable Load Warning</div>
+        <div class="meth-assume">If a trim unit&#39;s computed load fraction falls below its minimum stable load threshold, a warning is issued suggesting the unit be staged off. This prevents modelling unrealistic operating points.</div>
+        <div class="meth-ref">Reference: Compressed Air Challenge &#8212; Best Practices for Compressed Air Systems, Chapter 7 (Compressor Controls and Control Strategies).</div>
+      </div>
+
+      <div class="ref-section" id="meth-flowBalance">
+        <div class="ref-h2">M5 &#8212; Flow Balance &amp; Topology Engine</div>
+        <div class="ref-p">Propagates actual flow and capacity through the system diagram using a directed acyclic graph (DAG) traversal.</div>
+        <div class="meth-label">Topology Validation</div>
+        <div class="meth-assume">A depth-first search (DFS) with node colouring (white/gray/black) detects cycles before analysis. Ring mains are not supported — the tool requires a tree or DAG topology.</div>
+        <div class="meth-label">Attributed Demand (Reverse Pass)</div>
+        <div class="meth-eq">At each merge node: attr[conn] = total_demand_at_node &#215; cap[conn] / total_cap_into_node</div>
+        <div class="meth-assume">A reverse topological pass attributes downstream demand back to each upstream connector proportional to its capacity fraction. This ensures each compressor is assigned the portion of demand it is responsible for based on its relative rated capacity at merge points.</div>
+        <div class="meth-label">Forward Flow Pass</div>
+        <div class="meth-eq">flow[conn] = nodeActualOut[from] &#215; attr[conn] / total_attr_leaving_from</div>
+        <div class="meth-assume">Actual flow on each connector is the upstream node&#39;s actual output multiplied by the attributed demand fraction. This correctly handles parallel sources (compressors merging), parallel loads (loads splitting), and mixed topologies.</div>
+        <div class="meth-ref">Reference: Standard graph theory — topological sort (Kahn&#39;s algorithm); Hardy-Cross network analysis principles applied to DAG topology.</div>
+      </div>
+
+      <div class="ref-section" id="meth-pathPressure">
+        <div class="ref-h2">M6 &#8212; Path Pressure Drop</div>
+        <div class="ref-p">Computes the pressure delivered at each load by summing losses along each source&#8594;sink path through treatment equipment, line losses, and regulators.</div>
+        <div class="meth-label">Component Pressure Drop (Treatment Equipment)</div>
+        <div class="meth-eq">dP_actual = dP_rated &#215; (Q_actual / Q_rated)&#178;</div>
+        <div class="meth-vars">
+          <span>dP_rated</span> = rated pressure drop from component data (psi)<br>
+          <span>Q_rated</span>  = rated flow capacity of component (scfm)<br>
+          <span>Q_actual</span> = actual flow through component at operating point (scfm)
+        </div>
+        <div class="meth-assume">Pressure drop through filters, dryers, and similar devices scales with the square of flow velocity (Darcy-Weisbach regime). At part-load, actual dP is significantly lower than rated dP.</div>
+        <div class="meth-label">Line Loss (Flow-Scaled)</div>
+        <div class="meth-eq">dP_actual = dP_rated &#215; (Q_actual / Q_rated)&#178;</div>
+        <div class="meth-assume">Same quadratic scaling as treatment equipment. Represents pipe friction losses, fittings, and distribution system losses. Measured mode applies a fixed dP regardless of flow.</div>
+        <div class="meth-label">Regulator</div>
+        <div class="meth-eq">dP = P_upstream &#8722; P_setpoint &nbsp;&nbsp;(when P_upstream &gt; P_setpoint + P_margin)</div>
+        <div class="meth-assume">A pressure regulator maintains downstream pressure at its setpoint regardless of upstream pressure variation, provided upstream exceeds setpoint plus minimum upstream margin. No flow restriction in normal operation. Below the margin threshold, a droop warning is issued.</div>
+        <div class="meth-label">Pressure Margin</div>
+        <div class="meth-eq">margin = P_delivered &#8722; P_required &ge; 0 (required for adequate supply)</div>
+        <div class="meth-ref">Reference: ISO 6358 (pneumatic flow through components); Compressed Air Challenge &#8212; Best Practices, Chapter 5 (Distribution Systems).</div>
+      </div>
+
+      <div class="ref-section" id="meth-pressureReduction">
+        <div class="ref-h2">M7 &#8212; Pressure Reduction Opportunity</div>
+        <div class="ref-p">Identifies the minimum header pressure that satisfies all loads and quantifies energy savings from reducing operating pressure.</div>
+        <div class="meth-label">Minimum Required Header Pressure</div>
+        <div class="meth-eq">P_min = max over all load paths of (P_required_load + sum(dP along path))</div>
+        <div class="meth-assume">The binding constraint is the load with the highest sum of required pressure plus path losses. All other loads have margin. Reducing header pressure below P_min starves the binding load.</div>
+        <div class="meth-label">Savings per psi (Isentropic Derivative)</div>
+        <div class="meth-eq">d(Power)/d(P_op) = rated_power &#215; PLF &#215; K &#215; (P_op/P_in)^(K&#8722;1) / [P_in &#215; iso_rated_term]</div>
+        <div class="meth-assume">This is the analytical derivative of the isentropic scaling factor with respect to operating pressure, evaluated at the current operating point. More accurate than the commonly cited 0.5%/psi rule of thumb, particularly at pressures significantly above or below the CAGI rated pressure.</div>
+        <div class="meth-ref">Reference: Compressed Air Challenge &#8212; Fundamentals, Module 5; ISO 1217:2009.</div>
+      </div>
+
+      <div class="ref-section" id="meth-moisture">
+        <div class="ref-h2">M8 &#8212; Moisture &amp; Condensate Model</div>
+        <div class="ref-p">Simplified psychrometric model for condensate load estimation and condensation risk assessment.</div>
+        <div class="meth-label">Saturation Pressure (Antoine Equation)</div>
+        <div class="meth-eq">ln(P_sat_Pa) = 16.3872 &#8722; 3885.70 / (T_K &#8722; 43.64)<br>P_sat_psia = P_sat_Pa &#215; 0.000145038</div>
+        <div class="meth-vars">
+          <span>T_K</span> = temperature in Kelvin = (&#176;F &#8722; 32) &#215; 5/9 + 273.15
+        </div>
+        <div class="meth-label">Humidity Ratio</div>
+        <div class="meth-eq">W = 0.622 &#215; P_w / (P_total &#8722; P_w)<br>P_w = (RH/100) &#215; P_sat</div>
+        <div class="meth-vars">
+          <span>W</span>       = humidity ratio (lb water / lb dry air)<br>
+          <span>P_w</span>     = partial pressure of water vapour (psia)<br>
+          <span>P_total</span> = total air pressure (psia)
+        </div>
+        <div class="meth-label">Aftercooler Condensate Rate</div>
+        <div class="meth-eq">condensate = (W_inlet &#8722; W_aftercooler_sat) &#215; 0.075 &#215; 60 &#215; 0.12 &nbsp;(gal/hr per scfm)</div>
+        <div class="meth-assume">Air density at standard conditions &#8776; 0.075 lb/scf. 1 lb water = 0.12 gal. Aftercooler outlet assumed saturated at aftercooler outlet temperature. Moisture removed = difference in humidity ratios.</div>
+        <div class="meth-label">Condensation Risk (Downstream of Dryer)</div>
+        <div class="meth-assume">Risk is assessed by comparing ambient pipe temperature (assumed equal to ambient air temperature) to the pressure dewpoint of the air leaving the dryer. LOW: ambient > PDP + 15&#176;F. MEDIUM: ambient > PDP. HIGH: ambient &#8804; PDP (condensation likely in distribution piping).</div>
+        <div class="meth-ref">Reference: ASHRAE Fundamentals Handbook (2021), Chapter 1 (Psychrometrics); Compressed Air Challenge &#8212; Best Practices, Chapter 6 (Air Treatment).</div>
+      </div>
+
+      <div class="ref-section" id="meth-drains">
+        <div class="ref-h2">M9 &#8212; Drain Air Loss Model</div>
+        <div class="ref-p">Quantifies compressed air wasted through condensate drains using subcritical orifice flow.</div>
+        <div class="meth-label">Orifice Flow Equation</div>
+        <div class="meth-eq">Q = 0.65 &#215; &#960;/4 &#215; d&#178; &#215; P_gauge &#215; 0.0685 &nbsp;(scfm)</div>
+        <div class="meth-vars">
+          <span>d</span>       = orifice diameter (inches)<br>
+          <span>P_gauge</span> = line gauge pressure (psig)<br>
+          <span>0.65</span>    = discharge coefficient (C_d) for sharp-edged orifice<br>
+          <span>0.0685</span>  = empirical constant for air at standard conditions (subcritical flow)
+        </div>
+        <div class="meth-label">Timer Drain</div>
+        <div class="meth-eq">Q_avg = Q_orifice &#215; (t_on / t_cycle)</div>
+        <div class="meth-assume">Air is wasted during the open interval regardless of condensate level. t_on = on-time per cycle (seconds). t_cycle = total cycle time (seconds).</div>
+        <div class="meth-label">Float/Mechanical Drain</div>
+        <div class="meth-assume">Normal condition: zero air waste (opens only when condensate is present). Failed-open condition: equivalent to timer drain at 100% duty cycle — continuous air loss at full orifice flow.</div>
+        <div class="meth-label">Manual Drain</div>
+        <div class="meth-eq">Q_avg = Q_orifice &#215; (opens_per_day &#215; duration_min) / 1440</div>
+        <div class="meth-ref">Reference: Compressed Air Challenge &#8212; Best Practices, Chapter 6; Parker Hannifin &#8212; Compressed Air Treatment Engineering Handbook.</div>
+      </div>
+
+      <div class="ref-section" id="meth-sim8760">
+        <div class="ref-h2">M10 &#8212; 8760 Annual Simulation</div>
+        <div class="ref-p">Simulates compressed air system performance for all 8,760 hours of a calendar year by applying schedules, staging compressors against hourly demand, and aggregating results.</div>
+        <div class="meth-label">Calendar Construction</div>
+        <div class="meth-assume">Each hour is classified by day of week (Mon&#8211;Sun) and whether it falls on a US federal holiday. Federal holidays are computed algorithmically using the standard rules (e.g. MLK Day = 3rd Monday of January, Thanksgiving = 4th Thursday of November, observed dates shift for weekend holidays).</div>
+        <div class="meth-label">Schedule Application</div>
+        <div class="meth-eq">compressor: on/off based on schedule block covering this hour<br>load demand: Q_load &#215; duty_cycle% &nbsp;&nbsp;(when load schedule = on, else 0)</div>
+        <div class="meth-assume">Compressor schedules are strictly on/off — load fraction is determined by the staging engine from demand, not by the schedule. Load schedules gate whether a load is active; duty cycle applies when active.</div>
+        <div class="meth-label">Hourly Calculation</div>
+        <div class="meth-eq">For each hour:<br>1. Sum load demand + leak flow (if any compressor on) + drain losses<br>2. Stage online compressors against total demand (M4)<br>3. Compute system kW = compressor power + dryer power<br>4. Heat rejection = compressor shaft power &#215; 0.85<br>5. Delivered pressure = operating pressure &#8722; path losses at actual flow</div>
+        <div class="meth-label">Annual Aggregations</div>
+        <div class="meth-eq">Energy (MWh) = &#931; system_kW &#247; 1000<br>Supply volume (Mscf) = &#931; supply_scfm &#215; 60 &#247; 1000<br>Spec. energy (kWh/kscf) = total_kWh / (total_scf / 1000)</div>
+        <div class="meth-assume">Heat rejection coefficient of 0.85 is a typical value for air-cooled rotary screw packages (85% of shaft power rejected as heat; ~15% in compressed air). Specific energy (kWh/kscf) is the primary annual efficiency metric — lower is better.</div>
+        <div class="meth-ref">Reference: Compressed Air Challenge &#8212; Advanced Management; ENERGY STAR Compressed Air System Assessment Protocol.</div>
+      </div>
+
+      <div class="ref-section" id="meth-energy">
+        <div class="ref-h2">M11 &#8212; Energy &amp; Cost Calculations</div>
+        <div class="meth-label">Annual Energy Cost</div>
+        <div class="meth-eq">cost = total_kW &#215; operating_hours &#215; electricity_rate</div>
+        <div class="meth-label">Specific Package Power</div>
+        <div class="meth-eq">SPP = actual_power (kW) / (actual_flow / 100) &nbsp;&nbsp;[kW per 100 scfm]</div>
+        <div class="meth-assume">SPP is the primary CAGI efficiency metric. Lower is better. Typical rotary screw values at 100 psi: 14&#8211;18 kW/100 scfm at full load. SPP increases at part load for L/U and modulating types; decreases for VSD below ~70% load.</div>
+        <div class="meth-label">System Productive Efficiency</div>
+        <div class="meth-eq">efficiency = productive_demand_scfm / total_supply_scfm &#215; 100%</div>
+        <div class="meth-assume">Productive demand excludes leaks and drain losses. A well-optimized system targets &gt;85% productive efficiency. Values below 75% indicate significant waste streams.</div>
+        <div class="meth-ref">Reference: CAGI Data Sheet standard; Compressed Air Challenge &#8212; Fundamentals, Module 2.</div>
+      </div>
+    </div>
     <div id="panelAnalysis" style="display:none">
       <div class="panel-section">
         <div class="panel-title">Colour Mode</div>
@@ -2035,11 +2318,43 @@ function runScenario(type) {
 // ═══════════════════════════════════════════
 function setTab(tab){
   currentTab=tab;
-  document.querySelectorAll('.tab').forEach((t,i)=>t.classList.toggle('active',['design','analysis','scenarios'][i]===tab));
+  document.querySelectorAll('.header-tabs .tab').forEach((t,i)=>
+    t.classList.toggle('active',['design','analysis','scenarios','guide','methods'][i]===tab));
   document.getElementById('panelDesign').style.display   =tab==='design'   ?'':'none';
   document.getElementById('panelAnalysis').style.display =tab==='analysis' ?'':'none';
   document.getElementById('panelScenarios').style.display=tab==='scenarios'?'':'none';
+  document.getElementById('panelGuide').style.display    =tab==='guide'    ?'':'none';
+  document.getElementById('panelMethods').style.display  =tab==='methods'  ?'':'none';
   if((tab==='analysis'||tab==='scenarios')&&nodes.length) runAnalysis();
+}
+
+// Methods sections keyed by id for the modal
+const METHODS_MAP = {
+  siteCorr:         'meth-siteCorr',
+  isentropicScale:  'meth-isentropicScale',
+  partLoad:         'meth-partLoad',
+  staging:          'meth-staging',
+  flowBalance:      'meth-flowBalance',
+  pathPressure:     'meth-pathPressure',
+  pressureReduction:'meth-pressureReduction',
+  moisture:         'meth-moisture',
+  drains:           'meth-drains',
+  sim8760:          'meth-sim8760',
+  energy:           'meth-energy',
+};
+
+function showMethod(key) {
+  const sectionId = METHODS_MAP[key];
+  if (!sectionId) return;
+  const el = document.getElementById(sectionId);
+  if (!el) return;
+  // Clone the section content into the modal
+  document.getElementById('methodsModalContent').innerHTML = el.innerHTML;
+  document.getElementById('methodsModal').classList.add('open');
+}
+
+function closeMethodsModal() {
+  document.getElementById('methodsModal').classList.remove('open');
 }
 
 // ═══════════════════════════════════════════
@@ -3271,6 +3586,14 @@ document.getElementById('canvasArea').addEventListener('drop',     _onDrop);
 updateSummary();
 
 </script>
+<!-- ═══════ METHODS MODAL ═══════ -->
+<div id="methodsModal" onclick="if(event.target===this)closeMethodsModal()">
+  <div id="methodsModalBox">
+    <button class="meth-close" onclick="closeMethodsModal()">&#10005;</button>
+    <div id="methodsModalContent"></div>
+  </div>
+</div>
+
 <!-- ═══════ REPORT OVERLAY ═══════ -->
 <div id="reportOverlay" onclick="if(event.target===this)closeReport()">
   <div id="reportFrame">
