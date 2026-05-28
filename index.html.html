@@ -1,0 +1,3376 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Compressed Air System Analyzer</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap');
+  :root {
+    --bg:#0d1117;--surface:#161b22;--surface2:#1c2330;--surface3:#21262d;
+    --border:#30363d;--border2:#444c56;--text:#e6edf3;--text2:#8b949e;--text3:#6e7681;
+    --accent:#00d4aa;--accent2:#0096ff;--warn:#f0a93a;--danger:#f85149;
+    --success:#3fb950;--purple:#bc8cff;--pink:#ff7b72;
+    --comp-compressor:#1a3a4a;--comp-compressor-b:#00d4aa;
+    --comp-dryer:#2a1a3a;--comp-dryer-b:#bc8cff;
+    --comp-filter:#1a2a3a;--comp-filter-b:#0096ff;
+    --comp-receiver:#2a3a1a;--comp-receiver-b:#3fb950;
+    --comp-load:#3a2a1a;--comp-load-b:#f0a93a;
+    --comp-leak:#3a1a1a;--comp-leak-b:#f85149;
+    --comp-lineloss:#1e2a1e;--comp-lineloss-b:#8b949e;
+    --comp-regulator:#3a2e10;--comp-regulator-b:#e8b84b;
+    --comp-drain:#102030;--comp-drain-b:#5dade2;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{background:var(--bg);color:var(--text);font-family:'IBM Plex Sans',sans-serif;font-size:13px;height:100vh;display:flex;flex-direction:column;overflow:hidden;}
+  .header{display:flex;align-items:center;padding:0 16px;height:48px;background:var(--surface);border-bottom:1px solid var(--border);gap:16px;flex-shrink:0;}
+  .header-logo{font-family:'IBM Plex Mono',monospace;font-weight:600;font-size:14px;color:var(--accent);letter-spacing:-0.5px;}
+  .header-logo span{color:var(--text2);font-weight:400;}
+  .header-sep{width:1px;height:24px;background:var(--border);}
+  .header-tabs{display:flex;gap:2px;}
+  .tab{padding:5px 12px;border-radius:6px;cursor:pointer;color:var(--text2);font-size:12px;font-weight:500;transition:all .15s;border:1px solid transparent;}
+  .tab:hover{background:var(--surface3);color:var(--text);}
+  .tab.active{background:var(--surface3);color:var(--text);border-color:var(--border);}
+  .header-right{margin-left:auto;display:flex;gap:8px;align-items:center;}
+  .btn{padding:5px 12px;border-radius:6px;border:1px solid var(--border);background:var(--surface3);color:var(--text);font-size:12px;font-family:inherit;cursor:pointer;transition:all .15s;font-weight:500;}
+  .btn:hover{border-color:var(--border2);background:var(--surface2);}
+  .btn.primary{background:var(--accent);color:#000;border-color:var(--accent);}
+  .btn.primary:hover{filter:brightness(1.1);}
+  .btn.danger-btn{border-color:var(--danger);color:var(--danger);}
+  .btn.danger-btn:hover{background:rgba(248,81,73,.1);}
+  .main{display:flex;flex:1;overflow:hidden;}
+  .palette{width:180px;background:var(--surface);border-right:1px solid var(--border);overflow-y:auto;flex-shrink:0;display:flex;flex-direction:column;}
+  .palette-section{padding:10px 12px 6px;}
+  .palette-label{font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;}
+  .palette-item{display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:6px;border:1px solid var(--border);margin-bottom:4px;cursor:grab;transition:all .15s;background:var(--surface2);user-select:none;}
+  .palette-item:hover{border-color:var(--border2);transform:translateX(2px);}
+  .palette-item:active{cursor:grabbing;}
+  .pi-icon{width:24px;height:24px;border-radius:5px;display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0;}
+  .pi-label{font-size:12px;font-weight:500;}
+  .pi-compressor .pi-icon{background:var(--comp-compressor);border:1px solid var(--comp-compressor-b);color:var(--comp-compressor-b);}
+  .pi-dryer .pi-icon{background:var(--comp-dryer);border:1px solid var(--comp-dryer-b);color:var(--comp-dryer-b);}
+  .pi-filter .pi-icon{background:var(--comp-filter);border:1px solid var(--comp-filter-b);color:var(--comp-filter-b);}
+  .pi-receiver .pi-icon{background:var(--comp-receiver);border:1px solid var(--comp-receiver-b);color:var(--comp-receiver-b);}
+  .pi-load .pi-icon{background:var(--comp-load);border:1px solid var(--comp-load-b);color:var(--comp-load-b);}
+  .pi-leak .pi-icon{background:var(--comp-leak);border:1px solid var(--comp-leak-b);color:var(--comp-leak-b);}
+  .pi-lineloss .pi-icon{background:var(--comp-lineloss);border:1px solid var(--comp-lineloss-b);color:var(--comp-lineloss-b);}
+  .pi-regulator .pi-icon{background:var(--comp-regulator);border:1px solid var(--comp-regulator-b);color:var(--comp-regulator-b);}
+  .pi-drain .pi-icon{background:var(--comp-drain);border:1px solid var(--comp-drain-b);color:var(--comp-drain-b);}
+  /* Pressure zone colour bar on node */
+  .node-pressure-bar{height:3px;border-radius:0 0 7px 7px;transition:background .3s;}
+  /* Colour-mode toggle */
+  .colour-toggle{display:flex;gap:4px;margin-bottom:8px;}
+  .colour-toggle-btn{flex:1;padding:4px 0;font-size:10px;font-family:inherit;background:var(--surface3);color:var(--text2);border:1px solid var(--border);border-radius:5px;cursor:pointer;transition:all .15s;}
+  .colour-toggle-btn.active{color:var(--text);border-color:var(--border2);}
+  /* Drain dashed connector on canvas (drawn via canvas 2D) */
+  .drain-satellite{position:absolute;cursor:move;user-select:none;z-index:12;}
+  /* Pressure analysis table */
+  .press-table{width:100%;border-collapse:collapse;font-size:11px;margin-top:6px;}
+  .press-table th{text-align:left;padding:4px 6px;color:var(--text3);font-weight:500;border-bottom:1px solid var(--border);font-family:'IBM Plex Mono',monospace;font-size:10px;}
+  .press-table td{padding:4px 6px;border-bottom:1px solid rgba(48,54,61,.4);}
+  .press-table tr:last-child td{border-bottom:none;}
+  /* Restaging scenario card */
+  .restage-card{background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:8px 10px;margin-bottom:6px;}
+  .restage-card-title{font-size:11px;font-weight:600;margin-bottom:4px;display:flex;justify-content:space-between;align-items:center;}
+  /* Tooltip */
+  .tooltip-wrap{position:relative;display:inline-block;}
+  .tooltip-wrap:hover .tooltip-box{display:block;}
+  .tooltip-box{display:none;position:absolute;bottom:120%;left:50%;transform:translateX(-50%);background:var(--surface);border:1px solid var(--border2);border-radius:5px;padding:5px 8px;font-size:10px;color:var(--text2);white-space:nowrap;z-index:100;pointer-events:none;line-height:1.5;max-width:200px;white-space:normal;text-align:center;}
+  /* Report overlay */
+  #reportOverlay{display:none;position:fixed;inset:0;z-index:2000;background:rgba(0,0,0,.7);align-items:center;justify-content:center;}
+  #reportOverlay.open{display:flex;}
+  #reportFrame{background:#fff;border-radius:8px;width:90vw;max-width:900px;height:88vh;overflow-y:auto;padding:40px;color:#222;font-family:Arial,sans-serif;}
+  @media print{body *{visibility:hidden;}#reportFrame,#reportFrame *{visibility:visible;}#reportFrame{position:fixed;inset:0;height:auto;border-radius:0;}}
+  /* Compact lineloss node */
+  .node-compact{min-width:0;width:88px;}
+  .node-compact .node-header{padding:5px 7px 4px;gap:5px;}
+  .node-compact .node-icon{width:16px;height:16px;font-size:10px;border-radius:3px;}
+  .node-compact .node-name{font-size:10px;}
+  .node-compact .node-body{padding:3px 7px 2px;}
+  .node-compact .node-metric{font-size:10px;margin-bottom:1px;}
+  .node-compact .node-ports{padding:0 4px 4px;}
+  .node-compact .port{width:10px;height:10px;}
+  /* Mode toggle button in panel */
+  .mode-toggle{display:flex;border:1px solid var(--border);border-radius:6px;overflow:hidden;margin-bottom:12px;}
+  .mode-toggle-btn{flex:1;padding:5px 0;font-size:11px;font-family:inherit;background:transparent;color:var(--text2);border:none;cursor:pointer;transition:all .15s;font-weight:500;}
+  .mode-toggle-btn.active{background:var(--surface3);color:var(--text);}
+  .mode-toggle-btn:first-child{border-right:1px solid var(--border);}
+  .mode-note{font-size:10px;color:var(--text3);line-height:1.5;margin-top:6px;padding:6px 8px;background:var(--surface2);border-radius:5px;}
+  /* Control type badge on node */
+  .ctrl-badge{display:inline-block;padding:1px 5px;border-radius:3px;font-size:9px;font-family:'IBM Plex Mono',monospace;font-weight:600;margin-left:4px;vertical-align:middle;}
+  .ctrl-lu  {background:rgba(0,150,255,.15);color:#0096ff;}
+  .ctrl-mod {background:rgba(240,169,58,.15);color:#f0a93a;}
+  .ctrl-vsd {background:rgba(0,212,170,.15);color:#00d4aa;}
+  /* Read-only computed display field */
+  .prop-computed{width:90px;padding:4px 8px;background:var(--surface2);border:1px solid var(--border);border-radius:5px;color:var(--accent);font-size:12px;font-family:'IBM Plex Mono',monospace;text-align:right;}
+  /* Section divider inside property panel */
+  .prop-divider{font-family:'IBM Plex Mono',monospace;font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.8px;margin:10px 0 6px;padding-bottom:4px;border-bottom:1px solid var(--border);}
+  /* Ambient condition note */
+  .ambient-note{font-size:10px;color:var(--text3);line-height:1.5;padding:5px 7px;background:var(--surface2);border-radius:5px;margin-bottom:6px;}
+  /* Canvas area */
+  .canvas-area{flex:1;position:relative;overflow:hidden;background:radial-gradient(circle at 50% 50%,rgba(0,212,170,.03) 0%,transparent 60%),var(--bg);}
+  .canvas-grid{position:absolute;inset:0;background-image:linear-gradient(var(--border) 1px,transparent 1px),linear-gradient(90deg,var(--border) 1px,transparent 1px);background-size:40px 40px;opacity:.3;pointer-events:none;}
+  /* Canvas 2D layer for connections - sits below nodes */
+  #connCanvas{position:absolute;inset:0;z-index:5;cursor:default;}
+  /* Pending line SVG - pointer-events none, sits above canvas, below nodes */
+  #pendingSvg{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:8;}
+  /* Nodes sit above both */
+  #nodesContainer{position:absolute;inset:0;z-index:10;}
+  /* Node styles */
+  .node{position:absolute;border-radius:8px;border:1px solid var(--border);background:var(--surface);min-width:130px;cursor:move;user-select:none;transition:box-shadow .15s,border-color .15s;}
+  .node:hover{border-color:var(--border2);box-shadow:0 4px 20px rgba(0,0,0,.4);}
+  .node.selected{border-color:var(--accent)!important;box-shadow:0 0 0 2px rgba(0,212,170,.15),0 4px 20px rgba(0,0,0,.4);}
+  .node-header{display:flex;align-items:center;gap:8px;padding:8px 10px 6px;border-bottom:1px solid var(--border);}
+  .node-icon{width:22px;height:22px;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:12px;flex-shrink:0;}
+  .node-name{font-size:11px;font-weight:600;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .node-body{padding:7px 10px;}
+  .node-metric{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:3px;font-size:11px;}
+  .node-metric-label{color:var(--text2);}
+  .node-metric-value{font-family:'IBM Plex Mono',monospace;font-weight:500;font-size:11px;}
+  .node-ports{display:flex;justify-content:space-between;padding:0 6px 6px;}
+  .port{width:12px;height:12px;border-radius:50%;border:2px solid var(--border2);background:var(--surface2);cursor:crosshair;transition:all .1s;position:relative;}
+  .port:hover{transform:scale(1.4);}
+  .port.output{background:var(--accent);border-color:var(--accent);}
+  .port-label{position:absolute;font-size:9px;color:var(--text3);white-space:nowrap;top:-14px;left:50%;transform:translateX(-50%);}
+  /* Right panel */
+  .panel{width:270px;background:var(--surface);border-left:1px solid var(--border);overflow-y:auto;flex-shrink:0;display:flex;flex-direction:column;}
+  .panel-section{padding:12px 14px;border-bottom:1px solid var(--border);}
+  .panel-title{font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.8px;margin-bottom:12px;display:flex;align-items:center;gap:6px;}
+  .panel-title::after{content:'';flex:1;height:1px;background:var(--border);}
+  .prop-row{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;gap:8px;}
+  .prop-label{font-size:12px;color:var(--text2);flex:1;}
+  .prop-input{width:90px;padding:4px 8px;background:var(--surface3);border:1px solid var(--border);border-radius:5px;color:var(--text);font-size:12px;font-family:'IBM Plex Mono',monospace;text-align:right;transition:border-color .1s;}
+  .prop-input:focus{outline:none;border-color:var(--accent);}
+  .prop-unit{font-size:11px;color:var(--text3);min-width:32px;}
+  .metrics-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
+  .metric-card{background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px 10px 8px;}
+  .metric-card-label{font-size:10px;color:var(--text3);margin-bottom:4px;}
+  .metric-card-value{font-family:'IBM Plex Mono',monospace;font-size:18px;font-weight:600;line-height:1;margin-bottom:2px;}
+  .metric-card-sub{font-size:10px;color:var(--text2);}
+  .metric-card.good .metric-card-value{color:var(--success);}
+  .metric-card.warn .metric-card-value{color:var(--warn);}
+  .metric-card.bad  .metric-card-value{color:var(--danger);}
+  .metric-card.info .metric-card-value{color:var(--accent2);}
+  .eff-bar-wrap{margin-top:8px;}
+  .eff-bar-label{display:flex;justify-content:space-between;font-size:11px;margin-bottom:4px;}
+  .eff-bar-label span:first-child{color:var(--text2);}
+  .eff-bar-track{height:6px;background:var(--surface3);border-radius:3px;overflow:hidden;}
+  .eff-bar-fill{height:100%;border-radius:3px;transition:width .4s ease;}
+  .flow-row{display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid rgba(48,54,61,.5);}
+  .flow-row:last-child{border-bottom:none;}
+  .flow-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;}
+  .flow-name{flex:1;font-size:11px;color:var(--text2);}
+  .flow-val{font-family:'IBM Plex Mono',monospace;font-size:11px;}
+  .scenario-btn{display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-size:12px;font-family:inherit;cursor:pointer;width:100%;margin-bottom:5px;transition:all .15s;text-align:left;}
+  .scenario-btn:hover{border-color:var(--border2);background:var(--surface3);}
+  .scenario-btn .scn-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;}
+  .scenario-btn .scn-label{flex:1;}
+  .scenario-btn .scn-delta{font-family:'IBM Plex Mono',monospace;font-size:11px;}
+  .alert{display:flex;gap:8px;padding:8px 10px;border-radius:6px;border:1px solid;margin-bottom:6px;font-size:11px;line-height:1.4;}
+  .alert-warn{background:rgba(240,169,58,.08);border-color:rgba(240,169,58,.3);color:var(--warn);}
+  .alert-ok  {background:rgba(63,185,80,.08); border-color:rgba(63,185,80,.3); color:var(--success);}
+  .alert-info{background:rgba(0,150,255,.08); border-color:rgba(0,150,255,.3); color:var(--accent2);}
+  .alert-err {background:rgba(248,81,73,.08); border-color:rgba(248,81,73,.3); color:var(--danger);}
+  .alert-icon{flex-shrink:0;font-size:13px;margin-top:1px;}
+  .empty-state{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;pointer-events:none;opacity:.4;z-index:1;}
+  .empty-icon{font-size:48px;margin-bottom:12px;}
+  .empty-text{font-size:13px;color:var(--text2);text-align:center;line-height:1.6;}
+  .path-row{background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:8px 10px;margin-bottom:6px;font-size:11px;}
+  .path-row-title{font-weight:600;margin-bottom:4px;color:var(--text);display:flex;justify-content:space-between;}
+  .path-row-detail{color:var(--text2);margin-bottom:2px;display:flex;justify-content:space-between;}
+  .path-row-detail span:last-child{font-family:'IBM Plex Mono',monospace;color:var(--text);}
+  .pipe-props{background:rgba(0,150,255,.06);border:1px solid rgba(0,150,255,.2);border-radius:6px;padding:10px;margin-bottom:8px;}
+  .pipe-props-title{font-size:11px;color:var(--accent2);font-weight:600;margin-bottom:8px;}
+  ::-webkit-scrollbar{width:6px;}
+  ::-webkit-scrollbar-track{background:transparent;}
+  ::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px;}
+  ::-webkit-scrollbar-thumb:hover{background:var(--border2);}
+</style>
+</head>
+<body>
+<div class="header">
+  <div class="header-logo">CAS<span>·Analyzer</span></div>
+  <div class="header-sep"></div>
+  <div class="header-tabs">
+    <div class="tab active" onclick="setTab('design')">System Design</div>
+    <div class="tab" onclick="setTab('analysis')">Energy Analysis</div>
+    <div class="tab" onclick="setTab('scenarios')">Scenarios</div>
+  </div>
+  <div class="header-right">
+    <button class="btn" onclick="clearAll()">Clear</button>
+    <button class="btn" onclick="loadExample()">Load Example</button>
+    <button class="btn primary" onclick="runAnalysis()">&#9654; Analyze</button>
+  </div>
+</div>
+
+<div class="main">
+  <!-- Left palette -->
+  <div class="palette">
+    <div class="palette-section">
+      <div class="palette-label">Supply</div>
+      <div class="palette-item pi-compressor" draggable="true" ondragstart="startDrag(event,'compressor')"><div class="pi-icon">&#9881;</div><div class="pi-label">Compressor</div></div>
+      <div class="palette-item pi-dryer"      draggable="true" ondragstart="startDrag(event,'dryer')"     ><div class="pi-icon">&#10052;</div><div class="pi-label">Dryer</div></div>
+      <div class="palette-item pi-filter"     draggable="true" ondragstart="startDrag(event,'filter')"    ><div class="pi-icon">&#9635;</div><div class="pi-label">Filter</div></div>
+      <div class="palette-item pi-receiver"   draggable="true" ondragstart="startDrag(event,'receiver')"  ><div class="pi-icon">&#9677;</div><div class="pi-label">Receiver</div></div>
+    </div>
+    <div class="palette-section">
+      <div class="palette-label">Demand</div>
+      <div class="palette-item pi-load" draggable="true" ondragstart="startDrag(event,'load')"><div class="pi-icon">&#9889;</div><div class="pi-label">Load / Tool</div></div>
+      <div class="palette-item pi-leak" draggable="true" ondragstart="startDrag(event,'leak')"><div class="pi-icon">&#9888;</div><div class="pi-label">Leak Point</div></div>
+    </div>
+    <div class="palette-section">
+      <div class="palette-label">Losses</div>
+      <div class="palette-item pi-lineloss"  draggable="true" ondragstart="startDrag(event,'lineloss')"><div class="pi-icon">&#9660;</div><div class="pi-label">Line Loss</div></div>
+      <div class="palette-item pi-regulator" draggable="true" ondragstart="startDrag(event,'regulator')"><div class="pi-icon">&#9681;</div><div class="pi-label">Regulator</div></div>
+      <div class="palette-item pi-drain"     draggable="true" ondragstart="startDrag(event,'drain')"><div class="pi-icon">&#9650;</div><div class="pi-label">Drain</div></div>
+    </div>
+    <div class="palette-section" style="margin-top:auto;">
+      <div class="palette-label">Tips</div>
+      <div style="font-size:11px;color:var(--text3);line-height:1.7;">
+        Drag components onto canvas.<br>
+        Click node to select &amp; edit.<br>
+        Drag green port &#8594; gray port to connect.<br>
+        <strong style="color:var(--text2)">Drain</strong> nodes connect to host node with a dashed line.<br>
+        <strong style="color:var(--text2)">Double-click</strong> a connection to delete it.
+      </div>
+    </div>
+  </div>
+
+  <!-- Canvas area -->
+  <div class="canvas-area" id="canvasArea">
+    <div class="canvas-grid"></div>
+    <!-- Canvas 2D for connections (z-index 5) -->
+    <canvas id="connCanvas"></canvas>
+    <!-- SVG for pending connection line only (pointer-events:none) -->
+    <svg id="pendingSvg">
+      <defs>
+        <marker id="arr-pending" markerWidth="8" markerHeight="6" refX="6" refY="3" orient="auto">
+          <polygon points="0 0,8 3,0 6" fill="#00d4aa"/>
+        </marker>
+      </defs>
+      <path id="pendingPath" fill="none" stroke="#00d4aa" stroke-width="1.5"
+            stroke-dasharray="5 3" marker-end="url(#arr-pending)" d=""/>
+    </svg>
+    <!-- Node HTML divs (z-index 10) -->
+    <div id="nodesContainer"></div>
+    <div class="empty-state" id="emptyState">
+      <div class="empty-icon">&#127744;</div>
+      <div class="empty-text">Drag components from the palette<br>to build your compressed air system</div>
+    </div>
+  </div>
+
+  <!-- Right panel -->
+  <div class="panel">
+    <div id="panelDesign">
+      <!-- Connection editor - select to delete only -->
+      <div class="panel-section" id="connEditor" style="display:none">
+        <div class="panel-title">Connection</div>
+        <div style="font-size:11px;color:var(--text2);margin-bottom:12px;line-height:1.6;">Connection selected. To model pressure losses on this segment, insert a <strong style="color:var(--text)">Line Loss</strong> element in series.</div>
+        <button class="btn danger-btn" style="width:100%" onclick="deleteSelectedConn()">Delete Connection</button>
+      </div>
+      <!-- Node property editor -->
+      <div class="panel-section" id="propEditor" style="display:none">
+        <div class="panel-title">Properties</div>
+        <div id="propFields"></div>
+        <button class="btn danger-btn" style="width:100%;margin-top:8px" onclick="deleteSelected()">Delete Component</button>
+      </div>
+      <!-- No-selection summary -->
+      <div class="panel-section" id="noSelection">
+        <div class="panel-title">System Summary</div>
+        <div class="metrics-grid">
+          <div class="metric-card info"><div class="metric-card-label">Components</div><div class="metric-card-value" id="m-components">0</div><div class="metric-card-sub">on canvas</div></div>
+          <div class="metric-card info"><div class="metric-card-label">Connections</div><div class="metric-card-value" id="m-connections">0</div><div class="metric-card-sub">total</div></div>
+          <div class="metric-card good"><div class="metric-card-label">Total Supply</div><div class="metric-card-value" id="m-supply">0</div><div class="metric-card-sub">scfm</div></div>
+          <div class="metric-card warn"><div class="metric-card-label">Total Demand</div><div class="metric-card-value" id="m-demand">0</div><div class="metric-card-sub">scfm</div></div>
+        </div>
+      </div>
+      <div class="panel-section" id="alertsSection">
+        <div class="panel-title">Alerts</div>
+        <div id="alertsList"><div class="alert alert-info"><div class="alert-icon">i</div><div>Add components and click Analyze.</div></div></div>
+      </div>
+      <!-- Site Conditions — always visible in Design tab -->
+      <div class="panel-section">
+        <div class="panel-title">Site Conditions</div>
+        <div class="ambient-note">Affects compressor capacity correction and moisture analysis.</div>
+        <div class="prop-row">
+          <span class="prop-label">Climate zone</span>
+          <select id="climate-zone" onchange="applyClimateZone()" style="font-size:11px;padding:3px 5px;background:var(--surface3);border:1px solid var(--border);border-radius:5px;color:var(--text);width:100px">
+            <option value="custom">Custom</option>
+            <option value="1">1 – Very Hot Humid</option>
+            <option value="2">2 – Hot Humid</option>
+            <option value="3A" selected>3A – Warm Humid</option>
+            <option value="3B">3B – Warm Dry</option>
+            <option value="4A">4A – Mixed Humid</option>
+            <option value="4B">4B – Mixed Dry</option>
+            <option value="5">5 – Cool</option>
+            <option value="6">6 – Cold</option>
+            <option value="7">7 – Very Cold</option>
+            <option value="8">8 – Subarctic</option>
+          </select>
+          <span class="prop-unit"></span>
+        </div>
+        <div class="prop-row"><span class="prop-label">Ambient pressure</span><input class="prop-input" type="number" id="amb-pressure" value="14.696" step="0.1" onchange="runAnalysis()"><span class="prop-unit">psia</span></div>
+        <div class="prop-row"><span class="prop-label">Ambient temp</span><input class="prop-input" type="number" id="amb-temp" value="59" step="1" onchange="runAnalysis()"><span class="prop-unit">°F</span></div>
+        <div class="prop-row"><span class="prop-label">Relative humidity</span><input class="prop-input" type="number" id="amb-rh" value="60" step="1" min="0" max="100" onchange="runAnalysis()"><span class="prop-unit">%</span></div>
+        <div class="prop-row"><span class="prop-label">Aftercooler outlet</span><input class="prop-input" type="number" id="aftercooler-temp" value="100" step="1" onchange="runAnalysis()"><span class="prop-unit">°F</span></div>
+      </div>
+    </div>
+
+    <!-- Analysis tab -->
+    <div id="panelAnalysis" style="display:none">
+      <div class="panel-section">
+        <div class="panel-title">Colour Mode</div>
+        <div class="colour-toggle">
+          <button class="colour-toggle-btn active" id="clrBtn-flow"     onclick="setColourMode('flow')">Flow Util.</button>
+          <button class="colour-toggle-btn"         id="clrBtn-pressure" onclick="setColourMode('pressure')">Pressure Zone</button>
+        </div>
+      </div>
+      <div class="panel-section">
+        <div class="panel-title">Energy Summary</div>
+        <div class="metrics-grid">
+          <div class="metric-card info"><div class="metric-card-label">Installed Power</div><div class="metric-card-value" id="a-power">--</div><div class="metric-card-sub">kW total</div></div>
+          <div class="metric-card good"><div class="metric-card-label">Annual Cost</div><div class="metric-card-value" id="a-cost">--</div><div class="metric-card-sub">$/year est.</div></div>
+          <div class="metric-card warn"><div class="metric-card-label">Leak Waste</div><div class="metric-card-value" id="a-leak">--</div><div class="metric-card-sub">% of supply</div></div>
+          <div class="metric-card good"><div class="metric-card-label">System Eff.</div><div class="metric-card-value" id="a-eff">--</div><div class="metric-card-sub">%</div></div>
+        </div>
+      </div>
+      <div class="panel-section"><div class="panel-title">Flow Balance</div><div id="flowBalance"><div style="font-size:11px;color:var(--text3)">Run analysis to see flow data</div></div></div>
+      <div class="panel-section"><div class="panel-title">Path Pressure Analysis</div><div id="pathPressure"><div style="font-size:11px;color:var(--text3)">Run analysis to see per-path pressure data</div></div></div>
+      <div class="panel-section">
+        <div class="panel-title">Pressure Reduction Opportunity</div>
+        <div id="pressureOpp"><div style="font-size:11px;color:var(--text3)">Run analysis to see pressure reduction potential</div></div>
+      </div>
+      <div class="panel-section">
+        <div class="panel-title">Moisture &amp; Drains</div>
+        <div id="moisturePanel"><div style="font-size:11px;color:var(--text3)">Run analysis to see moisture analysis</div></div>
+      </div>
+      <div class="panel-section"><div class="panel-title">Efficiency</div><div id="effBars"><div style="font-size:11px;color:var(--text3)">Run analysis</div></div></div>
+    </div>
+
+    <!-- Scenarios tab -->
+    <div id="panelScenarios" style="display:none">
+      <div class="panel-section">
+        <div class="panel-title">What-If Scenarios</div>
+        <button class="scenario-btn" onclick="runScenario('fix_leaks')"><span class="scn-dot" style="background:var(--success)"></span><span class="scn-label">Fix All Leaks</span><span class="scn-delta" id="scn-leaks">--</span></button>
+        <button class="scenario-btn" onclick="runScenario('reduce_pressure')"><span class="scn-dot" style="background:var(--accent2)"></span><span class="scn-label">Reduce Pressure 10 psi</span><span class="scn-delta" id="scn-pressure">--</span></button>
+        <button class="scenario-btn" onclick="runScenario('vsd')"><span class="scn-dot" style="background:var(--purple)"></span><span class="scn-label">Add VSD Compressor</span><span class="scn-delta" id="scn-vsd">--</span></button>
+        <button class="scenario-btn" onclick="runScenario('heat_recovery')"><span class="scn-dot" style="background:var(--warn)"></span><span class="scn-label">Heat Recovery</span><span class="scn-delta" id="scn-heat">--</span></button>
+        <button class="scenario-btn" onclick="runScenario('night_off')"><span class="scn-dot" style="background:var(--pink)"></span><span class="scn-label">Shut Down Nights/Weekends</span><span class="scn-delta" id="scn-night">--</span></button>
+      </div>
+      <div class="panel-section">
+        <div class="panel-title">Annual Simulation</div>
+        <button class="btn primary" style="width:100%;margin-bottom:6px" onclick="open8760()">&#9654; Run 8760 Simulation</button>
+        <div style="font-size:11px;color:var(--text3);line-height:1.6">Full year hourly simulation with schedules, pre/post comparison, and CSV export.</div>
+      </div>
+      <div class="panel-section">
+        <div class="panel-title">Reports</div>
+        <button class="btn" style="width:100%;margin-bottom:6px" onclick="generateReport('management')">&#128196; Management Summary</button>
+        <button class="btn" style="width:100%;margin-bottom:6px" onclick="generateReport('engineering')">&#128196; Engineering Report</button>
+      </div>
+      <div class="panel-section">
+        <div class="panel-title">Settings</div>
+        <div class="prop-row"><span class="prop-label">Electricity rate</span><input class="prop-input" type="number" id="elec-rate" value="0.10" step="0.01" onchange="runAnalysis()"><span class="prop-unit">$/kWh</span></div>
+        <div class="prop-row"><span class="prop-label">Hours / year</span><input class="prop-input" type="number" id="hours-year" value="6000" step="100" onchange="runAnalysis()"><span class="prop-unit">hr</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════
+// CONSTANTS & COLOURS (resolved once)
+// ═══════════════════════════════════════════
+const CLR = {
+  bg:       '#0d1117', surface:  '#161b22', surface2: '#1c2330', surface3: '#21262d',
+  border:   '#30363d', border2:  '#444c56', text:     '#e6edf3', text2:    '#8b949e',
+  text3:    '#6e7681', accent:   '#00d4aa', accent2:  '#0096ff', warn:     '#f0a93a',
+  danger:   '#f85149', success:  '#3fb950', purple:   '#bc8cff',
+  compressor:'#00d4aa', dryer:'#bc8cff', filter:'#0096ff',
+  receiver: '#3fb950', load:'#f0a93a', leak:'#f85149', lineloss:'#8b949e',
+  regulator:'#e8b84b', drain:'#5dade2'
+};
+
+// ═══════════════════════════════════════════
+// STATE
+// ═══════════════════════════════════════════
+let nodes=[], connections=[], drainAttachments=[], selectedNode=null, selectedConn=null;
+// drainAttachments: [{drainNodeId, hostNodeId}] — drain satellite → host node
+let nodeCounter=0, draggingNode=null, dragOffset={x:0,y:0};
+let connectingPort=null, dragType=null, currentTab='design', analysisRan=false;
+// Canvas hover state for cursor changes
+let hoveredConnId=null;
+let colourMode='flow'; // 'flow' | 'pressure'
+// Per-connection pressure values stamped by analysis engine
+// connPressure[connId] = psi at that point in the system
+
+// ═══════════════════════════════════════════
+// CANVAS 2D SETUP
+// ═══════════════════════════════════════════
+const canvas = document.getElementById('connCanvas');
+const ctx    = canvas.getContext('2d');
+const DPR    = window.devicePixelRatio || 1;
+
+function resizeCanvas() {
+  const area = document.getElementById('canvasArea');
+  canvas.width  = area.clientWidth  * DPR;
+  canvas.height = area.clientHeight * DPR;
+  canvas.style.width  = area.clientWidth  + 'px';
+  canvas.style.height = area.clientHeight + 'px';
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0); // reset + scale in one call, no accumulation
+  renderConnections();
+}
+
+new ResizeObserver(resizeCanvas).observe(document.getElementById('canvasArea'));
+
+// ═══════════════════════════════════════════
+// COMPONENT DEFINITIONS
+// ═══════════════════════════════════════════
+const compDefs = {
+  compressor:{label:'Compressor',icon:'&#9881;',color:CLR.compressor,bgColor:'#1a3a4a',
+    defaultProps:{name:'Compressor',flowRate:100,pressure:125,power:25,efficiency:92,load:75,
+      controlType:'lu',
+      unloadPower:20,
+      stagingPriority:1,
+      minStableLoad:null,   // null = use control-type default
+      ratedInletPres:14.696,
+      ratedInletTemp:68,
+      operatingPressure:110
+    },
+    propLabels:{flowRate:['Rated Capacity','scfm'],pressure:['CAGI Rated Pressure','psi'],
+      operatingPressure:['Operating Pressure','psi'],
+      power:['Package Input Power','kW'],
+      stagingPriority:['Staging Priority','#']},
+    metrics:['flowRate','pressure','power']},
+  dryer:{label:'Dryer',icon:'&#10052;',color:CLR.dryer,bgColor:'#2a1a3a',
+    defaultProps:{name:'Dryer',flowRate:100,pressureDrop:2,power:1.5,dewPoint:-40},
+    propLabels:{flowRate:['Flow Capacity','scfm'],pressureDrop:['Rated dP','psi'],power:['Power Draw','kW'],dewPoint:['Dew Point','degF']},
+    metrics:['pressureDrop','dewPoint']},
+  filter:{label:'Filter',icon:'&#9635;',color:CLR.filter,bgColor:'#1a2a3a',
+    defaultProps:{name:'Filter',flowRate:100,pressureDrop:1,micronRating:5},
+    propLabels:{flowRate:['Flow Capacity','scfm'],pressureDrop:['Rated dP','psi'],micronRating:['Micron Rating','um']},
+    metrics:['pressureDrop']},
+  receiver:{label:'Receiver',icon:'&#9677;',color:CLR.receiver,bgColor:'#2a3a1a',
+    defaultProps:{name:'Receiver',volume:120,maxPressure:150,workingPressure:125},
+    propLabels:{volume:['Tank Volume','gal'],maxPressure:['Max Pressure','psi'],workingPressure:['Working Pressure','psi']},
+    metrics:['volume','workingPressure']},
+  load:{label:'Load',icon:'&#9889;',color:CLR.load,bgColor:'#3a2a1a',
+    defaultProps:{name:'Load',flowRate:20,pressure:90,dutyCycle:80},
+    propLabels:{flowRate:['Flow Demand','scfm'],pressure:['Required Pressure','psi'],dutyCycle:['Duty Cycle','%']},
+    metrics:['flowRate','pressure']},
+  leak:{label:'Leak Point',icon:'&#9888;',color:CLR.leak,bgColor:'#3a1a1a',
+    defaultProps:{name:'Leak',flowRate:5,pressure:100},
+    propLabels:{flowRate:['Leak Rate','scfm'],pressure:['Line Pressure','psi']},
+    metrics:['flowRate']},
+  lineloss:{label:'Line Loss',icon:'&#9660;',color:CLR.lineloss,bgColor:'#1e2a1e',
+    defaultProps:{name:'Line Loss',ratedDp:2,ratedFlow:100,measured:false},
+    propLabels:{ratedDp:['Rated dP','psi'],ratedFlow:['Rated Flow','scfm']},
+    metrics:['ratedDp']},
+  regulator:{label:'Regulator',icon:'&#9681;',color:CLR.regulator,bgColor:'#3a2e10',
+    defaultProps:{name:'Regulator',setPressure:90,flowCapacity:100,upstreamMargin:10},
+    propLabels:{setPressure:['Set Pressure','psi'],flowCapacity:['Flow Capacity','scfm'],upstreamMargin:['Upstream Margin','psi']},
+    metrics:['setPressure','flowCapacity']},
+  drain:{label:'Drain',icon:'&#9650;',color:CLR.drain,bgColor:'#102030',
+    defaultProps:{name:'Drain',drainType:'timer',orificeDia:0.25,onTime:5,cycleTime:300,condition:'normal',opensPerDay:4,openDuration:1},
+    propLabels:{orificeDia:['Orifice Dia.','in'],onTime:['On-time','sec'],cycleTime:['Cycle time','sec']},
+    metrics:[]}
+};
+
+// ═══════════════════════════════════════════
+// BEZIER HELPERS
+// ═══════════════════════════════════════════
+// Our cubic: M x1,y1  C cx,y1  cx,y2  x2,y2  (cx = midpoint x)
+function bezierPoint(t, x1,y1,x2,y2) {
+  const cx = (x1+x2)/2;
+  const mt = 1-t;
+  return {
+    x: mt*mt*mt*x1 + 3*mt*mt*t*cx + 3*mt*t*t*cx + t*t*t*x2,
+    y: mt*mt*mt*y1 + 3*mt*mt*t*y1 + 3*mt*t*t*y2 + t*t*t*y2
+  };
+}
+
+function bezierTangent(t, x1,y1,x2,y2) {
+  const cx = (x1+x2)/2;
+  const mt = 1-t;
+  // Derivative of cubic bezier
+  const dx = 3*(mt*mt*(cx-x1) + 2*mt*t*(cx-cx) + t*t*(x2-cx));
+  const dy = 3*(mt*mt*(y1-y1) + 2*mt*t*(y2-y1) + t*t*(y2-y2));
+  // Simplified for our symmetric control points:
+  // P0=(x1,y1) P1=(cx,y1) P2=(cx,y2) P3=(x2,y2)
+  const dxA = 3*(mt*mt*(cx-x1) + 2*mt*t*(cx-cx) + t*t*(x2-cx));
+  const dyA = 3*(mt*mt*(y1-y1) + 2*mt*t*(y2-y1) + t*t*(y2-y2));
+  return { x: dxA, y: dyA };
+}
+
+// Point-to-bezier distance (sample N steps)
+function distToBezier(px, py, x1,y1,x2,y2, steps=40) {
+  let minD = Infinity;
+  for (let i=0; i<=steps; i++) {
+    const p = bezierPoint(i/steps, x1,y1,x2,y2);
+    const d = Math.hypot(px-p.x, py-p.y);
+    if (d < minD) minD = d;
+  }
+  return minD;
+}
+
+// Draw arrowhead at end of bezier (t close to 1)
+function drawArrowhead(x2,y2,x1,y1, color, size=8) {
+  // approximate end tangent using near-end bezier points
+  const p1 = bezierPoint(0.95, x1,y1,x2,y2);
+  const angle = Math.atan2(y2-p1.y, x2-p1.x);
+  ctx.save();
+  ctx.translate(x2, y2);
+  ctx.rotate(angle);
+  ctx.beginPath();
+  ctx.moveTo(0, 0);
+  ctx.lineTo(-size, -size*0.4);
+  ctx.lineTo(-size, size*0.4);
+  ctx.closePath();
+  ctx.fillStyle = color;
+  ctx.fill();
+  ctx.restore();
+}
+
+// ═══════════════════════════════════════════
+// PORT POSITION HELPER
+// ═══════════════════════════════════════════
+function getPortXY(nodeId, portType) {
+  const el = document.getElementById(nodeId);
+  if (!el) return null;
+  const port = el.querySelector('.port.' + portType);
+  if (!port) return null;
+  const cRect = document.getElementById('canvasArea').getBoundingClientRect();
+  const pRect = port.getBoundingClientRect();
+  return { x: pRect.left + 6 - cRect.left, y: pRect.top + 6 - cRect.top };
+}
+
+// ═══════════════════════════════════════════
+// CANVAS 2D RENDER CONNECTIONS
+// ═══════════════════════════════════════════
+function renderConnections() {
+  const w = canvas.clientWidth  || canvas.width  / DPR;
+  const h = canvas.clientHeight || canvas.height / DPR;
+  ctx.clearRect(0, 0, w, h);
+
+  // Pressure zone colour: blue (high pressure) → orange (low pressure)
+  const pMin = window._pressureMin || 60;
+  const pMax = window._pressureMax || 130;
+  function pressureToColor(psi) {
+    const t = Math.max(0, Math.min(1, (psi - pMin) / (pMax - pMin)));
+    const r = Math.round((1-t)*240), g = Math.round(t*150+(1-t)*169), b = Math.round(t*255+(1-t)*58);
+    return `rgb(${Math.min(255,r)},${Math.min(255,g)},${Math.min(255,b)})`;
+  }
+
+  connections.forEach(conn => {
+    const p1 = getPortXY(conn.from, 'output');
+    const p2 = getPortXY(conn.to,   'input');
+    if (!p1 || !p2) return;
+    const x1=p1.x, y1=p1.y, x2=p2.x, y2=p2.y;
+    const cx=(x1+x2)/2, mx=(x1+x2)/2, my=(y1+y2)/2;
+    const actualFlow = conn._actualFlow || 0;
+    const capFlow    = conn._capFlow    || 0;
+    const isSelected = selectedConn && selectedConn.id === conn.id;
+    const isHovered  = hoveredConnId === conn.id;
+
+    let strokeColor = CLR.border2;
+    if (colourMode === 'pressure') {
+      strokeColor = pressureToColor(conn._pressure ?? pMax);
+    } else if (actualFlow > 0) {
+      const util = capFlow > 0 ? actualFlow/capFlow : 0;
+      strokeColor = util>0.9?CLR.danger:util>0.7?CLR.warn:CLR.accent;
+    }
+
+    if (isSelected) {
+      ctx.save(); ctx.beginPath(); ctx.moveTo(x1,y1);
+      ctx.bezierCurveTo(cx,y1,cx,y2,x2,y2);
+      ctx.strokeStyle=CLR.accent; ctx.lineWidth=8; ctx.globalAlpha=0.18; ctx.stroke(); ctx.restore();
+    } else if (isHovered) {
+      ctx.save(); ctx.beginPath(); ctx.moveTo(x1,y1);
+      ctx.bezierCurveTo(cx,y1,cx,y2,x2,y2);
+      ctx.strokeStyle=CLR.text2; ctx.lineWidth=6; ctx.globalAlpha=0.12; ctx.stroke(); ctx.restore();
+    }
+
+    ctx.save(); ctx.beginPath(); ctx.moveTo(x1,y1);
+    ctx.bezierCurveTo(cx,y1,cx,y2,x2,y2);
+    ctx.strokeStyle=isSelected?CLR.accent:strokeColor;
+    ctx.lineWidth=isSelected?2.5:1.5; ctx.globalAlpha=1;
+    if (!actualFlow&&!isSelected) ctx.setLineDash([4,3]);
+    ctx.stroke(); ctx.setLineDash([]); ctx.restore();
+    drawArrowhead(x2,y2,x1,y1,isSelected?CLR.accent:strokeColor);
+
+    if (actualFlow>0||capFlow>0) {
+      const lines=[];
+      if (actualFlow>0) lines.push({text:actualFlow.toFixed(1)+' scfm',color:strokeColor,size:11,bold:true});
+      if (capFlow>0&&Math.abs(capFlow-actualFlow)>0.5) lines.push({text:'cap: '+capFlow.toFixed(0),color:CLR.text3,size:10,bold:false});
+      if (colourMode==='pressure'&&conn._pressure!=null) lines.push({text:conn._pressure.toFixed(0)+' psi',color:pressureToColor(conn._pressure),size:10,bold:false});
+      if (lines.length>0) {
+        const lineH=14,padV=5,bh=lines.length*lineH+padV,bw=76;
+        const bx=mx-bw/2,by=my-bh/2;
+        ctx.save(); ctx.globalAlpha=0.95; ctx.fillStyle=CLR.surface;
+        roundRect(ctx,bx,by,bw,bh,4); ctx.fill();
+        ctx.strokeStyle=isSelected?CLR.accent:CLR.border; ctx.lineWidth=isSelected?1:0.5; ctx.stroke(); ctx.restore();
+        lines.forEach((ln,i)=>{
+          ctx.save(); ctx.globalAlpha=1; ctx.fillStyle=ln.color;
+          ctx.font=(ln.bold?'600 ':'400 ')+ln.size+'px "IBM Plex Mono",monospace';
+          ctx.textAlign='center'; ctx.textBaseline='middle';
+          ctx.fillText(ln.text,mx,by+padV/2+(i+0.5)*lineH); ctx.restore();
+        });
+      }
+    }
+  });
+
+  // Draw drain attachment lines (dashed blue)
+  drainAttachments.forEach(att=>{
+    const drain=nodes.find(n=>n.id===att.drainNodeId);
+    const host =nodes.find(n=>n.id===att.hostNodeId);
+    if (!drain||!host) return;
+    const dEl=document.getElementById(drain.id), hEl=document.getElementById(host.id);
+    if (!dEl||!hEl) return;
+    const cRect=document.getElementById('canvasArea').getBoundingClientRect();
+    const dR=dEl.getBoundingClientRect(), hR=hEl.getBoundingClientRect();
+    const dx=dR.left+dR.width/2-cRect.left, dy=dR.top+dR.height/2-cRect.top;
+    const hx=hR.left+hR.width/2-cRect.left, hy=hR.top+hR.height/2-cRect.top;
+    ctx.save(); ctx.setLineDash([4,3]); ctx.strokeStyle=CLR.drain;
+    ctx.lineWidth=1.5; ctx.globalAlpha=0.7;
+    ctx.beginPath(); ctx.moveTo(dx,dy); ctx.lineTo(hx,hy); ctx.stroke();
+    ctx.setLineDash([]); ctx.fillStyle=CLR.drain;
+    ctx.beginPath(); ctx.arc(dx,dy,4,0,Math.PI*2); ctx.fill();
+    ctx.restore();
+  });
+}
+
+function roundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x+r, y);
+  ctx.lineTo(x+w-r, y);
+  ctx.arcTo(x+w, y, x+w, y+r, r);
+  ctx.lineTo(x+w, y+h-r);
+  ctx.arcTo(x+w, y+h, x+w-r, y+h, r);
+  ctx.lineTo(x+r, y+h);
+  ctx.arcTo(x, y+h, x, y+h-r, r);
+  ctx.lineTo(x, y+r);
+  ctx.arcTo(x, y, x+r, y, r);
+  ctx.closePath();
+}
+
+// ═══════════════════════════════════════════
+// HIT TEST — find connection near point
+// ═══════════════════════════════════════════
+const HIT_THRESHOLD = 9; // px
+
+function hitTestConnections(px, py) {
+  // Test in reverse draw order so top-drawn (last) wins
+  for (let i = connections.length-1; i >= 0; i--) {
+    const conn = connections[i];
+    const p1 = getPortXY(conn.from, 'output');
+    const p2 = getPortXY(conn.to,   'input');
+    if (!p1 || !p2) continue;
+    const d = distToBezier(px, py, p1.x, p1.y, p2.x, p2.y);
+    if (d <= HIT_THRESHOLD) return conn;
+  }
+  return null;
+}
+
+// ═══════════════════════════════════════════
+// CANVAS MOUSE EVENTS — attached to canvasArea so nodesContainer doesn't block them
+// ═══════════════════════════════════════════
+const canvasArea = document.getElementById('canvasArea');
+canvasArea.addEventListener('mousedown', canvasMouseDown);
+canvasArea.addEventListener('mousemove', canvasMouseMove);
+canvasArea.addEventListener('mouseup',   canvasMouseUp);
+canvasArea.addEventListener('click',     canvasClick);
+canvasArea.addEventListener('dblclick',  canvasDblClick);
+
+function canvasXY(e) {
+  const r = document.getElementById('canvasArea').getBoundingClientRect();
+  return { x: e.clientX - r.left, y: e.clientY - r.top };
+}
+
+function canvasMouseDown(e) {
+  if (e.target.closest('.node')) return; // let nodeMouseDown handle it
+  const {x,y} = canvasXY(e);
+  const hit = hitTestConnections(x, y);
+  if (!hit) {
+    selectNode(null);
+    selectConn(null);
+  }
+}
+
+function canvasMouseMove(e) {
+  if (e.target.closest('.node')) return;
+  const {x,y} = canvasXY(e);
+
+  // Update pending line if connecting
+  if (connectingPort) {
+    const cx = (connectingPort.startX + x) / 2;
+    document.getElementById('pendingPath').setAttribute('d',
+      `M${connectingPort.startX} ${connectingPort.startY} C${cx} ${connectingPort.startY},${cx} ${y},${x} ${y}`);
+  }
+
+  // Hover hit test for cursor
+  const hit = hitTestConnections(x, y);
+  const newHover = hit ? hit.id : null;
+  if (newHover !== hoveredConnId) {
+    hoveredConnId = newHover;
+    canvasArea.style.cursor = newHover ? 'pointer' : 'default';
+    renderConnections();
+  }
+}
+
+function canvasMouseUp(e) {
+  if (e.target.closest('.node')) return;
+  if (connectingPort) {
+    document.getElementById('pendingPath').setAttribute('d','');
+    connectingPort = null;
+    renderConnections();
+  }
+}
+
+function canvasClick(e) {
+  if (e.target.closest('.node')) return;
+  const {x,y} = canvasXY(e);
+  const hit = hitTestConnections(x, y);
+  if (hit) {
+    selectConn(hit);
+  } else {
+    selectNode(null);
+    selectConn(null);
+  }
+}
+
+function canvasDblClick(e) {
+  if (e.target.closest('.node')) return;
+  const {x,y} = canvasXY(e);
+  const hit = hitTestConnections(x, y);
+  if (hit) {
+    connections = connections.filter(c => c.id !== hit.id);
+    selectConn(null);
+    renderConnections();
+    updateSummary();
+    if (analysisRan) runAnalysis();
+  }
+}
+
+// ═══════════════════════════════════════════
+// NODE EVENTS  (nodes are HTML divs above canvas)
+// ═══════════════════════════════════════════
+function nodeMouseDown(e) {
+  if (e.target.closest('.port')) return;
+  e.preventDefault();
+  e.stopPropagation();
+  const el = e.currentTarget;
+  const node = nodes.find(n => n.id === el.id);
+  selectNode(node);
+  draggingNode = { node, el };
+  const r = el.getBoundingClientRect();
+  const cr = document.getElementById('canvasArea').getBoundingClientRect();
+  dragOffset.x = e.clientX - cr.left - node.x;
+  dragOffset.y = e.clientY - cr.top  - node.y;
+
+  const onMove = ev => {
+    const x = ev.clientX - cr.left, y = ev.clientY - cr.top;
+    const nx = Math.round((x - dragOffset.x) / 10) * 10;
+    const ny = Math.round((y - dragOffset.y) / 10) * 10;
+    draggingNode.node.x = Math.max(0, nx);
+    draggingNode.node.y = Math.max(0, ny);
+    draggingNode.el.style.left = draggingNode.node.x + 'px';
+    draggingNode.el.style.top  = draggingNode.node.y + 'px';
+    renderConnections();
+  };
+  const onUp = () => {
+    draggingNode = null;
+    document.removeEventListener('mousemove', onMove);
+    document.removeEventListener('mouseup',   onUp);
+  };
+  document.addEventListener('mousemove', onMove);
+  document.addEventListener('mouseup',   onUp);
+}
+
+function portMouseDown(e) {
+  e.stopPropagation();
+  e.preventDefault();
+  const port = e.currentTarget;
+  if (port.dataset.port !== 'out') return;
+
+  const cRect = document.getElementById('canvasArea').getBoundingClientRect();
+  const pRect = port.getBoundingClientRect();
+  connectingPort = {
+    el: port, nodeId: port.dataset.node, port: 'out',
+    startX: pRect.left + 6 - cRect.left,
+    startY: pRect.top  + 6 - cRect.top
+  };
+
+  const onMove = ev => {
+    const x = ev.clientX - cRect.left, y = ev.clientY - cRect.top;
+    const cx = (connectingPort.startX + x) / 2;
+    document.getElementById('pendingPath').setAttribute('d',
+      `M${connectingPort.startX} ${connectingPort.startY} C${cx} ${connectingPort.startY},${cx} ${y},${x} ${y}`);
+  };
+  const onUp = ev => {
+    document.removeEventListener('mousemove', onMove);
+    document.removeEventListener('mouseup',   onUp);
+    document.getElementById('pendingPath').setAttribute('d','');
+
+    // Check if released on an input port
+    const target = document.elementFromPoint(ev.clientX, ev.clientY);
+    const tPort  = target && target.closest('.port');
+    if (tPort && tPort.dataset.port === 'in' && tPort.dataset.node !== connectingPort.nodeId) {
+      const toNode = tPort.dataset.node;
+      const exists = connections.find(c => c.from===connectingPort.nodeId && c.to===toNode);
+      if (!exists) {
+        connections.push({
+          id:'c'+(++nodeCounter), from:connectingPort.nodeId, to:toNode,
+          _actualFlow:0, _capFlow:0
+        });
+        updateSummary();
+        if (analysisRan) runAnalysis();
+      }
+    }
+    connectingPort = null;
+    renderConnections();
+  };
+  document.addEventListener('mousemove', onMove);
+  document.addEventListener('mouseup',   onUp);
+}
+
+// ═══════════════════════════════════════════
+// DRAG FROM PALETTE
+// ═══════════════════════════════════════════
+function startDrag(e, type) { dragType=type; e.dataTransfer.setData('type',type); }
+
+function dropComponent(e) {
+  e.preventDefault();
+  const type = e.dataTransfer.getData('type') || dragType;
+  if (!type) return;
+  const r = document.getElementById('canvasArea').getBoundingClientRect();
+  const x = Math.round((e.clientX - r.left - 65) / 20) * 20;
+  const y = Math.round((e.clientY - r.top  - 30) / 20) * 20;
+  addNode(type, Math.max(0,x), Math.max(0,y));
+  dragType = null;
+}
+
+// ═══════════════════════════════════════════
+// ADD / RENDER NODES
+// ═══════════════════════════════════════════
+function addNode(type, x, y) {
+  const def = compDefs[type]; if (!def) return;
+  nodeCounter++;
+  const id   = 'n'+nodeCounter;
+  const props = {...def.defaultProps, name: def.label+' '+nodeCounter};
+  nodes.push({id, type, x, y, props});
+  renderNode(nodes[nodes.length-1]);
+
+  // Auto-attach drain to nearest eligible host node
+  if (type === 'drain') {
+    const hosts = nodes.filter(n => n.id !== id &&
+      ['receiver','dryer','filter','compressor'].includes(n.type));
+    if (hosts.length > 0) {
+      const nearest = hosts.reduce((best, h) => {
+        const d = Math.hypot(h.x - x, h.y - y);
+        return d < Math.hypot(best.x - x, best.y - y) ? h : best;
+      });
+      if (Math.hypot(nearest.x - x, nearest.y - y) < 250) {
+        drainAttachments.push({ drainNodeId: id, hostNodeId: nearest.id });
+      }
+    }
+  }
+
+  updateSummary();
+  document.getElementById('emptyState').style.display = 'none';
+}
+
+function renderNode(node) {
+  const def = compDefs[node.type];
+  const old = document.getElementById(node.id);
+  if (old) old.remove();
+
+  const el = document.createElement('div');
+  el.id        = node.id;
+  el.className = 'node' + (node.type === 'lineloss' || node.type === 'drain' ? ' node-compact' : '');
+  el.style.left = node.x+'px';
+  el.style.top  = node.y+'px';
+
+  let metrics = '';
+  if (node.type === 'lineloss') {
+    const dpVal = node._lastActualDp !== undefined ? node._lastActualDp : node.props.ratedDp;
+    const modeTag = node.props.measured ? ' [M]' : '';
+    metrics = `<div class="node-metric">
+      <span class="node-metric-value" style="color:${def.color};font-size:11px">-${(dpVal||0).toFixed(2)} psi${modeTag}</span>
+    </div>`;
+  } else if (node.type === 'compressor') {
+    const amb = getAmbient();
+    const out = compressorOutput(node, amb);
+    const ct  = node.props.controlType || 'lu';
+    const loadPct = node._stagedLoadFrac != null ? (node._stagedLoadFrac*100).toFixed(1)+'%' : '—';
+    metrics = `
+      <div class="node-metric">
+        <span class="node-metric-label">Flow</span>
+        <span class="node-metric-value" style="color:${def.color}">${out.actualFlow.toFixed(1)}<span style="color:var(--text3);font-size:9px"> scfm</span></span>
+      </div>
+      <div class="node-metric">
+        <span class="node-metric-label">Power</span>
+        <span class="node-metric-value" style="color:${def.color}">${out.actualPower.toFixed(1)}<span style="color:var(--text3);font-size:9px"> kW</span></span>
+      </div>
+      <div class="node-metric">
+        <span class="node-metric-label">Load / Op. P</span>
+        <span class="node-metric-value" style="color:${def.color}">${loadPct} / ${node.props.operatingPressure??node.props.pressure??'--'}<span style="color:var(--text3);font-size:9px"> psi</span></span>
+      </div>`;
+  } else if (node.type === 'drain') {
+    const drainLabels = {timer:'Timer',float:'Float',zeroloss:'Zero-Loss',manual:'Manual'};
+    const airLoss = computeDrainAirLoss(node, 100);
+    metrics = `<div class="node-metric">
+      <span class="node-metric-value" style="color:${def.color};font-size:10px">${drainLabels[node.props.drainType]||'Timer'} · ${airLoss.toFixed(2)} scfm</span>
+    </div>`;
+  } else if (node.type === 'regulator') {
+    metrics = `<div class="node-metric">
+      <span class="node-metric-label">Set</span>
+      <span class="node-metric-value" style="color:${def.color}">${node.props.setPressure??'--'}<span style="color:var(--text3);font-size:9px"> psi</span></span>
+    </div>
+    <div class="node-metric">
+      <span class="node-metric-label">Cap</span>
+      <span class="node-metric-value" style="color:${def.color}">${node.props.flowCapacity??'--'}<span style="color:var(--text3);font-size:9px"> scfm</span></span>
+    </div>`;
+  } else {
+    def.metrics.forEach(k => {
+      const [lbl,unit] = def.propLabels[k]||[k,''];
+      metrics += `<div class="node-metric">
+        <span class="node-metric-label">${lbl}</span>
+        <span class="node-metric-value" style="color:${def.color}">${node.props[k]??'--'}<span style="color:var(--text3);font-size:9px"> ${unit}</span></span>
+      </div>`;
+    });
+  }
+
+  const hasIn  = node.type !== 'compressor' && node.type !== 'drain';
+  const hasOut = node.type !== 'load' && node.type !== 'leak' && node.type !== 'drain';
+
+  const ctBadge = node.type === 'compressor'
+    ? `<span class="ctrl-badge ${ctrlClass(node.props.controlType||'lu')}">${ctrlLabel(node.props.controlType||'lu')}</span>`
+    : '';
+
+  el.innerHTML = `
+    <div class="node-header" style="border-bottom:1px solid ${def.color}40">
+      <div class="node-icon" style="background:${def.bgColor};border:1px solid ${def.color}60;color:${def.color}">${def.icon}</div>
+      <div class="node-name">${node.props.name||def.label}${ctBadge}</div>
+    </div>
+    <div class="node-body">${metrics}</div>
+    <div class="node-ports">
+      ${hasIn  ? `<div class="port input"  data-node="${node.id}" data-port="in" ><span class="port-label">in</span></div>`  : '<div></div>'}
+      ${hasOut ? `<div class="port output" data-node="${node.id}" data-port="out"><span class="port-label">out</span></div>` : '<div></div>'}
+    </div>`;
+
+  el.addEventListener('mousedown', nodeMouseDown);
+  el.querySelectorAll('.port').forEach(p => p.addEventListener('mousedown', portMouseDown));
+  document.getElementById('nodesContainer').appendChild(el);
+}
+
+// ═══════════════════════════════════════════
+// SELECTION
+// ═══════════════════════════════════════════
+function selectNode(node) {
+  document.querySelectorAll('.node').forEach(el=>el.classList.remove('selected'));
+  selectedNode=node; selectedConn=null;
+  document.getElementById('connEditor').style.display  = 'none';
+  document.getElementById('propEditor').style.display  = node ? '' : 'none';
+  document.getElementById('noSelection').style.display = node ? 'none' : '';
+  if (node) {
+    document.getElementById(node.id).classList.add('selected');
+    showProperties(node);
+  }
+  renderConnections();
+}
+
+function selectConn(conn) {
+  document.querySelectorAll('.node').forEach(el=>el.classList.remove('selected'));
+  selectedConn=conn; selectedNode=null;
+  document.getElementById('propEditor').style.display  = 'none';
+  document.getElementById('noSelection').style.display = 'none';
+  document.getElementById('connEditor').style.display  = conn ? '' : 'none';
+  if (!conn) { document.getElementById('noSelection').style.display=''; }
+  renderConnections();
+}
+
+function deleteSelectedConn() {
+  if (!selectedConn) return;
+  connections = connections.filter(c=>c.id!==selectedConn.id);
+  selectConn(null);
+  renderConnections();
+  updateSummary();
+  if (analysisRan) runAnalysis();
+}
+
+function showProperties(node) {
+  const def = compDefs[node.type];
+
+  // Special UI for lineloss
+  if (node.type === 'lineloss') {
+    const isMeasured = !!node.props.measured;
+    document.getElementById('propFields').innerHTML = `
+      <div class="mode-toggle">
+        <button class="mode-toggle-btn ${!isMeasured?'active':''}" onclick="setLinelossMode('${node.id}',false)">Flow-Scaled</button>
+        <button class="mode-toggle-btn ${isMeasured?'active':''}"  onclick="setLinelossMode('${node.id}',true)">Measured</button>
+      </div>
+      ${!isMeasured ? `
+        <div class="prop-row">
+          <span class="prop-label">Rated dP</span>
+          <input class="prop-input" type="number" value="${node.props.ratedDp??''}" step="0.1" min="0" onchange="updateProp('${node.id}','ratedDp',this.value)">
+          <span class="prop-unit">psi</span>
+        </div>
+        <div class="prop-row">
+          <span class="prop-label">Rated Flow</span>
+          <input class="prop-input" type="number" value="${node.props.ratedFlow??''}" step="1" min="0.1" onchange="updateProp('${node.id}','ratedFlow',this.value)">
+          <span class="prop-unit">scfm</span>
+        </div>
+        <div class="mode-note">dP scales quadratically: actual dP&nbsp;=&nbsp;rated dP &times; (Q / Q&#8345;)&sup2;</div>
+      ` : `
+        <div class="prop-row">
+          <span class="prop-label">Fixed dP</span>
+          <input class="prop-input" type="number" value="${node.props.ratedDp??''}" step="0.1" min="0" onchange="updateProp('${node.id}','ratedDp',this.value)">
+          <span class="prop-unit">psi</span>
+        </div>
+        <div class="mode-note">Measured mode: this exact dP is applied regardless of flow rate.</div>
+      `}
+      <div id="linelossActual" style="margin-top:8px;font-size:11px;color:var(--text2);"></div>`;
+    updateLinelossActualDisplay(node);
+    return;
+  }
+
+  let html = `<div class="prop-row">
+    <span class="prop-label">Name</span>
+    <input class="prop-input" type="text" value="${node.props.name||''}" style="width:130px" onchange="updateProp('${node.id}','name',this.value)">
+    <span class="prop-unit"></span>
+  </div>`;
+
+  // Drain gets a special panel
+  if (node.type === 'drain') {
+    const dt = node.props.drainType || 'timer';
+    const attachment = drainAttachments.find(a => a.drainNodeId === node.id);
+    const hostNode = attachment ? nodes.find(n => n.id === attachment.hostNodeId) : null;
+    const linePressure = hostNode ? (hostNode.props.workingPressure || hostNode.props.pressure || 100) : 100;
+    const airLoss = computeDrainAirLoss(node, linePressure);
+    const annualCost = airLoss * (getSystemSPP())
+      * parseFloat(document.getElementById('hours-year')?.value||6000)
+      * parseFloat(document.getElementById('elec-rate')?.value||0.10);
+
+    let html = `<div class="prop-row"><span class="prop-label">Name</span>
+      <input class="prop-input" type="text" value="${node.props.name||''}" style="width:130px" onchange="updateProp('${node.id}','name',this.value)">
+      <span class="prop-unit"></span></div>`;
+    html += `<div class="prop-divider">Drain Type</div>
+      <div class="mode-toggle" style="margin-bottom:8px;flex-wrap:wrap;">
+        <button class="mode-toggle-btn ${dt==='timer'?'active':''}"   onclick="updateProp('${node.id}','drainType','timer')">Timer</button>
+        <button class="mode-toggle-btn ${dt==='float'?'active':''}"   onclick="updateProp('${node.id}','drainType','float')">Float</button>
+        <button class="mode-toggle-btn ${dt==='zeroloss'?'active':''}" onclick="updateProp('${node.id}','drainType','zeroloss')">Zero-Loss</button>
+        <button class="mode-toggle-btn ${dt==='manual'?'active':''}"  onclick="updateProp('${node.id}','drainType','manual')">Manual</button>
+      </div>`;
+    if (dt === 'timer') {
+      html += `<div class="prop-row"><span class="prop-label">Orifice dia.</span><input class="prop-input" type="number" value="${node.props.orificeDia??0.25}" step="0.0625" min="0.0625" onchange="updateProp('${node.id}','orificeDia',this.value)"><span class="prop-unit">in</span></div>
+        <div class="prop-row"><span class="prop-label">On-time</span><input class="prop-input" type="number" value="${node.props.onTime??5}" step="1" min="1" onchange="updateProp('${node.id}','onTime',this.value)"><span class="prop-unit">sec</span></div>
+        <div class="prop-row"><span class="prop-label">Cycle time</span><input class="prop-input" type="number" value="${node.props.cycleTime??300}" step="10" min="10" onchange="updateProp('${node.id}','cycleTime',this.value)"><span class="prop-unit">sec</span></div>`;
+    } else if (dt === 'float') {
+      html += `<div class="prop-row"><span class="prop-label">Orifice dia.</span><input class="prop-input" type="number" value="${node.props.orificeDia??0.25}" step="0.0625" onchange="updateProp('${node.id}','orificeDia',this.value)"><span class="prop-unit">in</span></div>
+        <div class="mode-toggle" style="margin-bottom:8px">
+          <button class="mode-toggle-btn ${(node.props.condition||'normal')==='normal'?'active':''}" onclick="updateProp('${node.id}','condition','normal')">Normal</button>
+          <button class="mode-toggle-btn ${(node.props.condition||'normal')==='failed_open'?'active':''}" onclick="updateProp('${node.id}','condition','failed_open')">Failed Open</button>
+        </div>`;
+    } else if (dt === 'manual') {
+      html += `<div class="prop-row"><span class="prop-label">Orifice dia.</span><input class="prop-input" type="number" value="${node.props.orificeDia??0.25}" step="0.0625" onchange="updateProp('${node.id}','orificeDia',this.value)"><span class="prop-unit">in</span></div>
+        <div class="prop-row"><span class="prop-label">Opens/day</span><input class="prop-input" type="number" value="${node.props.opensPerDay??4}" step="1" min="0" onchange="updateProp('${node.id}','opensPerDay',this.value)"><span class="prop-unit">×/day</span></div>
+        <div class="prop-row"><span class="prop-label">Duration</span><input class="prop-input" type="number" value="${node.props.openDuration??1}" step="0.5" min="0.1" onchange="updateProp('${node.id}','openDuration',this.value)"><span class="prop-unit">min</span></div>`;
+    } else {
+      html += `<div class="mode-note">Zero-loss electronic drain — no air waste. Demand-operated, opens only when condensate is present.</div>`;
+    }
+    html += `<div class="prop-divider">Host Node</div>
+      <div style="font-size:11px;color:var(--text2);margin-bottom:8px">Connected to: <strong style="color:var(--text)">${hostNode?hostNode.props.name||'Host':'(none — drag drain near a host node)'}</strong></div>
+      <div class="prop-divider">Computed</div>
+      <div class="prop-row"><span class="prop-label">Air loss</span><div class="prop-computed">${airLoss.toFixed(3)}</div><span class="prop-unit">scfm</span></div>
+      <div class="prop-row"><span class="prop-label">Annual cost</span><div class="prop-computed">$${annualCost.toFixed(0)}</div><span class="prop-unit">/yr</span></div>`;
+    document.getElementById('propFields').innerHTML = html;
+    return;
+  }
+
+  // Regulator panel
+  if (node.type === 'regulator') {
+    document.getElementById('propFields').innerHTML = `
+      <div class="prop-row"><span class="prop-label">Name</span>
+        <input class="prop-input" type="text" value="${node.props.name||''}" style="width:130px" onchange="updateProp('${node.id}','name',this.value)">
+        <span class="prop-unit"></span></div>
+      <div class="prop-divider">Regulator Settings</div>
+      <div class="prop-row"><span class="prop-label">Set pressure</span>
+        <input class="prop-input" type="number" value="${node.props.setPressure??90}" step="5" onchange="updateProp('${node.id}','setPressure',this.value)">
+        <span class="prop-unit">psi</span></div>
+      <div class="prop-row"><span class="prop-label">Flow capacity</span>
+        <input class="prop-input" type="number" value="${node.props.flowCapacity??100}" step="10" onchange="updateProp('${node.id}','flowCapacity',this.value)">
+        <span class="prop-unit">scfm</span></div>
+      <div class="prop-row"><span class="prop-label">Upstream margin</span>
+        <input class="prop-input" type="number" value="${node.props.upstreamMargin??10}" step="1" min="5" onchange="updateProp('${node.id}','upstreamMargin',this.value)">
+        <span class="prop-unit">psi</span></div>
+      <div class="mode-note">Regulator delivers set pressure downstream regardless of upstream pressure (within margin). Upstream must exceed set + margin to regulate. No flow restriction in normal operation.</div>`;
+    return;
+  }
+
+  // Compressor gets an enhanced panel
+  if (node.type === 'compressor') {
+    const ct = node.props.controlType || 'lu';
+    const amb = getAmbient();
+    const out = compressorOutput(node, amb);
+    html += `
+    <div class="prop-divider">Performance (CAGI Data)</div>
+    <div class="prop-row"><span class="prop-label">Rated capacity</span><input class="prop-input" type="number" value="${node.props.flowRate??''}" step="1" onchange="updateProp('${node.id}','flowRate',this.value)"><span class="prop-unit">scfm</span></div>
+    <div class="prop-row"><span class="prop-label">CAGI rated pressure</span><input class="prop-input" type="number" value="${node.props.pressure??''}" step="5" onchange="updateProp('${node.id}','pressure',this.value)"><span class="prop-unit">psi</span></div>
+    <div class="prop-row"><span class="prop-label">Package input power</span><input class="prop-input" type="number" value="${node.props.power??''}" step="0.1" onchange="updateProp('${node.id}','power',this.value)"><span class="prop-unit">kW</span></div>
+    <div class="prop-row"><span class="prop-label">Spec. pkg. power</span><div class="prop-computed">${out.spp>0?out.spp.toFixed(2):'—'}</div><span class="prop-unit">kW/100</span></div>
+    <div class="prop-divider">Operating Conditions</div>
+    <div class="prop-row"><span class="prop-label">Operating pressure</span><input class="prop-input" type="number" value="${node.props.operatingPressure??node.props.pressure??125}" step="5" onchange="updateProp('${node.id}','operatingPressure',this.value)"><span class="prop-unit">psi</span></div>
+    <div class="mode-note">Isentropic scale: ${out.isentropicScale.toFixed(3)} (${out.isentropicScale<1?'lower than rated → less power':out.isentropicScale>1?'higher than rated → more power':'at rated pressure'}).</div>
+    <div class="prop-divider">CAGI Inlet Conditions</div>
+    <div class="prop-row"><span class="prop-label">Rated inlet pres.</span><input class="prop-input" type="number" value="${node.props.ratedInletPres??14.696}" step="0.1" onchange="updateProp('${node.id}','ratedInletPres',this.value)"><span class="prop-unit">psia</span></div>
+    <div class="prop-row"><span class="prop-label">Rated inlet temp.</span><input class="prop-input" type="number" value="${node.props.ratedInletTemp??68}" step="1" onchange="updateProp('${node.id}','ratedInletTemp',this.value)"><span class="prop-unit">°F</span></div>
+    <div class="prop-divider">Control Type</div>
+    <div class="mode-toggle" style="margin-bottom:8px">
+      <button class="mode-toggle-btn ${ct==='lu'?'active':''}"  onclick="updateProp('${node.id}','controlType','lu')">Load/Unload</button>
+      <button class="mode-toggle-btn ${ct==='mod'?'active':''}" onclick="updateProp('${node.id}','controlType','mod')">Modulating</button>
+      <button class="mode-toggle-btn ${ct==='vsd'?'active':''}" onclick="updateProp('${node.id}','controlType','vsd')">VSD</button>
+    </div>
+    ${ct==='lu'?`<div class="prop-row"><span class="prop-label">Unload power</span><input class="prop-input" type="number" value="${node.props.unloadPower??20}" step="1" min="0" max="50" onchange="updateProp('${node.id}','unloadPower',this.value)"><span class="prop-unit">% rated</span></div>`:''}
+    <div class="prop-divider">Staging</div>
+    <div class="prop-row"><span class="prop-label">Priority</span><input class="prop-input" type="number" value="${node.props.stagingPriority??1}" step="1" min="1" max="10" onchange="updateProp('${node.id}','stagingPriority',this.value)"><span class="prop-unit">#</span></div>
+    <div class="prop-row">
+      <span class="prop-label">Min stable load</span>
+      <input class="prop-input" type="number" value="${node.props.minStableLoad??''}" step="1" min="0" max="100" placeholder="${(MIN_STABLE_LOAD[ct]??0.30)*100|0}" onchange="updateProp('${node.id}','minStableLoad',this.value)">
+      <span class="prop-unit">%</span>
+    </div>
+    <div class="prop-divider">Computed (demand-driven)</div>
+    <div class="prop-row"><span class="prop-label">Load fraction</span><div class="prop-computed">${node._stagedLoadFrac!=null?(node._stagedLoadFrac*100).toFixed(1):'—'}</div><span class="prop-unit">%</span></div>
+    <div class="prop-row"><span class="prop-label">Site-corr. flow</span><div class="prop-computed">${out.actualFlow.toFixed(1)}</div><span class="prop-unit">scfm</span></div>
+    <div class="prop-row"><span class="prop-label">Site-corr. power</span><div class="prop-computed">${out.actualPower.toFixed(1)}</div><span class="prop-unit">kW</span></div>
+    <div class="mode-note">Priority 1 = base load (fills first). Load fraction is computed from system demand — not a user input. Run Analyze to update.</div>`;
+    document.getElementById('propFields').innerHTML = html;
+    return;
+  }
+
+  Object.entries(def.propLabels).forEach(([k,[lbl,unit]]) => {
+    html += `<div class="prop-row">
+      <span class="prop-label">${lbl}</span>
+      <input class="prop-input" type="number" value="${node.props[k]??''}" step="1" onchange="updateProp('${node.id}','${k}',this.value)">
+      <span class="prop-unit">${unit}</span>
+    </div>`;
+  });
+  document.getElementById('propFields').innerHTML = html;
+}
+
+function setLinelossMode(id, measured) {
+  const node = nodes.find(n => n.id === id); if (!node) return;
+  node.props.measured = measured;
+  showProperties(node);
+  renderNode(node);
+  document.getElementById(id).classList.add('selected');
+  if (analysisRan) runAnalysis();
+}
+
+function updateLinelossActualDisplay(node) {
+  const el = document.getElementById('linelossActual');
+  if (!el) return;
+  const actual = node._lastActualDp;
+  if (actual === undefined || actual === null) {
+    el.innerHTML = '<span style="color:var(--text3)">Run Analyze to see actual dP at operating flow.</span>';
+  } else {
+    const clr = actual > (node.props.ratedDp||0)*0.9 ? CLR.warn : CLR.success;
+    el.innerHTML = `<div style="display:flex;justify-content:space-between">
+      <span>Actual dP at operating flow</span>
+      <span style="font-family:monospace;color:${clr}">${actual.toFixed(3)} psi</span>
+    </div>`;
+  }
+}
+
+function updateProp(id, key, val) {
+  const node = nodes.find(n=>n.id===id); if (!node) return;
+  const num = parseFloat(val);
+  node.props[key] = isNaN(num) ? val : num;
+  renderNode(node);
+  document.getElementById(id).classList.add('selected');
+  // Refresh property panel so computed fields and toggles update
+  if (selectedNode && selectedNode.id === id) showProperties(node);
+  updateSummary();
+  renderConnections();
+  if (analysisRan) runAnalysis();
+}
+
+function deleteSelected() {
+  if (!selectedNode) return;
+  connections = connections.filter(c=>c.from!==selectedNode.id&&c.to!==selectedNode.id);
+  drainAttachments = drainAttachments.filter(a=>a.drainNodeId!==selectedNode.id&&a.hostNodeId!==selectedNode.id);
+  nodes = nodes.filter(n=>n.id!==selectedNode.id);
+  document.getElementById(selectedNode.id)?.remove();
+  selectNode(null);
+  renderConnections();
+  updateSummary();
+  if (!nodes.length) document.getElementById('emptyState').style.display='';
+  if (analysisRan) runAnalysis();
+}
+
+// ═══════════════════════════════════════════
+// TOPOLOGY ENGINE
+// ═══════════════════════════════════════════
+function buildGraph() {
+  const dn={}, up={};
+  nodes.forEach(n=>{dn[n.id]=[]; up[n.id]=[];});
+  connections.forEach(c=>{
+    if(dn[c.from]) dn[c.from].push(c.to);
+    if(up[c.to])   up[c.to].push(c.from);
+  });
+  return {dn,up};
+}
+
+function detectCycle() {
+  const {dn}=buildGraph();
+  const WHITE=0,GRAY=1,BLACK=2;
+  const col={};
+  nodes.forEach(n=>col[n.id]=WHITE);
+  let cycle=null;
+  function dfs(id,path){
+    if(cycle) return;
+    col[id]=GRAY;
+    for(const nx of (dn[id]||[])){
+      if(col[nx]===GRAY){cycle=[...path,id,nx];return;}
+      if(col[nx]===WHITE) dfs(nx,[...path,id]);
+    }
+    col[id]=BLACK;
+  }
+  nodes.forEach(n=>{if(col[n.id]===WHITE) dfs(n.id,[]);});
+  return cycle;
+}
+
+function computeDownstreamDemand() {
+  const {dn}=buildGraph();
+  const memo={};
+  function nodeDemand(n){
+    if(n.type==='load') return (n.props.flowRate||0)*(n.props.dutyCycle||100)/100;
+    if(n.type==='leak') return n.props.flowRate||0;
+    return 0;
+  }
+  function calc(id, vis=new Set()){
+    if(memo[id]!==undefined) return memo[id];
+    if(vis.has(id)) return 0;
+    vis.add(id);
+    const node=nodes.find(n=>n.id===id);
+    if(!node) return 0;
+    let d=nodeDemand(node);
+    for(const nx of (dn[id]||[])) d+=calc(nx,new Set(vis));
+    memo[id]=d;
+    return d;
+  }
+  const demand={};
+  nodes.forEach(n=>{demand[n.id]=calc(n.id);});
+  return demand;
+}
+
+// Topological sort (Kahn's algorithm) — returns node ids in processing order
+function topoSort() {
+  const {dn, up} = buildGraph();
+  const inDegree = {};
+  nodes.forEach(n => inDegree[n.id] = (up[n.id]||[]).length);
+  const queue = nodes.filter(n => inDegree[n.id] === 0).map(n => n.id);
+  const order = [];
+  while (queue.length) {
+    const id = queue.shift();
+    order.push(id);
+    (dn[id]||[]).forEach(nxt => {
+      inDegree[nxt]--;
+      if (inDegree[nxt] === 0) queue.push(nxt);
+    });
+  }
+  return order;
+}
+
+function computeCapFlows() {
+  // Forward topo pass — capacities SUM at merge nodes, full cap available to each branch at splits.
+  // Returns: cap[connId] and nodeInCap[nodeId] (total capacity arriving at each node).
+  const {dn} = buildGraph();
+  const cap      = {};   // connId  → scfm capacity on that connector
+  const nodeInCap= {};   // nodeId  → sum of capacity arriving at this node from upstream
+  connections.forEach(c => cap[c.id] = 0);
+  nodes.forEach(n => nodeInCap[n.id] = 0);
+
+  // Sources seed their rated output as the capacity arriving at themselves
+  nodes.filter(n => n.type === 'compressor').forEach(src => {
+    nodeInCap[src.id] = src.props.flowRate || 0;
+  });
+
+  const order = topoSort();
+  order.forEach(fromId => {
+    const capAvail = nodeInCap[fromId];
+    if (capAvail <= 0) return;
+    (dn[fromId] || []).forEach(childId => {
+      const conn = connections.find(c => c.from === fromId && c.to === childId);
+      if (!conn) return;
+      // Each branch gets the full available capacity (parallel branches are independent)
+      let cc = capAvail;
+      const childNode = nodes.find(n => n.id === childId);
+      if (childNode && (childNode.type === 'dryer' || childNode.type === 'filter'))
+        cc = Math.min(cc, childNode.props.flowRate || Infinity);
+      cap[conn.id]        = (cap[conn.id]         || 0) + cc;
+      nodeInCap[childId]  = (nodeInCap[childId]    || 0) + cc;
+    });
+  });
+
+  return { cap, nodeInCap };
+}
+
+function computeActualFlows(nodeInCap, cap) {
+  // To correctly handle topologies where sources share downstream merge nodes
+  // AND have independent branches, we need each source to know its
+  // "effective demand" — the portion of downstream demand it is responsible for,
+  // accounting for capacity-fraction sharing at merge nodes.
+  //
+  // Algorithm:
+  //   1. Reverse topo pass: propagate "attributed demand" backward through the graph.
+  //      At merge nodes, split the attributed demand among upstream connectors by
+  //      capacity fraction. At split nodes, sum all outgoing attributed demands.
+  //   2. Each source's effective demand = sum of attributed demand arriving at it.
+  //   3. Forward topo pass: seed sources with min(supply, effective_demand).
+  //      Distribute using capacity fractions at merges, demand fractions at splits —
+  //      exactly what the attributed demand pass already encoded.
+
+  const {dn, up} = buildGraph();
+  const order    = topoSort();
+  const revOrder = [...order].reverse();
+
+  // ── STEP 1: reverse pass — attribute demand back to each connector ──────────
+  // attrDemand[connId] = scfm of actual demand attributable to this connector
+  const attrDemand  = {};
+  const nodeAttrDem = {};   // total attributed demand pulling through each node
+  connections.forEach(c => attrDemand[c.id] = 0);
+  nodes.forEach(n => nodeAttrDem[n.id] = 0);
+
+  // Seed sinks with their own demand
+  nodes.forEach(n => {
+    if (n.type === 'load') nodeAttrDem[n.id] = (n.props.flowRate||0) * (n.props.dutyCycle||100) / 100;
+    else if (n.type === 'leak') nodeAttrDem[n.id] = n.props.flowRate || 0;
+  });
+
+  revOrder.forEach(nodeId => {
+    const pullDown = nodeAttrDem[nodeId];
+    if (pullDown <= 0) return;
+    const parents = up[nodeId] || [];
+    if (!parents.length) return; // source — stop here
+
+    // Split demand among incoming connectors by capacity fraction
+    const totalCapIn = nodeInCap[nodeId] || 0;
+    parents.forEach(parentId => {
+      const conn = connections.find(c => c.from === parentId && c.to === nodeId);
+      if (!conn) return;
+      const fraction = totalCapIn > 0 ? (cap[conn.id] || 0) / totalCapIn : 1 / parents.length;
+      const attributed = pullDown * fraction;
+      attrDemand[conn.id] += attributed;
+      // Propagate attributed demand upward to the parent
+      nodeAttrDem[parentId] = (nodeAttrDem[parentId] || 0) + attributed;
+    });
+  });
+
+  // ── STEP 2: each source's effective demand is nodeAttrDem[src] ───────────────
+  // (already accumulated by the reverse pass)
+
+  // ── STEP 3: forward pass — propagate actual flow ─────────────────────────────
+  const flow       = {};
+  const nodeActOut = {};
+  connections.forEach(c => flow[c.id] = 0);
+  nodes.forEach(n => nodeActOut[n.id] = 0);
+
+  // Seed sources — use site-corrected actual flow
+  const ambient = getAmbient();
+  nodes.filter(n => n.type === 'compressor').forEach(src => {
+    const { actualFlow: corrFlow } = compressorOutput(src, ambient);
+    nodeActOut[src.id] = Math.min(corrFlow, nodeAttrDem[src.id] || 0);
+  });
+
+  order.forEach(fromId => {
+    const actOut = nodeActOut[fromId];
+    if (actOut <= 0) return;
+    const children = dn[fromId] || [];
+    if (!children.length) return;
+
+    // Distribute using the same attributed-demand fractions computed in reverse pass
+    // This guarantees forward and reverse passes are consistent.
+    const totalAttrOut = children.reduce((s, cid) => {
+      const conn = connections.find(c => c.from === fromId && c.to === cid);
+      return s + (conn ? (attrDemand[conn.id] || 0) : 0);
+    }, 0);
+
+    children.forEach(childId => {
+      const conn = connections.find(c => c.from === fromId && c.to === childId);
+      if (!conn) return;
+
+      const ratio = totalAttrOut > 0 ? (attrDemand[conn.id] || 0) / totalAttrOut : 1 / children.length;
+      let cf = actOut * ratio;
+
+      // Cap at treatment component rated capacity
+      const childNode = nodes.find(n => n.id === childId);
+      if (childNode && (childNode.type === 'dryer' || childNode.type === 'filter'))
+        cf = Math.min(cf, childNode.props.flowRate || Infinity);
+
+      flow[conn.id] += cf;
+      nodeActOut[childId] = (nodeActOut[childId] || 0) + cf;
+    });
+  });
+
+  return flow;
+}
+
+function enumeratePaths() {
+  const {dn}=buildGraph();
+  const sources=nodes.filter(n=>n.type==='compressor');
+  const sinkIds=nodes.filter(n=>n.type==='load'||n.type==='leak').map(n=>n.id);
+  const paths=[];
+  function dfs(id,nodePath,connPath,vis){
+    if(vis.has(id)) return;
+    vis.add(id);
+    if(sinkIds.includes(id)&&nodePath.length>1) paths.push({path:[...nodePath],conns:[...connPath]});
+    (dn[id]||[]).forEach(nxt=>{
+      const conn=connections.find(c=>c.from===id&&c.to===nxt);
+      if(conn) dfs(nxt,[...nodePath,nxt],[...connPath,conn.id],new Set(vis));
+    });
+  }
+  sources.forEach(s=>dfs(s.id,[s.id],[],new Set()));
+  return paths;
+}
+
+// ═══════════════════════════════════════════
+// COMPRESSOR PERFORMANCE MODEL
+// ═══════════════════════════════════════════
+
+// Compute system-level specific power from staged compressor results (kW/scfm)
+// Falls back to 0.20 kW/scfm only if no compressors have been staged
+function getSystemSPP() {
+  const totalFlow  = nodes.filter(n=>n.type==='compressor').reduce((s,n)=>s+(n._stagedFlow||0),0);
+  const totalPower = nodes.filter(n=>n.type==='compressor').reduce((s,n)=>s+(n._stagedPower||0),0);
+  return totalFlow > 0 ? totalPower / totalFlow : 0.20; // kW/scfm
+}
+
+// Read global ambient conditions from settings panel
+function getAmbient() {
+  return {
+    psia: parseFloat(document.getElementById('amb-pressure')?.value || 14.696),
+    tempF: parseFloat(document.getElementById('amb-temp')?.value || 68)
+  };
+}
+
+// ISO 1217 site correction factor relative to CAGI rated conditions
+// Returns multiplier applied to both flow and power
+function siteCorrection(comp, ambient) {
+  const Pref  = comp.props.ratedInletPres || 14.696;  // psia
+  const Tref  = (comp.props.ratedInletTemp || 68) + 459.67; // °R
+  const Psite = ambient.psia;
+  const Tsite = ambient.tempF + 459.67; // °R
+  // Power & flow scale with inlet density: proportional to P/T
+  return (Psite / Pref) * Math.sqrt(Tref / Tsite);
+}
+
+// Part-load power factor based on control type and load fraction (0–1)
+// Returns fraction of rated power consumed at this load
+function partLoadPowerFactor(comp, loadFrac) {
+  const type = comp.props.controlType || 'lu';
+  if (loadFrac <= 0) return 0;
+  if (loadFrac >= 1) return 1;
+
+  if (type === 'lu') {
+    // Load/Unload: weighted average of full-load and unload power
+    const ulFrac = (comp.props.unloadPower || 20) / 100;
+    return loadFrac * 1.0 + (1 - loadFrac) * ulFrac;
+  }
+  if (type === 'mod') {
+    // Inlet modulation: roughly linear but with a fixed minimum (~30% at 0 flow)
+    return 0.30 + 0.70 * loadFrac;
+  }
+  if (type === 'vsd') {
+    // VSD: approximately cubic (exponent 1.3 is empirically good for rotary screw)
+    return Math.pow(loadFrac, 1.3);
+  }
+  return loadFrac; // fallback
+}
+
+function compressorOutput(comp, ambient, overrideLoadFrac) {
+  const corr = siteCorrection(comp, ambient);
+  // Priority: explicit override (from staging engine) > staged result stored on node > 0
+  // props.load is no longer a user input — load fraction is always computed from demand
+  const loadFrac = overrideLoadFrac !== undefined
+    ? overrideLoadFrac
+    : (comp._stagedLoadFrac ?? 0);
+
+  // Isentropic pressure scaling: accounts for power change when operating pressure
+  // differs from CAGI rated discharge pressure.
+  // Scale = [(P_op_abs)^0.286 - 1] / [(P_rated_abs)^0.286 - 1]
+  // where 0.286 = (k-1)/k for k=1.4 (dry air)
+  const P_inlet      = comp.props.ratedInletPres || 14.696; // psia (CAGI inlet condition)
+  const P_rated_abs  = (comp.props.pressure        || 125) + P_inlet; // psia
+  const P_op_abs     = (comp.props.operatingPressure ?? comp.props.pressure ?? 125) + P_inlet; // psia
+  const K            = 0.286; // (k-1)/k for k=1.4
+  const iso_rated    = Math.pow(P_rated_abs / P_inlet, K) - 1;
+  const iso_op       = Math.pow(P_op_abs    / P_inlet, K) - 1;
+  const isentropicScale = iso_rated > 0 ? iso_op / iso_rated : 1;
+
+  const ratedFlow  = comp.props.flowRate || 0;
+  const ratedPower = comp.props.power    || 0;
+  // Site correction applies to flow capacity only — denser/thinner air changes
+  // how much the compressor can deliver, but power is set by isentropic work at
+  // the actual pressure ratio and load fraction, independent of inlet density.
+  const actualFlow  = ratedFlow  * corr * loadFrac;
+  const powerFactor = partLoadPowerFactor(comp, loadFrac);
+  const actualPower = ratedPower * isentropicScale * powerFactor;
+  const spp = actualFlow > 0 ? (actualPower / (actualFlow / 100)) : 0;
+  return { actualFlow, actualPower, corr, powerFactor, isentropicScale, spp, loadFrac };
+}
+
+// Control type label
+function ctrlLabel(type) {
+  return type === 'vsd' ? 'VSD' : type === 'mod' ? 'MOD' : 'L/U';
+}
+function ctrlClass(type) {
+  return type === 'vsd' ? 'ctrl-vsd' : type === 'mod' ? 'ctrl-mod' : 'ctrl-lu';
+}
+
+// ═══════════════════════════════════════════
+// COLOUR MODE
+// ═══════════════════════════════════════════
+function setColourMode(mode) {
+  colourMode = mode;
+  document.getElementById('clrBtn-flow').classList.toggle('active',     mode==='flow');
+  document.getElementById('clrBtn-pressure').classList.toggle('active', mode==='pressure');
+  renderConnections();
+}
+
+// ═══════════════════════════════════════════
+// CLIMATE ZONES (ASHRAE 169)
+// ═══════════════════════════════════════════
+const CLIMATE_ZONES = {
+  '1':  {temp:77, rh:75, desc:'Very Hot Humid'},
+  '2':  {temp:68, rh:65, desc:'Hot Humid'},
+  '3A': {temp:59, rh:60, desc:'Warm Humid'},
+  '3B': {temp:59, rh:35, desc:'Warm Dry'},
+  '4A': {temp:52, rh:55, desc:'Mixed Humid'},
+  '4B': {temp:52, rh:40, desc:'Mixed Dry'},
+  '5':  {temp:45, rh:60, desc:'Cool'},
+  '6':  {temp:36, rh:65, desc:'Cold'},
+  '7':  {temp:14, rh:70, desc:'Very Cold'},
+  '8':  {temp:-4, rh:75, desc:'Subarctic'},
+};
+
+function applyClimateZone() {
+  const zone = document.getElementById('climate-zone')?.value;
+  if (!zone || zone === 'custom') return;
+  const z = CLIMATE_ZONES[zone]; if (!z) return;
+  document.getElementById('amb-temp').value = z.temp;
+  document.getElementById('amb-rh').value   = z.rh;
+  runAnalysis();
+}
+
+function getHumidity() {
+  return {
+    rh:  parseFloat(document.getElementById('amb-rh')?.value || 60),
+    acTemp: parseFloat(document.getElementById('aftercooler-temp')?.value || 100),
+  };
+}
+
+// ═══════════════════════════════════════════
+// MOISTURE & CONDENSATE MODEL
+// ═══════════════════════════════════════════
+// Saturation pressure of water vapour (psia) using Antoine equation
+function satPressure_psia(tempF) {
+  const T = (tempF - 32) * 5/9 + 273.15; // K
+  const lnP = 16.3872 - 3885.70/(T - 43.64); // ln(Pa)
+  return Math.exp(lnP) * 0.000145038; // Pa → psia
+}
+
+// Humidity ratio (lb water / lb dry air)
+function humidityRatio(tempF, rhPct, pressurePsia) {
+  const Psat = satPressure_psia(tempF);
+  const Pw   = (rhPct/100) * Psat; // partial pressure of water vapour
+  return 0.622 * Pw / (pressurePsia - Pw);
+}
+
+// Pressure dewpoint (°F) at a given humidity ratio and line pressure
+function pressureDewpoint(W, linePressurePsia) {
+  // Find T such that satPressure(T) = W*P/(0.622+W)
+  const Pw = W * linePressurePsia / (0.622 + W);
+  // Invert Antoine: T (K) = 3885.70/(16.3872-ln(Pw/0.000145038)) + 43.64
+  const lnPw = Math.log(Pw / 0.000145038);
+  const Tk = 3885.70 / (16.3872 - lnPw) + 43.64;
+  return (Tk - 273.15) * 9/5 + 32; // K → °F
+}
+
+// Condensate at aftercooler: moisture removed between compression and aftercooler outlet
+// Returns gallons per hour per scfm of air
+function condensateAfterCooler_gphPerScfm(ambTempF, rhPct, ambPsia, dischargeP_psia, acOutletTempF) {
+  const W_in  = humidityRatio(ambTempF, rhPct, ambPsia);
+  const W_out = humidityRatio(acOutletTempF, 100, dischargeP_psia); // saturated at outlet
+  const W_removed = Math.max(0, W_in - W_out);
+  // 1 lb water = 0.12 gal; air density at std cond ~0.075 lb/scf; 1 scfm = 60 scf/hr
+  return W_removed * 0.075 * 60 * 0.12; // gal/hr per scfm
+}
+
+// Moisture downstream of dryer
+function moistureDownstreamDryer(dryerDewpointF, linePressurePsia) {
+  // At the dryer dewpoint, air is saturated — humidity ratio at PDP
+  const W = humidityRatio(dryerDewpointF, 100, linePressurePsia);
+  return W; // lb/lb
+}
+
+// Risk of condensation downstream: compare pipe temperature (≈ ambient) to PDP
+function condensationRisk(dryerNode, ambTempF, linePressurePsia) {
+  if (!dryerNode) return 'unknown';
+  const pdp = dryerNode.props.dewPoint || -40; // °F pressure dewpoint
+  if (ambTempF > pdp + 15) return 'low';
+  if (ambTempF > pdp)      return 'medium';
+  return 'high';
+}
+
+// ═══════════════════════════════════════════
+// DRAIN AIR LOSS MODEL
+// ═══════════════════════════════════════════
+// Orifice flow: Q (scfm) = 22.7 × Cd × A × P (rule: ~22.7 scfm per in² per psi for subcritical)
+// More precisely: Q = C × A(in²) × √(P_upstream_psia / T_R) × 1660
+// Simplified to: Q ≈ 0.65 × (π/4 × d²) × P × 0.0685 (empirical, psi gauge, scfm)
+function orificeFlow_scfm(orificeDia_in, pressurePsig) {
+  const A = Math.PI/4 * orificeDia_in * orificeDia_in; // in²
+  // Simplified subcritical orifice formula for compressed air
+  return 0.65 * A * pressurePsig * 0.0685;
+}
+
+function computeDrainAirLoss(node, linePressurePsig) {
+  const dt = node.props.drainType || 'timer';
+  const P  = linePressurePsig || 100;
+  if (dt === 'zeroloss') return 0;
+  if (dt === 'timer') {
+    const Q  = orificeFlow_scfm(node.props.orificeDia||0.25, P);
+    const on = node.props.onTime  || 5;   // seconds open per cycle
+    const cy = node.props.cycleTime || 300; // cycle length in seconds
+    return Q * (on / cy);
+  }
+  if (dt === 'float') {
+    if ((node.props.condition||'normal') === 'failed_open')
+      return orificeFlow_scfm(node.props.orificeDia||0.25, P);
+    return 0; // normal float drain — no air waste
+  }
+  if (dt === 'manual') {
+    const Q  = orificeFlow_scfm(node.props.orificeDia||0.25, P);
+    const opens = node.props.opensPerDay || 4;
+    const dur   = node.props.openDuration || 1; // minutes per open
+    return Q * (opens * dur) / (24 * 60); // average scfm
+  }
+  return 0;
+}
+
+// ═══════════════════════════════════════════
+// REGULATOR PRESSURE HANDLING
+// ═══════════════════════════════════════════
+// In path analysis: regulator sets downstream pressure to setPressure
+// regardless of upstream (as long as upstream > setPressure + upstreamMargin)
+function regulatorDp(regNode, upstreamPressure) {
+  const setP   = regNode.props.setPressure   || 90;
+  const margin = regNode.props.upstreamMargin || 10;
+  if (upstreamPressure < setP + margin) {
+    return { dP: 0, alert: `Regulator "${regNode.props.name}" approaching droop — upstream ${upstreamPressure.toFixed(1)} psi < set ${setP} + margin ${margin}` };
+  }
+  return { dP: upstreamPressure - setP, alert: null };
+}
+
+// ═══════════════════════════════════════════
+// PRESSURE REDUCTION OPPORTUNITY ANALYSIS
+// ═══════════════════════════════════════════
+function computePressureReductionOpportunity(paths, compressors) {
+  if (!paths || !paths.length || !compressors.length) return null;
+
+  const loadPaths = paths.filter(p => {
+    const sinkNode = nodes.find(n => n.id === p.sinkId);
+    return sinkNode && sinkNode.type === 'load';
+  });
+  if (!loadPaths.length) return null;
+
+  const bindingPath = loadPaths.reduce((worst, p) =>
+    (p.reqP + p.pathDrop) > (worst.reqP + worst.pathDrop) ? p : worst
+  );
+  const minHeaderP = bindingPath.reqP + bindingPath.pathDrop;
+  const currentP   = compressors[0] ? (compressors[0].props.operatingPressure ?? compressors[0].props.pressure ?? 0) : 0;
+  const reduction  = Math.max(0, currentP - minHeaderP);
+
+  // Isentropic derivative: d(Power)/d(P_op) per compressor
+  // isentropicScale = [(P_op/P_in)^K - 1] / [(P_rated/P_in)^K - 1]
+  // d(isoScale)/d(P_op_psia) = K * (P_op/P_in)^(K-1) / (P_in * iso_rated_term)
+  const K = 0.286; // (k-1)/k for k=1.4
+  const rate  = parseFloat(document.getElementById('elec-rate')?.value||0.10);
+  const hours = parseFloat(document.getElementById('hours-year')?.value||6000);
+  const amb   = getAmbient();
+
+  let savingPerPsi = 0;
+  compressors.forEach(comp => {
+    const P_in      = comp.props.ratedInletPres || 14.696;
+    const P_op      = (comp.props.operatingPressure ?? comp.props.pressure ?? 125) + P_in;
+    const P_rated   = (comp.props.pressure || 125) + P_in;
+    const iso_rated = Math.pow(P_rated / P_in, K) - 1;
+    if (iso_rated <= 0) return;
+    const dIso_dPop  = K * Math.pow(P_op / P_in, K - 1) / (P_in * iso_rated);
+    const loadFrac   = comp._stagedLoadFrac ?? 0;
+    const corr       = siteCorrection(comp, amb);
+    const pf         = partLoadPowerFactor(comp, loadFrac);
+    const ratedPower = comp.props.power || 0;
+    savingPerPsi += ratedPower * corr * pf * dIso_dPop * hours * rate;
+  });
+
+  return { currentP, minHeaderP, reduction, bindingPath, savingPerPsi };
+}
+
+function analyzeSystem() {
+  const res={valid:true,errors:[],warnings:[],paths:[],
+    totalSupply:0,totalDemand:0,totalLeaks:0,surplus:0,leakPct:0,prodEff:0};
+
+  // Cycle check
+  const cycle=detectCycle();
+  if(cycle){
+    const names=cycle.map(id=>{const n=nodes.find(x=>x.id===id);return n?(n.props.name||compDefs[n.type].label):id;});
+    res.valid=false;
+    res.errors.push('Loop detected: '+names.join(' -> ')+'. Ring mains are not supported — remove the connection creating the loop.');
+    return res;
+  }
+
+  const demand               = computeDownstreamDemand();
+  const { cap, nodeInCap }   = computeCapFlows();
+  const actualFlow           = computeActualFlows(nodeInCap, cap);
+  const ambient              = getAmbient();
+
+  // Stamp onto connections for rendering
+  connections.forEach(c=>{
+    c._actualFlow = actualFlow[c.id] || 0;
+    c._capFlow    = cap[c.id]        || 0;
+  });
+
+  const compressors = nodes.filter(n=>n.type==='compressor');
+  const loads       = nodes.filter(n=>n.type==='load');
+  const leaks       = nodes.filter(n=>n.type==='leak');
+  const drains      = nodes.filter(n=>n.type==='drain');
+
+  // Compute drain losses first (needed for total demand)
+  res.totalDrainLoss = drains.reduce((s,n)=>{
+    const att  = drainAttachments.find(a=>a.drainNodeId===n.id);
+    const hostP= att ? (nodes.find(h=>h.id===att.hostNodeId)?.props?.operatingPressure ||
+                        nodes.find(h=>h.id===att.hostNodeId)?.props?.pressure || 100) : 100;
+    return s + computeDrainAirLoss(n, hostP);
+  }, 0);
+
+  res.totalDemand = loads.reduce((s,n)=>s+(n.props.flowRate||0)*(n.props.dutyCycle||100)/100, 0);
+  res.totalLeaks  = leaks.reduce((s,n)=>s+(n.props.flowRate||0), 0) + res.totalDrainLoss;
+  const totalSystemDemand = res.totalDemand + res.totalLeaks;
+
+  // ── Demand-driven staging for steady-state ──
+  // Run staging engine against current system demand, store results on nodes
+  const stagingResults = stageCompressors(compressors, totalSystemDemand, ambient);
+  stagingResults.forEach(sr => {
+    sr.node._stagedLoadFrac  = sr.loadFrac;
+    sr.node._stagedFlow      = sr.actualFlow;
+    sr.node._stagedPower     = sr.actualPower;
+    sr.node._stagedInUnload  = sr.inUnload;
+    if (sr.warning) res.warnings.push(sr.warning);
+  });
+
+  res.totalSupply = stagingResults.reduce((s,sr)=>s+sr.actualFlow, 0);
+
+  // Unaccounted demand: when supply > identified loads+leaks, flag the gap
+  res.unaccountedDemand = Math.max(0, res.totalSupply - totalSystemDemand);
+  if (res.unaccountedDemand > 1.0) {
+    res.warnings.push(`Unaccounted demand: ${res.unaccountedDemand.toFixed(1)} scfm — supply (${res.totalSupply.toFixed(1)}) exceeds identified loads + leaks (${totalSystemDemand.toFixed(1)}). Check for unmapped loads, unreported leaks, or purge/blow-off points.`);
+  }
+
+  res.surplus  = res.totalSupply - res.totalDemand - res.totalLeaks;
+  res.leakPct  = res.totalSupply>0 ? res.totalLeaks/res.totalSupply*100 : 0;
+  res.prodEff  = res.totalSupply>0 ? res.totalDemand/res.totalSupply*100 : 0;
+  res.stagingResults = stagingResults; // expose for runAnalysis
+
+  if(res.surplus<-0.5)              res.warnings.push('Demand ('+( res.totalDemand+res.totalLeaks).toFixed(1)+' scfm) exceeds supply ('+res.totalSupply.toFixed(1)+' scfm).');
+  if(res.leakPct>10)                res.warnings.push('Leak+drain flow is '+res.leakPct.toFixed(1)+'% of supply — exceeds 10% best-practice threshold.');
+  if(res.totalSupply>(res.totalDemand+res.totalLeaks)*1.5&&res.totalSupply>0)
+                                    res.warnings.push('Compressor capacity oversized >50%. Consider VSD or staging.');
+
+  // Per-path pressure analysis — with regulator handling and pressure stamping
+  const allPaths = enumeratePaths();
+  const connPressureMap = {}; // connId → pressure at outlet of that connection
+  // Initialise all connections at source pressure
+  compressors.forEach(comp => {
+    const {dn} = buildGraph();
+    (dn[comp.id]||[]).forEach(childId => {
+      const conn = connections.find(c=>c.from===comp.id&&c.to===childId);
+      if (conn) connPressureMap[conn.id] = (comp.props.operatingPressure ?? comp.props.pressure ?? 0);
+    });
+  });
+
+  res.paths = allPaths.map(p => {
+    const srcNode  = nodes.find(n=>n.id===p.path[0]);
+    const sinkNode = nodes.find(n=>n.id===p.path[p.path.length-1]);
+    let currentP   = srcNode ? (srcNode.props.operatingPressure ?? srcNode.props.pressure ?? 0) : 0;
+    let pathDrop   = 0;
+    const segs     = [];
+
+    p.conns.forEach((connId, idx) => {
+      const conn    = connections.find(c=>c.id===connId); if(!conn) return;
+      const Q       = actualFlow[connId] || 0;
+      const toNode  = nodes.find(n=>n.id===conn.to);
+      let   segDp   = 0;
+
+      if (toNode && toNode.props.pressureDrop) {
+        const ratedQ = toNode.props.flowRate || Q || 1;
+        const ratio  = ratedQ > 0 ? Q/ratedQ : 0;
+        segDp = toNode.props.pressureDrop * ratio * ratio;
+        segs.push({label:toNode.props.name||compDefs[toNode.type].label, dp:segDp, type:'component'});
+      } else if (toNode && toNode.type === 'lineloss') {
+        const rDp=toNode.props.ratedDp||0, rFlow=toNode.props.ratedFlow||Q||1;
+        segDp = toNode.props.measured ? rDp : rDp*Math.pow(Q/rFlow,2);
+        toNode._lastActualDp = segDp;
+        segs.push({label:(toNode.props.name||'Line Loss')+(toNode.props.measured?' [M]':''), dp:segDp, type:'lineloss'});
+      } else if (toNode && toNode.type === 'regulator') {
+        const reg = regulatorDp(toNode, currentP);
+        segDp = reg.dP;
+        if (reg.alert) res.warnings.push(reg.alert);
+        segs.push({label:toNode.props.name||'Regulator', dp:segDp, type:'regulator'});
+      }
+
+      pathDrop   += segDp;
+      currentP   -= segDp;
+      // Stamp pressure at the outlet of this connection
+      connPressureMap[connId] = Math.max(0, currentP);
+    });
+
+    const endP   = srcNode ? (srcNode.props.operatingPressure ?? srcNode.props.pressure ?? 0) - pathDrop : 0;
+    const reqP   = sinkNode ? (sinkNode.props.pressure||0) : 0;
+    const margin = endP - reqP;
+    if (margin < 0) res.warnings.push('Path to "'+( sinkNode?sinkNode.props.name:'?')+'" delivers '+endP.toFixed(1)+' psi vs '+reqP+' psi required.');
+
+    return {
+      sinkId:    sinkNode?.id,
+      srcName:   srcNode  ? (srcNode.props.name ||'Source') : '?',
+      sinkName:  sinkNode ? (sinkNode.props.name||'Sink')   : '?',
+      srcP: (srcNode?.props.operatingPressure ?? srcNode?.props.pressure ?? 0), pathDrop, endP, reqP, margin, segs,
+      actualFlow: p.conns.length ? Math.min(...p.conns.map(id=>actualFlow[id]||0)) : 0
+    };
+  });
+
+  // Stamp pressure onto connections for colour rendering
+  connections.forEach(c => {
+    c._pressure = connPressureMap[c.id] ?? null;
+  });
+  // Set global pressure range for colour scale
+  const pressures = Object.values(connPressureMap).filter(v=>v!=null&&v>0);
+  window._pressureMin = pressures.length ? Math.min(...pressures) : 60;
+  window._pressureMax = pressures.length ? Math.max(...pressures) : 130;
+
+  if(allPaths.length===0&&compressors.length>0&&(loads.length+leaks.length)>0)
+    res.warnings.push('No complete paths from compressors to loads. Check connections.');
+
+  return res;
+}
+
+// ═══════════════════════════════════════════
+// SUMMARY + ALERTS
+// ═══════════════════════════════════════════
+function updateSummary() {
+  document.getElementById('m-components').textContent=nodes.length;
+  document.getElementById('m-connections').textContent=connections.length;
+  const sup=nodes.filter(n=>n.type==='compressor').reduce((s,n)=>s+(n._stagedFlow||0),0);
+  const dem=nodes.filter(n=>n.type==='load').reduce((s,n)=>s+(n.props.flowRate||0)*(n.props.dutyCycle||100)/100,0);
+  const lk =nodes.filter(n=>n.type==='leak').reduce((s,n)=>s+(n.props.flowRate||0),0);
+  document.getElementById('m-supply').textContent=sup.toFixed(0);
+  document.getElementById('m-demand').textContent=(dem+lk).toFixed(0);
+  const alerts=[];
+  if(!nodes.length) alerts.push({t:'info',m:'Add components and click Analyze.'});
+  else {
+    if(sup===0) alerts.push({t:'warn',m:'No compressors with flow configured.'});
+    if(lk>sup*0.1&&sup>0) alerts.push({t:'warn',m:`Leaks (${lk.toFixed(1)} scfm) exceed 10% of supply.`});
+    if(sup>0&&(dem+lk)>sup) alerts.push({t:'warn',m:`Demand exceeds supply by ${((dem+lk-sup)).toFixed(1)} scfm.`});
+    if(sup>0&&(dem+lk)<=sup&&lk<=sup*0.1) alerts.push({t:'ok',m:'System balanced.'});
+  }
+  document.getElementById('alertsList').innerHTML=alerts.map(a=>
+    `<div class="alert alert-${a.t}"><div class="alert-icon">${a.t==='warn'?'!':a.t==='ok'?'OK':'i'}</div><div>${a.m}</div></div>`
+  ).join('')||'<div class="alert alert-ok"><div class="alert-icon">OK</div><div>No issues.</div></div>';
+}
+
+// ═══════════════════════════════════════════
+// RUN ANALYSIS
+// ═══════════════════════════════════════════
+function runAnalysis() {
+  analysisRan=true;
+  const res=analyzeSystem();
+
+  if(!res.valid) {
+    document.getElementById('alertsList').innerHTML=res.errors.map(e=>
+      `<div class="alert alert-err"><div class="alert-icon">X</div><div>${e}</div></div>`).join('');
+    return;
+  }
+
+  const rate =parseFloat(document.getElementById('elec-rate')?.value||0.10);
+  const hrs  =parseFloat(document.getElementById('hours-year')?.value||6000);
+  const spec =getSystemSPP();
+  const comps=nodes.filter(n=>n.type==='compressor');
+  const dryers=nodes.filter(n=>n.type==='dryer');
+  const amb  =getAmbient();
+
+  // Pressure reduction opportunity (needs comps + amb defined first)
+  const pressOpp = computePressureReductionOpportunity(res.paths, comps);
+  renderPressureOpp(pressOpp);
+
+  // Moisture & drain analysis
+  renderMoisturePanel(comps, amb);
+
+  // Re-render connections with pressure stamps
+  renderConnections();
+
+  // Re-render compressor nodes so site-corrected values update on canvas
+  comps.forEach(n=>{
+    renderNode(n);
+    if(selectedNode&&selectedNode.id===n.id) document.getElementById(n.id).classList.add('selected');
+  });
+  // Re-render lineloss and drain nodes
+  nodes.filter(n=>n.type==='lineloss'||n.type==='drain').forEach(n=>{
+    renderNode(n);
+    if(selectedNode&&selectedNode.id===n.id){
+      document.getElementById(n.id).classList.add('selected');
+      if(n.type==='lineloss') updateLinelossActualDisplay(n);
+    }
+  });
+
+  // Corrected compressor outputs
+  const totCompPwr  = res.stagingResults.reduce((s,sr)=>s+sr.actualPower, 0);
+  const totDryerPwr = dryers.reduce((s,n)=>s+(n.props.power||0), 0);
+  const totPwr      = totCompPwr + totDryerPwr;
+  const annCost     = totPwr * hrs * rate;
+
+  document.getElementById('a-power').textContent=totPwr.toFixed(1);
+  document.getElementById('a-cost').textContent=annCost>1000?(annCost/1000).toFixed(1)+'k':annCost.toFixed(0);
+  document.getElementById('a-leak').textContent=res.leakPct.toFixed(1);
+  document.getElementById('a-eff').textContent=res.prodEff.toFixed(1);
+  document.getElementById('a-leak').closest('.metric-card').className='metric-card '+(res.leakPct>20?'bad':res.leakPct>10?'warn':'good');
+  document.getElementById('a-eff').closest('.metric-card').className='metric-card '+(res.prodEff>75?'good':res.prodEff>50?'warn':'bad');
+
+  // Flow balance — show staged flow and power per compressor
+  let fb='';
+  res.stagingResults.forEach(sr=>{
+    const n   = sr.node;
+    const ctrl= ctrlLabel(n.props.controlType||'lu');
+    const spp = sr.actualFlow>0 ? (sr.actualPower/(sr.actualFlow/100)).toFixed(2) : '—';
+    const loadStr = (sr.loadFrac*100).toFixed(1)+'%' + (sr.inUnload?' [unload]':'');
+    fb+=`<div class="flow-row"><div class="flow-dot" style="background:${CLR.compressor}"></div>
+      <div class="flow-name">${n.props.name} <span class="ctrl-badge ${ctrlClass(n.props.controlType||'lu')}">${ctrl}</span></div>
+      <div class="flow-val" style="color:${CLR.success}">+${sr.actualFlow.toFixed(1)} scfm</div></div>`;
+    fb+=`<div class="flow-row" style="padding-left:16px"><div class="flow-dot" style="background:transparent"></div>
+      <div class="flow-name" style="color:var(--text3);font-size:10px">Load: ${loadStr} · ${sr.actualPower.toFixed(1)} kW · ${spp} kW/100scfm</div>
+      <div class="flow-val"></div></div>`;
+  });
+  nodes.filter(n=>n.type==='load').forEach(n=>{const f=(n.props.flowRate||0)*(n.props.dutyCycle||100)/100; fb+=`<div class="flow-row"><div class="flow-dot" style="background:${CLR.load}"></div><div class="flow-name">${n.props.name}</div><div class="flow-val" style="color:${CLR.warn}">-${f.toFixed(1)} scfm</div></div>`;});
+  nodes.filter(n=>n.type==='leak').forEach(n=>{fb+=`<div class="flow-row"><div class="flow-dot" style="background:${CLR.leak}"></div><div class="flow-name">${n.props.name}</div><div class="flow-val" style="color:${CLR.danger}">-${n.props.flowRate||0} scfm</div></div>`;});
+  const bal=res.surplus;
+  fb+=`<div class="flow-row" style="margin-top:6px;border-top:1px solid var(--border);padding-top:8px"><div class="flow-dot" style="background:${bal>=0?CLR.success:CLR.danger}"></div><div class="flow-name" style="font-weight:600">Net Balance</div><div class="flow-val" style="color:${bal>=0?CLR.success:CLR.danger};font-weight:600">${bal>=0?'+':''}${bal.toFixed(1)} scfm</div></div>`;
+  document.getElementById('flowBalance').innerHTML=fb||'<div style="font-size:11px;color:var(--text3)">No components</div>';
+
+  // Path pressure
+  let pp='';
+  if(!res.paths.length) {
+    pp='<div style="font-size:11px;color:var(--text3)">No complete source to sink paths found.</div>';
+  } else {
+    res.paths.forEach(p=>{
+      const mc=p.margin>=10?CLR.success:p.margin>=0?CLR.warn:CLR.danger;
+      const mi=p.margin>=10?'OK':p.margin>=0?'~':'!';
+      let segs='';
+      p.segs.forEach(s=>{ segs+=`<div class="path-row-detail"><span>${s.type==='pipe'?'  pipe: ':'  '}${s.label}</span><span>-${s.dp.toFixed(3)} psi</span></div>`; });
+      pp+=`<div class="path-row">
+        <div class="path-row-title"><span>${p.srcName} to ${p.sinkName}</span><span style="color:${mc}">[${mi}]</span></div>
+        <div class="path-row-detail"><span>Flow</span><span>${p.actualFlow.toFixed(1)} scfm</span></div>
+        <div class="path-row-detail"><span>Source pressure</span><span>${p.srcP} psi</span></div>
+        ${segs}
+        <div class="path-row-detail"><span>Total path dP</span><span style="color:${CLR.purple}">-${p.pathDrop.toFixed(2)} psi</span></div>
+        <div class="path-row-detail"><span>Delivered</span><span style="color:${mc};font-weight:600">${p.endP.toFixed(1)} psi</span></div>
+        <div class="path-row-detail"><span>Required</span><span>${p.reqP} psi</span></div>
+        <div class="path-row-detail"><span>Margin</span><span style="color:${mc}">${p.margin>=0?'+':''}${p.margin.toFixed(1)} psi</span></div>
+      </div>`;
+    });
+  }
+  if(res.warnings.length) pp+=res.warnings.map(w=>`<div class="alert alert-warn" style="margin-top:6px"><div class="alert-icon">!</div><div>${w}</div></div>`).join('');
+  document.getElementById('pathPressure').innerHTML=pp;
+
+  // Efficiency bars — use system productive efficiency and leak-free score
+  document.getElementById('effBars').innerHTML=
+    bar('System Productive Eff.',res.prodEff,res.prodEff>75?CLR.success:res.prodEff>50?CLR.warn:CLR.danger)+
+    bar('Leak-Free Score',Math.max(0,100-res.leakPct),res.leakPct<10?CLR.success:res.leakPct<20?CLR.warn:CLR.danger);
+
+  // Scenario deltas
+  const fmt=v=>v>1000?'$'+(v/1000).toFixed(1)+'k/yr':'$'+v.toFixed(0)+'/yr';
+  document.getElementById('scn-leaks').textContent    =fmt(res.totalLeaks*spec*hrs*rate);
+  document.getElementById('scn-pressure').textContent =fmt(totPwr*0.05*hrs*rate);
+  document.getElementById('scn-vsd').textContent      =fmt(totCompPwr*0.15*hrs*rate);
+  document.getElementById('scn-heat').textContent     =fmt(totCompPwr*0.7*0.05*hrs*rate);
+  document.getElementById('scn-night').textContent    =fmt(annCost*0.25);
+
+  updateSummary();
+}
+
+function bar(lbl,val,clr){
+  return `<div class="eff-bar-wrap"><div class="eff-bar-label"><span>${lbl}</span><span style="color:${clr};font-family:monospace">${val.toFixed(1)}%</span></div><div class="eff-bar-track"><div class="eff-bar-fill" style="width:${Math.min(100,val)}%;background:${clr}"></div></div></div>`;
+}
+
+// ═══════════════════════════════════════════
+// SCENARIOS
+// ═══════════════════════════════════════════
+function runScenario(type) {
+  const rate=parseFloat(document.getElementById('elec-rate')?.value||0.10);
+  const hrs =parseFloat(document.getElementById('hours-year')?.value||6000);
+  const spec=getSystemSPP();
+  const comps=nodes.filter(n=>n.type==='compressor');
+  const leaks=nodes.filter(n=>n.type==='leak');
+  const pwr =comps.reduce((s,n)=>s+(n.props.power||0),0);
+  const lkF =leaks.reduce((s,n)=>s+(n.props.flowRate||0),0);
+  const cost=pwr*hrs*rate;
+  let title,details;
+  if(type==='fix_leaks'){const sav=lkF*spec*hrs*rate;const pb=sav>0?(500*leaks.length)/sav:0;title='Fix All Leaks';details=[`Leak flow eliminated: ${lkF.toFixed(1)} scfm`,`Energy savings: ${(lkF*spec).toFixed(2)} kW`,`Annual savings: $${sav.toFixed(0)}`,`Repair cost est.: $${(500*leaks.length).toFixed(0)}`,`Payback: ${pb>0?pb.toFixed(1)+' yr':'N/A'}`];}
+  else if(type==='reduce_pressure'){const sav=pwr*hrs*rate*0.05;title='Reduce Header Pressure 10 psi';details=['~0.5% power saved per 1 psi',`Annual savings: $${sav.toFixed(0)}`,'Check all end-use pressures first'];}
+  else if(type==='vsd'){const sav=pwr*hrs*rate*0.15;const pb=sav>0?(pwr*800)/sav:0;title='Variable Speed Drive';details=[`Estimated savings: $${sav.toFixed(0)}/yr`,`Capital est.: $${(pwr*800).toFixed(0)}`,`Payback: ${pb.toFixed(1)} yr`];}
+  else if(type==='heat_recovery'){const sav=pwr*0.7*0.05*hrs*rate;title='Heat Recovery';details=[`Recoverable: ~${(pwr*0.7).toFixed(1)} kW`,`Credit: ~$${sav.toFixed(0)}/yr`,'Install: $2k-$8k per unit'];}
+  else if(type==='night_off'){const sav=cost*0.25;title='Shut Down Nights & Weekends';details=[`Annual savings: $${sav.toFixed(0)}`,'Requires timer or BAS','Add receivers for start-up spikes'];}
+  document.getElementById('scenarioResults').innerHTML=`<div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:12px"><div style="font-size:12px;font-weight:600;margin-bottom:8px">${title}</div>${details.map(d=>`<div style="font-size:11px;color:var(--text2);margin-bottom:4px;display:flex;gap:6px"><span style="color:${CLR.accent}">+</span><span>${d}</span></div>`).join('')}</div>`;
+}
+
+// ═══════════════════════════════════════════
+// TABS
+// ═══════════════════════════════════════════
+function setTab(tab){
+  currentTab=tab;
+  document.querySelectorAll('.tab').forEach((t,i)=>t.classList.toggle('active',['design','analysis','scenarios'][i]===tab));
+  document.getElementById('panelDesign').style.display   =tab==='design'   ?'':'none';
+  document.getElementById('panelAnalysis').style.display =tab==='analysis' ?'':'none';
+  document.getElementById('panelScenarios').style.display=tab==='scenarios'?'':'none';
+  if((tab==='analysis'||tab==='scenarios')&&nodes.length) runAnalysis();
+}
+
+// ═══════════════════════════════════════════
+// CLEAR / EXAMPLE
+// ═══════════════════════════════════════════
+function clearAll(){
+  if(nodes.length&&!confirm('Clear all components?')) return;
+  nodes=[]; connections=[]; drainAttachments=[];
+  document.getElementById('nodesContainer').innerHTML='';
+  document.getElementById('pendingPath').setAttribute('d','');
+  selectNode(null); selectConn(null);
+  window._pressureMin=60; window._pressureMax=130;
+  resizeCanvas(); // resets canvas transform and clears by reassigning width/height
+  updateSummary();
+  document.getElementById('emptyState').style.display='';
+  analysisRan=false;
+}
+
+function loadExample(){
+  clearAll();
+  setTimeout(()=>{
+    addNode('compressor', 60, 60);
+    addNode('compressor', 60, 210);
+    addNode('dryer',      250, 135);
+    addNode('lineloss',   390, 95);
+    addNode('filter',     490, 135);
+    addNode('receiver',   640, 60);
+    addNode('load',       640, 210);
+    addNode('load',       640, 330);
+    addNode('leak',       490, 300);
+    addNode('lineloss',   570, 210);
+
+    nodes[0].props={name:'Compressor 1',flowRate:100,pressure:125,operatingPressure:110,power:25,load:75,
+      controlType:'lu',unloadPower:20,ratedInletPres:14.696,ratedInletTemp:68,stagingPriority:1};
+    nodes[1].props={name:'Compressor 2',flowRate:80, pressure:125,operatingPressure:110,power:20,load:60,
+      controlType:'vsd',unloadPower:20,ratedInletPres:14.696,ratedInletTemp:68,stagingPriority:2};
+    nodes[2].props={name:'Refrigerated Dryer',flowRate:180,pressureDrop:2,power:2,dewPoint:-40};
+    nodes[3].props={name:'Line Loss',ratedDp:1.5,ratedFlow:180,measured:false}; // header run
+    nodes[4].props={name:'Coalescing Filter', flowRate:180,pressureDrop:1,micronRating:5};
+    nodes[5].props={name:'Main Receiver',     volume:240,maxPressure:150,workingPressure:120};
+    nodes[6].props={name:'Pneumatic Tools',   flowRate:50,pressure:90,dutyCycle:80};
+    nodes[7].props={name:'Automation Line',   flowRate:30,pressure:80,dutyCycle:60};
+    nodes[8].props={name:'Fitting Leak',      flowRate:8, pressure:100};
+    nodes[9].props={name:'Line Loss',ratedDp:0.8,ratedFlow:80,measured:false}; // branch run
+
+    document.getElementById('nodesContainer').innerHTML='';
+    nodes.forEach(renderNode);
+
+    setTimeout(()=>{
+      connections=[
+        {id:'c1',from:'n1',to:'n3',_actualFlow:0,_capFlow:0},
+        {id:'c2',from:'n2',to:'n3',_actualFlow:0,_capFlow:0},
+        {id:'c3',from:'n3',to:'n4',_actualFlow:0,_capFlow:0},
+        {id:'c4',from:'n4',to:'n5',_actualFlow:0,_capFlow:0},
+        {id:'c5',from:'n5',to:'n6',_actualFlow:0,_capFlow:0},
+        {id:'c6',from:'n6',to:'n10',_actualFlow:0,_capFlow:0},
+        {id:'c7',from:'n10',to:'n7',_actualFlow:0,_capFlow:0},
+        {id:'c8',from:'n6',to:'n8',_actualFlow:0,_capFlow:0},
+        {id:'c9',from:'n5',to:'n9',_actualFlow:0,_capFlow:0},
+      ];
+      renderConnections();
+      updateSummary();
+      runAnalysis();
+    },60);
+  },10);
+}
+
+
+// ═══════════════════════════════════════════════════════════════
+// 8760 SIMULATION MODULE
+// ═══════════════════════════════════════════════════════════════
+
+// ── State ────────────────────────────────────────────────────────
+const SIM = {
+  schedules: [],          // [{id, name, days:{mon,tue,...,holiday}:[{start,stop,factor}]}]
+  equipment: {},          // nodeId → scheduleId
+  postNodes: null,        // deep-copied nodes for post case (null = not duplicated)
+  postConnections: null,
+  postEquipment: {},
+  currentCase: 'pre',     // 'pre' | 'post'
+  editingSchedId: null,
+  editingDay: 'mon',
+  resultsPreHours:  null, // 8760 row objects for pre
+  resultsPostHours: null, // 8760 row objects for post
+};
+
+const DAY_KEYS  = ['mon','tue','wed','thu','fri','sat','sun','holiday'];
+const DAY_NAMES = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday','Holiday'];
+const JS_DOW_TO_KEY = ['sun','mon','tue','wed','thu','fri','sat']; // JS getDay() → key
+
+// ── Federal Holidays ─────────────────────────────────────────────
+function getNthWeekday(year, month, nth, dow) { // dow: 0=Sun,1=Mon,...
+  let d = new Date(year, month, 1), count = 0;
+  while (true) { if (d.getDay() === dow) { count++; if (count === nth) return d; } d.setDate(d.getDate()+1); }
+}
+function getLastWeekday(year, month, dow) {
+  let d = new Date(year, month+1, 0);
+  while (d.getDay() !== dow) d.setDate(d.getDate()-1);
+  return d;
+}
+function observedDate(year, month, day) {
+  const d = new Date(year, month, day);
+  const dow = d.getDay();
+  if (dow === 6) return new Date(year, month, day-1); // Sat→Fri
+  if (dow === 0) return new Date(year, month, day+1); // Sun→Mon
+  return d;
+}
+function getFederalHolidays(year) {
+  const dates = new Set();
+  const add = d => dates.add(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`);
+  add(observedDate(year,0,1));    // New Year's
+  add(getNthWeekday(year,0,3,1)); // MLK Day
+  add(getNthWeekday(year,1,3,1)); // Presidents Day
+  add(getLastWeekday(year,4,1));  // Memorial Day
+  add(observedDate(year,5,19));   // Juneteenth
+  add(observedDate(year,6,4));    // Independence Day
+  add(getNthWeekday(year,8,1,1)); // Labor Day
+  add(getNthWeekday(year,9,2,1)); // Columbus Day
+  add(observedDate(year,10,11));  // Veterans Day
+  add(getNthWeekday(year,10,4,4));// Thanksgiving
+  add(observedDate(year,11,25));  // Christmas
+  return dates;
+}
+
+// ── Schedule helpers ─────────────────────────────────────────────
+let schedIdCounter = 1;
+function makeScheduleId() { return 'sched_' + (schedIdCounter++); }
+
+function defaultSchedule(name) {
+  const days = {};
+  DAY_KEYS.forEach(d => {
+    if (['mon','tue','wed','thu','fri'].includes(d))
+      days[d] = [{start:'06:00', stop:'18:00', factor:100}];
+    else
+      days[d] = [];
+  });
+  return { id: makeScheduleId(), name, days };
+}
+
+function initSchedules() {
+  // Always ensure at least two default schedules exist
+  if (SIM.schedules.length === 0) {
+    SIM.schedules.push(defaultSchedule('Compressor Schedule 1'));
+    SIM.schedules.push(defaultSchedule('Load Schedule 1'));
+  }
+  // Ensure every compressor and load has an assignment (handles nodes added after first open)
+  const compSchedId = SIM.schedules[0].id;
+  const loadSchedId = SIM.schedules[1] ? SIM.schedules[1].id : SIM.schedules[0].id;
+  nodes.forEach(n => {
+    if (!SIM.equipment[n.id]) {
+      if (n.type === 'compressor') SIM.equipment[n.id] = compSchedId;
+      if (n.type === 'load')       SIM.equipment[n.id] = loadSchedId;
+    }
+  });
+}
+
+function getScheduleById(id) { return SIM.schedules.find(s => s.id === id); }
+
+// Given a date and hour (0-23), find load factor for a node
+function getHourFactor(nodeId, date, hour, holidays, equipMap, schedList) {
+  const eqMap  = equipMap || SIM.equipment;
+  const schedId = eqMap[nodeId];
+  if (!schedId) return 1; // no assignment = always on at full factor
+
+  const sched = schedList
+    ? schedList.find(s => s.id === schedId)
+    : getScheduleById(schedId);
+  if (!sched) return 1; // missing schedule = always on
+
+  const dateStr = `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`;
+  const isHol   = holidays.has(dateStr);
+  const dayKey  = isHol ? 'holiday' : JS_DOW_TO_KEY[date.getDay()];
+  const blocks  = sched.days[dayKey] || [];
+
+  for (const blk of blocks) {
+    const [sh,sm] = blk.start.split(':').map(Number);
+    const [eh,em] = blk.stop.split(':').map(Number);
+    const startMin = sh*60+sm, stopMin = eh*60+em;
+    if (hour*60 >= startMin && hour*60 < stopMin) return (blk.factor||0)/100;
+  }
+  return 0;
+}
+
+// ── Open / Close ─────────────────────────────────────────────────
+function open8760() {
+  initSchedules();
+  document.getElementById('sim8760Overlay').style.display = 'flex';
+  setSimCase('pre');
+  renderScheduleList();
+  renderEquipAssignment();
+}
+function close8760() {
+  document.getElementById('sim8760Overlay').style.display = 'none';
+}
+
+// ── Case tabs ─────────────────────────────────────────────────────
+function setSimCase(c) {
+  SIM.currentCase = c;
+  document.getElementById('tabPre').classList.toggle('active', c==='pre');
+  document.getElementById('tabPost').classList.toggle('active', c==='post');
+  document.getElementById('simCaseLabel').textContent = c==='pre' ? 'Pre Case' : 'Post Case';
+  if (c==='post' && !SIM.postNodes) {
+    document.getElementById('simComponentList').innerHTML =
+      '<div style="color:var(--text3);font-size:11px">Click "Duplicate Pre→Post" to create the post case from the current system.</div>';
+  } else {
+    renderSimComponentList();
+  }
+  renderEquipAssignment();
+}
+
+// ── Duplicate pre→post ────────────────────────────────────────────
+function duplicatePreCase() {
+  initSchedules(); // ensure all current nodes are assigned before copying
+  SIM.postNodes       = JSON.parse(JSON.stringify(nodes));
+  SIM.postConnections = JSON.parse(JSON.stringify(connections));
+  SIM.postEquipment   = JSON.parse(JSON.stringify(SIM.equipment));
+  setSimCase('post');
+}
+
+// ── Schedule list UI ──────────────────────────────────────────────
+function renderScheduleList() {
+  const el = document.getElementById('scheduleList');
+  el.innerHTML = SIM.schedules.map(s => `
+    <div onclick="selectSchedule('${s.id}')" style="padding:7px 12px;cursor:pointer;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:6px;background:${SIM.editingSchedId===s.id?'var(--surface3)':'transparent'}">
+      <span style="flex:1;font-size:12px;font-weight:${SIM.editingSchedId===s.id?'600':'400'};color:var(--text)">${s.name}</span>
+      <button onclick="event.stopPropagation();renameSchedule('${s.id}')" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:11px;padding:0 3px" title="Rename">✎</button>
+      ${SIM.schedules.length>1?`<button onclick="event.stopPropagation();deleteSchedule('${s.id}')" style="background:none;border:none;color:var(--danger);cursor:pointer;font-size:11px;padding:0 3px" title="Delete">✕</button>`:''}
+    </div>`).join('');
+}
+
+function addSchedule() {
+  const name = prompt('Schedule name:', 'New Schedule');
+  if (!name) return;
+  SIM.schedules.push(defaultSchedule(name));
+  renderScheduleList();
+}
+
+function renameSchedule(id) {
+  const s = getScheduleById(id); if (!s) return;
+  const name = prompt('Rename schedule:', s.name);
+  if (name) { s.name = name; renderScheduleList(); renderEquipAssignment(); }
+}
+
+function deleteSchedule(id) {
+  if (!confirm('Delete this schedule? Equipment assigned to it will become unscheduled.')) return;
+  SIM.schedules = SIM.schedules.filter(s => s.id !== id);
+  Object.keys(SIM.equipment).forEach(k => { if (SIM.equipment[k]===id) delete SIM.equipment[k]; });
+  if (SIM.editingSchedId === id) SIM.editingSchedId = null;
+  renderScheduleList();
+  renderDayBlockEditor();
+  renderEquipAssignment();
+}
+
+function selectSchedule(id) {
+  SIM.editingSchedId = id;
+  SIM.editingDay = 'mon';
+  renderScheduleList();
+  renderDayBlockEditor();
+}
+
+// ── Day-block editor ──────────────────────────────────────────────
+function renderDayBlockEditor() {
+  const sched = getScheduleById(SIM.editingSchedId);
+  const el = document.getElementById('dayBlockEditor');
+  const nameEl = document.getElementById('editingSchedName');
+  if (!sched) { el.innerHTML='<span style="color:var(--text3)">Select a schedule above</span>'; nameEl.textContent='—'; return; }
+  nameEl.textContent = sched.name;
+
+  const dayTabs = DAY_KEYS.map((k,i) => `
+    <span onclick="selectEditDay('${k}')" style="padding:3px 6px;border-radius:4px;cursor:pointer;font-size:10px;font-weight:500;
+      background:${SIM.editingDay===k?'var(--accent)':'var(--surface3)'};
+      color:${SIM.editingDay===k?'#000':'var(--text2)'};margin-right:2px;margin-bottom:3px;display:inline-block">
+      ${DAY_NAMES[i].slice(0,3)}
+    </span>`).join('');
+
+  const blocks = sched.days[SIM.editingDay] || [];
+  const blockRows = blocks.map((b,i) => `
+    <div style="display:flex;align-items:center;gap:4px;margin-bottom:4px;">
+      <input type="time" value="${b.start}" style="width:72px;padding:3px 4px;background:var(--surface3);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:11px"
+        onchange="updateBlock('${sched.id}','${SIM.editingDay}',${i},'start',this.value)">
+      <span style="color:var(--text3);font-size:10px">to</span>
+      <input type="time" value="${b.stop}" style="width:72px;padding:3px 4px;background:var(--surface3);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:11px"
+        onchange="updateBlock('${sched.id}','${SIM.editingDay}',${i},'stop',this.value)">
+      <input type="number" value="${b.factor}" min="0" max="100" style="width:48px;padding:3px 4px;background:var(--surface3);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:11px;text-align:right"
+        onchange="updateBlock('${sched.id}','${SIM.editingDay}',${i},'factor',this.value)">
+      <span style="font-size:10px;color:var(--text3)">%</span>
+      <button onclick="removeBlock('${sched.id}','${SIM.editingDay}',${i})" style="background:none;border:none;color:var(--danger);cursor:pointer;font-size:12px;padding:0 2px">✕</button>
+    </div>`).join('');
+
+  // Copy to days UI
+  const copyTargets = DAY_KEYS.filter(k=>k!==SIM.editingDay).map(k=>`
+    <label style="display:inline-flex;align-items:center;gap:3px;margin-right:6px;font-size:10px;cursor:pointer">
+      <input type="checkbox" id="copy_${k}" style="cursor:pointer"> ${k.slice(0,3)}
+    </label>`).join('');
+
+  el.innerHTML = `
+    <div style="margin-bottom:6px;line-height:1.8">${dayTabs}</div>
+    ${blockRows}
+    <button onclick="addBlock('${sched.id}','${SIM.editingDay}')"
+      style="font-size:11px;padding:3px 8px;background:var(--surface3);border:1px solid var(--border);border-radius:4px;color:var(--text);cursor:pointer;margin-bottom:8px">+ Add Block</button>
+    <div style="border-top:1px solid var(--border);padding-top:6px;margin-top:2px">
+      <div style="font-size:10px;color:var(--text3);margin-bottom:4px">Copy this day's blocks to:</div>
+      <div>${copyTargets}</div>
+      <button onclick="copyDayBlocks('${sched.id}','${SIM.editingDay}')"
+        style="font-size:10px;padding:2px 7px;background:var(--surface3);border:1px solid var(--border);border-radius:4px;color:var(--text);cursor:pointer;margin-top:4px">Copy</button>
+    </div>`;
+}
+
+function selectEditDay(day) { SIM.editingDay = day; renderDayBlockEditor(); }
+
+function addBlock(schedId, day) {
+  const s = getScheduleById(schedId); if (!s) return;
+  s.days[day].push({start:'08:00', stop:'17:00', factor:100});
+  renderDayBlockEditor();
+}
+
+function removeBlock(schedId, day, idx) {
+  const s = getScheduleById(schedId); if (!s) return;
+  s.days[day].splice(idx,1);
+  renderDayBlockEditor();
+}
+
+function updateBlock(schedId, day, idx, field, val) {
+  const s = getScheduleById(schedId); if (!s) return;
+  s.days[day][idx][field] = field==='factor' ? parseFloat(val)||0 : val;
+}
+
+function copyDayBlocks(schedId, fromDay) {
+  const s = getScheduleById(schedId); if (!s) return;
+  const src = JSON.parse(JSON.stringify(s.days[fromDay]));
+  DAY_KEYS.forEach(k => {
+    const cb = document.getElementById('copy_'+k);
+    if (cb && cb.checked) { s.days[k] = JSON.parse(JSON.stringify(src)); cb.checked=false; }
+  });
+  renderDayBlockEditor();
+}
+
+// ── Equipment assignment UI ───────────────────────────────────────
+function renderEquipAssignment() {
+  const el = document.getElementById('equipAssignment');
+  const isPost = SIM.currentCase==='post' && SIM.postNodes;
+  const nodeList = isPost ? SIM.postNodes : nodes;
+  const eqMap    = isPost ? SIM.postEquipment : SIM.equipment;
+  const relevant = nodeList.filter(n=>n.type==='compressor'||n.type==='load');
+  if (!relevant.length) { el.innerHTML='<span style="color:var(--text3)">No compressors or loads in system.</span>'; return; }
+
+  el.innerHTML = relevant.map(n => {
+    const opts = SIM.schedules.map(s=>`<option value="${s.id}" ${eqMap[n.id]===s.id?'selected':''}>${s.name}</option>`).join('');
+    const typeClr = n.type==='compressor'?CLR.compressor:CLR.load;
+    return `<div style="display:flex;align-items:center;gap:5px;margin-bottom:5px;">
+      <div style="width:8px;height:8px;border-radius:50%;background:${typeClr};flex-shrink:0"></div>
+      <span style="font-size:11px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${n.props.name||n.type}</span>
+      <select onchange="${isPost?'postAssign':'preAssign'}('${n.id}',this.value)"
+        style="font-size:10px;padding:2px 4px;background:var(--surface3);border:1px solid var(--border);border-radius:4px;color:var(--text);max-width:110px">${opts}</select>
+    </div>`;
+  }).join('');
+}
+
+function preAssign(nodeId, schedId)  { SIM.equipment[nodeId]     = schedId; }
+function postAssign(nodeId, schedId) { SIM.postEquipment[nodeId] = schedId; }
+
+// ── Component list (pre / post with highlighting) ─────────────────
+function renderSimComponentList() {
+  const el = document.getElementById('simComponentList');
+  const isPost = SIM.currentCase==='post';
+  const nodeList = isPost ? (SIM.postNodes||[]) : nodes;
+  const preNodeMap = {};
+  nodes.forEach(n => preNodeMap[n.id] = n);
+
+  const relevant = nodeList.filter(n=>['compressor','dryer','filter','receiver','load','leak','lineloss'].includes(n.type));
+  if (!relevant.length) { el.innerHTML='<div style="color:var(--text3);font-size:11px">No components.</div>'; return; }
+
+  el.innerHTML = relevant.map(n => {
+    const def = compDefs[n.type];
+    const preN = preNodeMap[n.id];
+    // Detect differences from pre case
+    let diffKeys = [];
+    if (isPost && preN) {
+      Object.keys(n.props).forEach(k => {
+        if (JSON.stringify(n.props[k]) !== JSON.stringify(preN.props[k])) diffKeys.push(k);
+      });
+    }
+    const hasDiff = diffKeys.length > 0;
+    const border  = hasDiff ? `2px solid ${CLR.warn}` : `1px solid var(--border)`;
+    const bg      = hasDiff ? 'rgba(240,169,58,.05)' : 'var(--surface2)';
+
+    const propRows = Object.entries(n.props)
+      .filter(([k]) => !['name','controlType','measured'].includes(k))
+      .map(([k, v]) => {
+        const isDiff = diffKeys.includes(k);
+        const preVal = preN ? preN.props[k] : null;
+
+        // Look up label and unit from compDefs
+        const def = compDefs[n.type];
+        const labelUnit = def?.propLabels?.[k];
+        const label = labelUnit ? labelUnit[0] : k;
+        const unit  = labelUnit ? labelUnit[1] : '';
+
+        // Special labels for compressor fields not in propLabels
+        const extraLabels = {
+          unloadPower:      ['Unload Power',      '%'],
+          stagingPriority:  ['Staging Priority',  '#'],
+          operatingPressure:['Operating Pressure','psi'],
+          ratedInletPres:   ['Rated Inlet Pres',  'psia'],
+          ratedInletTemp:   ['Rated Inlet Temp',  '°F'],
+          efficiency:       ['Efficiency',         '%'],
+          ratedDp:          ['Rated dP',           'psi'],
+          ratedFlow:        ['Rated Flow',         'scfm'],
+        };
+        const [dispLabel, dispUnit] = extraLabels[k] || [label, unit];
+        const diff = isDiff
+          ? ` <span style="color:${CLR.warn};font-size:9px">(was ${typeof preVal==='number'&&preVal%1?preVal.toFixed(2):preVal})</span>`
+          : '';
+
+        if (isPost) {
+          const inputType = typeof v === 'number' ? 'number' : 'text';
+          return `<div style="display:flex;align-items:center;gap:4px;margin-bottom:3px;${isDiff?`background:rgba(240,169,58,.08);border-radius:3px;padding:1px 3px`:''}">
+            <span style="font-size:10px;color:var(--text2);flex:1">${dispLabel}</span>
+            <input type="${inputType}" value="${v}" step="any"
+              style="width:70px;padding:2px 5px;background:var(--surface3);border:1px solid ${isDiff?CLR.warn:'var(--border)'};border-radius:3px;color:var(--text);font-size:10px;font-family:'IBM Plex Mono',monospace;text-align:right"
+              onchange="updatePostProp('${n.id}','${k}',this.value)">
+            <span style="font-size:9px;color:var(--text3);min-width:28px">${dispUnit}</span>
+            ${diff}
+          </div>`;
+        }
+        const dispVal = typeof v === 'number' ? (v % 1 ? v.toFixed(2) : v) : v;
+        return `<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:2px;">
+          <span style="font-size:10px;color:var(--text2)">${dispLabel}</span>
+          <span style="font-size:10px;font-family:'IBM Plex Mono',monospace">${dispVal} <span style="color:var(--text3);font-size:9px">${dispUnit}</span></span>
+        </div>`;
+      }).join('');
+
+    return `<div style="border:${border};background:${bg};border-radius:6px;padding:8px 10px;margin-bottom:6px;">
+      <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;">
+        <div style="width:10px;height:10px;border-radius:2px;background:${def.color}30;border:1px solid ${def.color}"></div>
+        <span style="font-size:12px;font-weight:600;flex:1">${n.props.name||def.label}</span>
+        ${hasDiff?`<span style="font-size:9px;padding:1px 5px;border-radius:3px;background:rgba(240,169,58,.15);color:${CLR.warn}">MODIFIED</span>`:''}
+      </div>
+      ${propRows}
+    </div>`;
+  }).join('');
+}
+
+function updatePostProp(nodeId, key, val) {
+  if (!SIM.postNodes) return;
+  const n = SIM.postNodes.find(x=>x.id===nodeId); if (!n) return;
+  const num = parseFloat(val);
+  n.props[key] = isNaN(num) ? val : num;
+  renderSimComponentList(); // re-render to update diff highlights
+}
+
+// ── 8760 SIMULATION ENGINE ────────────────────────────────────────
+function buildHourlyCalendar(year) {
+  const holidays = getFederalHolidays(year);
+  const rows = [];
+  const start = new Date(year, 0, 1);
+  for (let h=0; h<8760; h++) {
+    const d = new Date(start.getTime() + h*3600000);
+    const dateStr = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    rows.push({
+      hour: h, date: d, dateStr,
+      dayName: ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][d.getDay()],
+      month: d.getMonth(),
+      hourOfDay: d.getHours(),
+      isHoliday: holidays.has(dateStr)
+    });
+  }
+  return { rows, holidays };
+}
+
+// ═══════════════════════════════════════════
+// SHARED STAGING ENGINE
+// Used by both steady-state analysis and 8760 simulation
+// ═══════════════════════════════════════════
+
+// Minimum stable load fractions by control type
+const MIN_STABLE_LOAD = { lu: 0.30, mod: 0.40, vsd: 0.20 };
+
+// Stage a list of compressor nodes against a demand (scfm).
+// Returns array of { node, loadFrac, actualFlow, actualPower, inUnload, warning }
+// onlineNodes: compressor nodes available this period (scheduled on)
+function stageCompressors(onlineNodes, demandScfm, ambient) {
+  // Sort by staging priority
+  const sorted = [...onlineNodes].sort((a,b) =>
+    (a.props.stagingPriority ?? 1) - (b.props.stagingPriority ?? 1));
+
+  let remaining = demandScfm;
+  const results = [];
+
+  sorted.forEach(node => {
+    const ratedCap = (node.props.flowRate || 0) * siteCorrection(node, ambient);
+    let warning = null;
+
+    if (remaining <= 0) {
+      // Unit not needed — L/U stays at unload power, VSD/MOD go to zero
+      const ct = node.props.controlType || 'lu';
+      const isLU = ct === 'lu';
+      const ulFrac = isLU ? (node.props.unloadPower ?? 20) / 100 : 0;
+      const unloadPower = (node.props.power || 0) * ulFrac;
+      results.push({ node, loadFrac: 0, actualFlow: 0, actualPower: unloadPower,
+        inUnload: isLU, warning: null });
+      return;
+    }
+
+    let loadFrac;
+    if (remaining >= ratedCap) {
+      // Full load
+      loadFrac = 1.0;
+      remaining -= ratedCap;
+    } else {
+      // Trim unit
+      loadFrac = ratedCap > 0 ? remaining / ratedCap : 0;
+      remaining = 0;
+    }
+
+    // Check minimum stable load
+    const ct = node.props.controlType || 'lu';
+    const minLoad = node.props.minStableLoad != null
+      ? node.props.minStableLoad / 100
+      : (MIN_STABLE_LOAD[ct] ?? 0.30);
+
+    if (loadFrac > 0 && loadFrac < minLoad) {
+      warning = `"${node.props.name}" computed load ${(loadFrac*100).toFixed(1)}% is below minimum stable load ${(minLoad*100).toFixed(0)}% — consider staging this unit off.`;
+    }
+
+    const out = compressorOutput(node, ambient, loadFrac);
+    results.push({ node, loadFrac, actualFlow: out.actualFlow,
+      actualPower: out.actualPower, inUnload: false, warning });
+  });
+
+  return results;
+}
+
+function runOneHour(hrData, nodeList, connList, eqMap, schedList, ambient) {
+  const holidays = hrData.holidays || new Set();
+
+  // ── 1. Compute demand from loads (schedule on/off × duty cycle) ──
+  let demandScfm = 0;
+  const loadClones = nodeList.map(n => {
+    const clone = { ...n, props: { ...n.props } };
+    if (n.type === 'load') {
+      // Schedule factor is on/off: >0 means load is active, 0 means off
+      const sf = getHourFactor(n.id, hrData.date, hrData.hourOfDay, holidays, eqMap, schedList);
+      clone.props.dutyCycle = sf > 0 ? (n.props.dutyCycle ?? 100) : 0;
+      demandScfm += (n.props.flowRate || 0) * clone.props.dutyCycle / 100;
+    }
+    return clone;
+  });
+
+  // ── 2. Determine which compressors are scheduled on ──
+  const compNodes = nodeList.filter(n => n.type === 'compressor');
+  const onlineComps = compNodes.filter(n => {
+    const sf = getHourFactor(n.id, hrData.date, hrData.hourOfDay, holidays, eqMap, schedList);
+    return sf > 0; // on/off only
+  });
+
+  const anyCompOn = onlineComps.length > 0;
+
+  // ── 3. Leaks only flow when system is pressurized ──
+  const leakNodes = nodeList.filter(n => n.type === 'leak');
+  const leakScfm  = anyCompOn ? leakNodes.reduce((s,n) => s+(n.props.flowRate||0), 0) : 0;
+
+  // ── 4. Drain losses when system is on ──
+  const drainScfm = anyCompOn ? nodeList.filter(n=>n.type==='drain').reduce((s,n)=>{
+    const att=drainAttachments.find(a=>a.drainNodeId===n.id);
+    const hostP=att?(nodeList.find(h=>h.id===att.hostNodeId)?.props?.operatingPressure||
+                     nodeList.find(h=>h.id===att.hostNodeId)?.props?.pressure||100):100;
+    return s+computeDrainAirLoss(n,hostP);
+  },0) : 0;
+
+  const totalDemand = demandScfm + leakScfm + drainScfm;
+
+  // ── 5. Stage compressors against demand ──
+  const compResults = anyCompOn
+    ? stageCompressors(onlineComps, totalDemand, ambient)
+    : [];
+
+  // ── 6. System totals ──
+  const supplyScfm = compResults.reduce((s,c) => s+c.actualFlow, 0);
+  const compKw     = compResults.reduce((s,c) => s+c.actualPower, 0);
+  const dryerKw    = anyCompOn
+    ? nodeList.filter(n=>n.type==='dryer').reduce((s,n)=>s+(n.props.power||0),0)
+    : 0;
+  const systemKw   = compKw + dryerKw;
+  const heatKw     = compKw * 0.85;
+
+  // ── 7. Delivered pressure ──
+  let delivPressure = 0;
+  const activeComp = compResults.find(c => c.actualFlow > 0);
+  if (activeComp) {
+    const srcP = activeComp.node.props.operatingPressure ?? activeComp.node.props.pressure ?? 0;
+    let drop = 0;
+    nodeList.filter(n=>n.props.pressureDrop).forEach(n=>{
+      const rQ=n.props.flowRate||1, aQ=supplyScfm;
+      drop+=(n.props.pressureDrop||0)*Math.pow(Math.min(aQ,rQ)/rQ,2);
+    });
+    nodeList.filter(n=>n.type==='lineloss').forEach(n=>{
+      const rDp=n.props.ratedDp||0, rQ=n.props.ratedFlow||1;
+      drop+=n.props.measured?rDp:rDp*Math.pow(Math.min(supplyScfm,rQ)/rQ,2);
+    });
+    delivPressure = srcP - drop;
+  }
+
+  const utilPct = supplyScfm > 0 ? Math.min(100, demandScfm/supplyScfm*100) : 0;
+
+  return {
+    supplyScfm, demandScfm, leakScfm,
+    balanceScfm: supplyScfm - demandScfm - leakScfm - drainScfm,
+    systemKw, heatKw, delivPressure, utilPct,
+    compResults
+  };
+}
+
+function computeHourlyMetrics(localNodes, connList, ambient) {
+  // Inline mini-engine using localNodes (avoids mutating globals)
+  const dn={}, up={};
+  localNodes.forEach(n=>{dn[n.id]=[]; up[n.id]=[];});
+  connList.forEach(c=>{if(dn[c.from])dn[c.from].push(c.to);if(up[c.to])up[c.to].push(c.from);});
+
+  // Topo sort
+  const inDeg={};
+  localNodes.forEach(n=>inDeg[n.id]=(up[n.id]||[]).length);
+  const queue=localNodes.filter(n=>inDeg[n.id]===0).map(n=>n.id);
+  const order=[];
+  while(queue.length){const id=queue.shift();order.push(id);(dn[id]||[]).forEach(nx=>{inDeg[nx]--;if(inDeg[nx]===0)queue.push(nx);});}
+
+  // Demand
+  const memo={};
+  function dem(id,vis=new Set()){
+    if(memo[id]!==undefined)return memo[id];
+    if(vis.has(id))return 0;vis.add(id);
+    const n=localNodes.find(x=>x.id===id);if(!n)return 0;
+    let d=0;
+    if(n.type==='load')d=(n.props.flowRate||0)*(n.props.dutyCycle||0)/100;
+    if(n.type==='leak')d=n.props.flowRate||0;
+    (dn[id]||[]).forEach(nx=>d+=dem(nx,new Set(vis)));
+    memo[id]=d;return d;
+  }
+  localNodes.forEach(n=>dem(n.id));
+
+  // Cap flows (simplified: use rated capacity)
+  const cap={}, nodeInCap={};
+  connList.forEach(c=>cap[c.id]=0);
+  localNodes.forEach(n=>nodeInCap[n.id]=0);
+  localNodes.filter(n=>n.type==='compressor').forEach(s=>{nodeInCap[s.id]=s.props.flowRate||0;});
+  order.forEach(fid=>{
+    const ci=nodeInCap[fid];if(!ci)return;
+    (dn[fid]||[]).forEach(cid=>{
+      const conn=connList.find(c=>c.from===fid&&c.to===cid);if(!conn)return;
+      const cn=localNodes.find(n=>n.id===cid);
+      let cc=ci;
+      if(cn&&(cn.type==='dryer'||cn.type==='filter'))cc=Math.min(cc,cn.props.flowRate||Infinity);
+      cap[conn.id]=(cap[conn.id]||0)+cc;
+      nodeInCap[cid]=(nodeInCap[cid]||0)+cc;
+    });
+  });
+
+  // Attr demand (reverse)
+  const attrDem={}, nodeAttrDem={};
+  connList.forEach(c=>attrDem[c.id]=0);
+  localNodes.forEach(n=>{
+    nodeAttrDem[n.id]=0;
+    if(n.type==='load')nodeAttrDem[n.id]=(n.props.flowRate||0)*(n.props.dutyCycle||0)/100;
+    if(n.type==='leak')nodeAttrDem[n.id]=n.props.flowRate||0;
+  });
+  [...order].reverse().forEach(nid=>{
+    const pd=nodeAttrDem[nid];if(!pd)return;
+    const parents=up[nid]||[];if(!parents.length)return;
+    const totalCap=nodeInCap[nid]||0;
+    parents.forEach(pid=>{
+      const conn=connList.find(c=>c.from===pid&&c.to===nid);if(!conn)return;
+      const frac=totalCap>0?(cap[conn.id]||0)/totalCap:1/parents.length;
+      const a=pd*frac;
+      attrDem[conn.id]+=a;
+      nodeAttrDem[pid]=(nodeAttrDem[pid]||0)+a;
+    });
+  });
+
+  // Forward actual flow
+  const flow={}, nodeActOut={};
+  connList.forEach(c=>flow[c.id]=0);
+  localNodes.forEach(n=>nodeActOut[n.id]=0);
+  localNodes.filter(n=>n.type==='compressor').forEach(src=>{
+    const {actualFlow:af}=compressorOutput(src,ambient);
+    nodeActOut[src.id]=Math.min(af,nodeAttrDem[src.id]||0);
+  });
+  order.forEach(fid=>{
+    const ao=nodeActOut[fid];if(!ao)return;
+    const children=dn[fid]||[];if(!children.length)return;
+    const totalAttr=children.reduce((s,cid)=>{const conn=connList.find(c=>c.from===fid&&c.to===cid);return s+(conn?attrDem[conn.id]||0:0);},0);
+    children.forEach(cid=>{
+      const conn=connList.find(c=>c.from===fid&&c.to===cid);if(!conn)return;
+      const r=totalAttr>0?(attrDem[conn.id]||0)/totalAttr:1/children.length;
+      let cf=ao*r;
+      const cn=localNodes.find(n=>n.id===cid);
+      if(cn&&(cn.type==='dryer'||cn.type==='filter'))cf=Math.min(cf,cn.props.flowRate||Infinity);
+      flow[conn.id]+=cf;
+      nodeActOut[cid]=(nodeActOut[cid]||0)+cf;
+    });
+  });
+
+  // Totals
+  const comps=localNodes.filter(n=>n.type==='compressor');
+  const loads=localNodes.filter(n=>n.type==='load');
+  const leaks=localNodes.filter(n=>n.type==='leak');
+  const dryers=localNodes.filter(n=>n.type==='dryer');
+
+  const supplyScfm = comps.reduce((s,n)=>s+compressorOutput(n,ambient).actualFlow,0);
+  const demandScfm = loads.reduce((s,n)=>s+(n.props.flowRate||0)*(n.props.dutyCycle||0)/100,0);
+  const leakScfm   = leaks.reduce((s,n)=>s+(n.props.flowRate||0),0);
+  const systemKw   = comps.reduce((s,n)=>s+compressorOutput(n,ambient).actualPower,0)
+                   + dryers.reduce((s,n)=>s+(n.props.power||0)*(nodeActOut[n.id]>0?1:0),0);
+  const heatKw     = comps.reduce((s,n)=>s+compressorOutput(n,ambient).actualPower*0.85,0);
+
+  // Pressure: find worst-case path dP using actual flows
+  let delivPressure = 9999;
+  // simple: use first compressor discharge minus treatment drops
+  const firstComp = comps[0];
+  if (firstComp) {
+    let drop = 0;
+    localNodes.filter(n=>n.props.pressureDrop).forEach(n=>{
+      const rQ=n.props.flowRate||1, aQ=nodeActOut[n.id]||0;
+      drop += n.props.pressureDrop * Math.pow(aQ/rQ, 2);
+    });
+    localNodes.filter(n=>n.type==='lineloss').forEach(n=>{
+      const rDp=n.props.ratedDp||0, rQ=n.props.ratedFlow||1;
+      const aQ=nodeActOut[n.id]||0;
+      drop += n.props.measured ? rDp : rDp*Math.pow(aQ/rQ,2);
+    });
+    delivPressure = (firstComp.props.operatingPressure ?? firstComp.props.pressure ?? 0) - drop;
+  }
+
+  const utilPct = supplyScfm > 0 ? Math.min(100, demandScfm/supplyScfm*100) : 0;
+
+  return { supplyScfm, demandScfm, leakScfm, balanceScfm: supplyScfm-demandScfm-leakScfm,
+    systemKw, heatKw, delivPressure, utilPct };
+}
+
+async function runSim8760() {
+  const year = parseInt(document.getElementById('simYear')?.value||2025);
+  const amb  = getAmbient();
+  document.getElementById('simNoResults').textContent = 'Computing 8760 hours...';
+  document.getElementById('simResults').style.display = 'none';
+
+  await new Promise(r=>setTimeout(r,20)); // allow UI to update
+
+  const { rows, holidays } = buildHourlyCalendar(year);
+
+  // Attach holidays to each row for use in getHourFactor
+  rows.forEach(r => r.holidays = holidays);
+
+  // Run pre case
+  const preConnList = connections;
+  SIM.resultsPreHours = rows.map(hr =>
+    ({ ...hr, ...runOneHour(hr, nodes, preConnList, SIM.equipment, SIM.schedules, amb) })
+  );
+
+  // Run post case if exists
+  if (SIM.postNodes) {
+    SIM.resultsPostHours = rows.map(hr =>
+      ({ ...hr, ...runOneHour(hr, SIM.postNodes, SIM.postConnections||connections, SIM.postEquipment, SIM.schedules, amb) })
+    );
+  } else {
+    SIM.resultsPostHours = null;
+  }
+
+  document.getElementById('simNoResults').textContent = '';
+  document.getElementById('simResults').style.display = '';
+  document.getElementById('btnDlPre').style.display  = '';
+  document.getElementById('btnDlPost').style.display = SIM.postNodes ? '' : 'none';
+
+  renderSimSummary();
+  renderSimCharts();
+}
+
+// ── Summary metrics ───────────────────────────────────────────────
+function aggHours(hours) {
+  if (!hours || !hours.length) return null;
+  const active  = hours.filter(h=>h.systemKw>0);
+  const totKwh  = hours.reduce((s,h)=>s+h.systemKw,0);
+  const totSup  = hours.reduce((s,h)=>s+h.supplyScfm,0);
+  const totDem  = hours.reduce((s,h)=>s+h.demandScfm,0);
+  const totLeak = hours.reduce((s,h)=>s+h.leakScfm,0);
+  const peakKw  = Math.max(...hours.map(h=>h.systemKw));
+  const opHrs   = active.length;
+  const avgPres = active.length ? active.reduce((s,h)=>s+h.delivPressure,0)/active.length : 0;
+  // specEn: kWh per thousand standard cubic feet (kscf)
+  // totSup is scfm·hr; ×60 min/hr = standard cubic feet annually; ÷1000 = kscf
+  const totScf  = totSup * 60;
+  const specEn  = totScf > 0 ? totKwh / (totScf / 1000) : 0;
+  return { totKwh, totSup, totDem, totLeak, peakKw, opHrs, avgPres, specEn, totScf };
+}
+
+function renderSimSummary() {
+  const rate = parseFloat(document.getElementById('elec-rate')?.value||0.10);
+  const pre  = aggHours(SIM.resultsPreHours);
+  const post = SIM.resultsPostHours ? aggHours(SIM.resultsPostHours) : null;
+  const grid = document.getElementById('simSummaryGrid');
+  const delta = document.getElementById('simDeltaTable');
+
+  function mc(label, preVal, postVal, fmt, unit, lowerIsBetter=true) {
+    const diff = postVal != null ? postVal - preVal : null;
+    const pct  = (diff != null && preVal !== 0) ? diff / preVal * 100 : null;
+    const clr  = diff == null ? CLR.accent2
+      : (lowerIsBetter
+          ? (diff < 0 ? CLR.success : diff > 0 ? CLR.danger : CLR.text2)
+          : (diff > 0 ? CLR.success : diff < 0 ? CLR.danger : CLR.text2));
+    const postLine = postVal != null
+      ? `<div class="metric-card-sub" style="color:${clr}">Post: ${fmt(postVal)} (${pct >= 0 ? '+' : ''}${pct.toFixed(1)}%)</div>`
+      : '';
+    return `<div class="metric-card info" style="grid-column:span 1">
+      <div class="metric-card-label">${label}</div>
+      <div class="metric-card-value" style="font-size:14px;color:${CLR.accent2}">${fmt(preVal)}</div>
+      <div class="metric-card-sub" style="color:var(--text3)">${unit}</div>
+      ${postLine}
+    </div>`;
+  }
+
+  if (!pre) { grid.innerHTML=''; return; }
+
+  const toMscf = scfmHr => scfmHr * 60 / 1000; // scfm·hr → thousand standard cubic feet
+
+  // Formatters return numbers only — no embedded units
+  const fmtMwh  = v => v >= 1e6 ? (v/1e6).toFixed(2) : v >= 1000 ? (v/1000).toFixed(1) : v.toFixed(0);
+  const fmtKw   = v => v.toFixed(1);
+  const fmtCost = v => v >= 1e6 ? '$'+(v/1e6).toFixed(2)+'M' : v >= 1000 ? '$'+(v/1000).toFixed(1)+'k' : '$'+v.toFixed(0);
+  const fmtHr   = v => v.toFixed(0);
+  const fmtMscf = v => toMscf(v).toFixed(1);
+  const fmtPsi  = v => v.toFixed(1);
+  const fmtSpe  = v => v.toFixed(3);
+
+  const annCostPre  = pre.totKwh  * rate;
+  const annCostPost = post ? post.totKwh * rate : null;
+
+  // Unit labels shown once in subtitle — scale MWh to GWh for very large systems
+  const energyUnit = pre.totKwh >= 1e6 ? 'GWh/yr' : pre.totKwh >= 1000 ? 'MWh/yr' : 'kWh/yr';
+
+  grid.innerHTML =
+    mc('Annual Energy',  pre.totKwh,   post?.totKwh,   fmtMwh,  energyUnit)         +
+    mc('Peak Demand',    pre.peakKw,   post?.peakKw,   fmtKw,   'kW')               +
+    mc('Annual Cost',    annCostPre,   annCostPost,    fmtCost, '$/yr')              +
+    mc('Op. Hours',      pre.opHrs,    post?.opHrs,    fmtHr,   'hr',         false) +
+    mc('Supply Volume',  pre.totSup,   post?.totSup,   fmtMscf, 'Mscf/yr',    false) +
+    mc('Leak Loss',      pre.totLeak,  post?.totLeak,  fmtMscf, 'Mscf/yr')          +
+    mc('Avg Pressure',   pre.avgPres,  post?.avgPres,  fmtPsi,  'psi',        false) +
+    mc('Spec. Energy',   pre.specEn,   post?.specEn,   fmtSpe,  'kWh/kscf');
+
+  // Delta table
+  if (post) {
+    const kwhSaved  = pre.totKwh  - post.totKwh;
+    const costSaved = kwhSaved * rate;
+    const leakSaved = pre.totLeak - post.totLeak;
+    delta.style.display = '';
+    delta.innerHTML = `
+      <div style="background:rgba(63,185,80,.08);border:1px solid rgba(63,185,80,.3);border-radius:6px;padding:10px 12px;margin-bottom:12px;">
+        <div style="font-weight:600;color:${CLR.success};margin-bottom:6px">Pre&#8594;Post Improvements</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;font-size:11px;">
+          <div><div style="color:var(--text3)">Energy Saved</div><div style="font-family:monospace;color:${CLR.success}">${(kwhSaved/1000).toFixed(1)} MWh/yr</div></div>
+          <div><div style="color:var(--text3)">Cost Saved</div><div style="font-family:monospace;color:${CLR.success}">$${costSaved>=1000?(costSaved/1000).toFixed(1)+'k':costSaved.toFixed(0)}/yr</div></div>
+          <div><div style="color:var(--text3)">Leak Reduced</div><div style="font-family:monospace;color:${CLR.success}">${toMscf(leakSaved).toFixed(1)} Mscf/yr</div></div>
+        </div>
+      </div>`;
+  } else { delta.style.display='none'; }
+}
+
+// ── Charts ────────────────────────────────────────────────────────
+function drawChart(canvasId, type, labels, datasets, opts={}) {
+  const canvas = document.getElementById(canvasId);
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  // Clear
+  canvas.width = canvas.parentElement.clientWidth * (window.devicePixelRatio||1);
+  canvas.height = parseInt(canvas.getAttribute('height')||160) * (window.devicePixelRatio||1);
+  canvas.style.width  = '100%';
+  canvas.style.height = canvas.getAttribute('height')+'px';
+  ctx.scale(window.devicePixelRatio||1, window.devicePixelRatio||1);
+  const W = canvas.parentElement.clientWidth, H = parseInt(canvas.getAttribute('height')||160);
+  ctx.clearRect(0,0,W,H);
+
+  const PAD = { l:44, r:8, t:8, b:28 };
+  const CW = W-PAD.l-PAD.r, CH = H-PAD.t-PAD.b;
+
+  // Compute Y scale
+  const allVals = datasets.flatMap(d=>d.data);
+  const yMax = opts.yMax || Math.max(...allVals)*1.08 || 1;
+  const yMin = opts.yMin || 0;
+
+  // Grid lines
+  ctx.strokeStyle='#30363d'; ctx.lineWidth=0.5;
+  const yTicks=4;
+  for(let i=0;i<=yTicks;i++){
+    const y=PAD.t+CH*(1-i/yTicks);
+    ctx.beginPath(); ctx.moveTo(PAD.l,y); ctx.lineTo(PAD.l+CW,y); ctx.stroke();
+    ctx.fillStyle='#6e7681'; ctx.font='9px IBM Plex Mono,monospace'; ctx.textAlign='right';
+    const val=yMin+(yMax-yMin)*i/yTicks;
+    ctx.fillText(opts.yFmt?opts.yFmt(val):val.toFixed(0), PAD.l-3, y+3);
+  }
+
+  if (type==='line') {
+    datasets.forEach(ds => {
+      ctx.beginPath();
+      ctx.strokeStyle = ds.color; ctx.lineWidth = 1.5;
+      ds.data.forEach((v,i)=>{
+        const x=PAD.l+CW*i/(ds.data.length-1);
+        const y=PAD.t+CH*(1-(v-yMin)/(yMax-yMin));
+        i===0?ctx.moveTo(x,y):ctx.lineTo(x,y);
+      });
+      ctx.stroke();
+    });
+  }
+
+  if (type==='bar') {
+    const nGroups = labels.length;
+    const nDs = datasets.length;
+    const groupW = CW/nGroups;
+    const barW = Math.min(groupW*0.8/nDs, 30);
+    datasets.forEach((ds,di)=>{
+      ctx.fillStyle=ds.color;
+      ds.data.forEach((v,i)=>{
+        const x=PAD.l+groupW*i+groupW*0.1+di*barW;
+        const barH=CH*(v-yMin)/(yMax-yMin);
+        ctx.fillRect(x, PAD.t+CH-barH, barW-1, barH);
+      });
+    });
+    // X labels
+    ctx.fillStyle='#6e7681'; ctx.font='9px IBM Plex Mono,monospace'; ctx.textAlign='center';
+    labels.forEach((l,i)=>{ ctx.fillText(l, PAD.l+groupW*i+groupW/2, PAD.t+CH+14); });
+  }
+
+  // Legend
+  if (datasets.length>1) {
+    let lx=PAD.l;
+    datasets.forEach(ds=>{
+      ctx.fillStyle=ds.color; ctx.fillRect(lx,H-10,10,8);
+      ctx.fillStyle='#8b949e'; ctx.font='9px IBM Plex Mono,monospace'; ctx.textAlign='left';
+      ctx.fillText(ds.label,lx+13,H-3);
+      lx+=ctx.measureText(ds.label).width+30;
+    });
+  }
+}
+
+function renderSimCharts() {
+  const pre  = SIM.resultsPreHours;
+  const post = SIM.resultsPostHours;
+  if (!pre) return;
+
+  // ── Load duration curve ──
+  const preLDC  = [...pre].map(h=>h.systemKw).sort((a,b)=>b-a);
+  const postLDC = post ? [...post].map(h=>h.systemKw).sort((a,b)=>b-a) : null;
+  // Sample 200 points for perf
+  const sample = arr => Array.from({length:200},(_,i)=>arr[Math.floor(i/200*arr.length)]);
+  const ldcLabels = Array.from({length:200},(_,i)=>i===0?'0':(i===199?'8760':''));
+  const ldcDs = [{label:'Pre',color:CLR.accent2,data:sample(preLDC)}];
+  if (postLDC) ldcDs.push({label:'Post',color:CLR.success,data:sample(postLDC)});
+  drawChart('chartLDC','line',ldcLabels,ldcDs,{yFmt:v=>v.toFixed(0)+'kW'});
+
+  // ── Monthly energy ──
+  const MONTHS=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const preMonthly  = Array(12).fill(0);
+  const postMonthly = Array(12).fill(0);
+  pre.forEach(h=>preMonthly[h.month]+=h.systemKw);
+  if (post) post.forEach(h=>postMonthly[h.month]+=h.systemKw);
+  const monthDs=[{label:'Pre',color:CLR.accent2,data:preMonthly.map(v=>v/1000)}];
+  if (post) monthDs.push({label:'Post',color:CLR.success,data:postMonthly.map(v=>v/1000)});
+  drawChart('chartMonthly','bar',MONTHS,monthDs,{yFmt:v=>v.toFixed(0)+'MWh'});
+
+  // ── Daily profile ──
+  const preHrly  = Array(24).fill(0), preHrlyN  = Array(24).fill(0);
+  const postHrly = Array(24).fill(0), postHrlyN = Array(24).fill(0);
+  pre.forEach(h=>{preHrly[h.hourOfDay]+=h.systemKw; preHrlyN[h.hourOfDay]++;});
+  if (post) post.forEach(h=>{postHrly[h.hourOfDay]+=h.systemKw; postHrlyN[h.hourOfDay]++;});
+  const hrLabels=Array.from({length:24},(_,i)=>i%6===0?i+'h':'');
+  const dayDs=[{label:'Pre',color:CLR.accent2,data:preHrly.map((v,i)=>preHrlyN[i]?v/preHrlyN[i]:0)}];
+  if (post) dayDs.push({label:'Post',color:CLR.success,data:postHrly.map((v,i)=>postHrlyN[i]?v/postHrlyN[i]:0)});
+  drawChart('chartDaily','line',hrLabels,dayDs,{yFmt:v=>v.toFixed(0)+'kW'});
+
+  // ── Flow balance ──
+  const preFlow  = [{label:'Supply',color:CLR.success,  data:[pre.reduce((s,h)=>s+h.supplyScfm,0)/1000]},
+                    {label:'Demand',color:CLR.accent2,  data:[pre.reduce((s,h)=>s+h.demandScfm,0)/1000]},
+                    {label:'Leak',  color:CLR.danger,   data:[pre.reduce((s,h)=>s+h.leakScfm,0)/1000]}];
+  const flowDs = preFlow;
+  if (post) {
+    flowDs[0].data.push(post.reduce((s,h)=>s+h.supplyScfm,0)/1000);
+    flowDs[1].data.push(post.reduce((s,h)=>s+h.demandScfm,0)/1000);
+    flowDs[2].data.push(post.reduce((s,h)=>s+h.leakScfm,0)/1000);
+  }
+  drawChart('chartFlow','bar',post?['Pre','Post']:['Pre'],flowDs,{yFmt:v=>v.toFixed(0)+'k'});
+}
+
+// ── CSV download ──────────────────────────────────────────────────
+function downloadCSV(caseType) {
+  const hours = caseType==='pre' ? SIM.resultsPreHours : SIM.resultsPostHours;
+  if (!hours) return;
+  const hdr = 'Hour,Date,Day,IsHoliday,HourOfDay,Supply_scfm,Demand_scfm,Leak_scfm,Balance_scfm,System_kW,HeatRejection_kW,DelivPressure_psi,Utilization_pct';
+  const rows = hours.map(h=>[
+    h.hour, h.dateStr, h.dayName, h.isHoliday?1:0, h.hourOfDay,
+    h.supplyScfm.toFixed(2), h.demandScfm.toFixed(2), h.leakScfm.toFixed(2),
+    h.balanceScfm.toFixed(2), h.systemKw.toFixed(3), h.heatKw.toFixed(3),
+    h.delivPressure.toFixed(2), h.utilPct.toFixed(1)
+  ].join(',')).join('\n');
+  const blob = new Blob([hdr+'\n'+rows], {type:'text/csv'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `cas_8760_${caseType}_${new Date().getFullYear()}.csv`;
+  a.click();
+}
+
+// ═══════════════════════════════════════════
+// PRESSURE REDUCTION OPPORTUNITY UI
+// ═══════════════════════════════════════════
+function renderPressureOpp(opp) {
+  const el = document.getElementById('pressureOpp'); if(!el) return;
+  if (!opp) { el.innerHTML='<div style="font-size:11px;color:var(--text3)">Add compressors and loads to see pressure reduction potential.</div>'; return; }
+  const rate  = parseFloat(document.getElementById('elec-rate')?.value||0.10);
+  const hours = parseFloat(document.getElementById('hours-year')?.value||6000);
+  const maxSavings = opp.reduction * opp.savingPerPsi;
+  const clr = opp.reduction > 10 ? CLR.success : opp.reduction > 5 ? CLR.warn : CLR.text2;
+  el.innerHTML = `
+    <div style="font-size:11px;line-height:1.8">
+      <div style="display:flex;justify-content:space-between"><span style="color:var(--text2)">Current header pressure</span><span style="font-family:monospace">${opp.currentP} psi</span></div>
+      <div style="display:flex;justify-content:space-between"><span style="color:var(--text2)">Minimum required</span><span style="font-family:monospace">${opp.minHeaderP.toFixed(1)} psi</span></div>
+      <div style="display:flex;justify-content:space-between"><span style="color:var(--text2)">Reduction opportunity</span><span style="font-family:monospace;color:${clr};font-weight:600">${opp.reduction.toFixed(1)} psi</span></div>
+      <div style="display:flex;justify-content:space-between"><span style="color:var(--text2)">Binding constraint</span><span style="font-family:monospace;font-size:10px">${opp.bindingPath?.sinkName||'?'}</span></div>
+      <div style="display:flex;justify-content:space-between"><span style="color:var(--text2)">Savings per psi</span><span style="font-family:monospace">$${opp.savingPerPsi.toFixed(0)}/yr</span></div>
+      <div style="display:flex;justify-content:space-between;margin-top:4px;border-top:1px solid var(--border);padding-top:4px"><span style="color:${CLR.success};font-weight:600">Max potential savings</span><span style="font-family:monospace;color:${CLR.success};font-weight:600">$${maxSavings.toFixed(0)}/yr</span></div>
+    </div>
+    ${opp.reduction < 2 ? '<div class="mode-note">System is already near minimum pressure. Add regulators at high-pressure loads to create headroom.</div>' : ''}`;
+}
+
+// ═══════════════════════════════════════════
+// MOISTURE & DRAIN PANEL UI
+// ═══════════════════════════════════════════
+function renderMoisturePanel(compressors, ambient) {
+  const el = document.getElementById('moisturePanel'); if(!el) return;
+  if (!compressors.length) { el.innerHTML='<div style="font-size:11px;color:var(--text3)">Add compressors to see moisture analysis.</div>'; return; }
+  const hum = getHumidity();
+  const totalFlow = compressors.reduce((s,n)=>s+compressorOutput(n,ambient).actualFlow,0);
+  const avgDischP = compressors.reduce((s,n)=>s+(n.props.operatingPressure??n.props.pressure??0),0)/Math.max(1,compressors.length);
+  const ambPsia   = ambient.psia;
+  const ambTempF  = ambient.tempF;
+  const condRate  = condensateAfterCooler_gphPerScfm(ambTempF, hum.rh, ambPsia, avgDischP+14.696, hum.acTemp);
+  const totalCond = condRate * totalFlow;
+  const dryers    = nodes.filter(n=>n.type==='dryer');
+  const hasDryer  = dryers.length > 0;
+  const dryerDp   = dryers[0]?.props.dewPoint || (hasDryer ? 38 : 999);
+  const risk      = condensationRisk(dryers[0]||null, ambTempF, avgDischP+14.696);
+  const riskClr   = risk==='low'?CLR.success:risk==='medium'?CLR.warn:CLR.danger;
+  const riskIcon  = risk==='low'?'✓':risk==='medium'?'⚠':'✗';
+
+  // Drain summary
+  const drainNodes = nodes.filter(n=>n.type==='drain');
+  const totalDrainLoss = drainNodes.reduce((s,n)=>{
+    const att=drainAttachments.find(a=>a.drainNodeId===n.id);
+    const hostP=att?(nodes.find(h=>h.id===att.hostNodeId)?.props?.workingPressure||nodes.find(h=>h.id===att.hostNodeId)?.props?.pressure||100):100;
+    return s+computeDrainAirLoss(n,hostP);
+  },0);
+  const spec   = getSystemSPP();
+  const rate   = parseFloat(document.getElementById('elec-rate')?.value||0.10);
+  const hours  = parseFloat(document.getElementById('hours-year')?.value||6000);
+  const drainCost = totalDrainLoss*spec*hours*rate;
+
+  el.innerHTML = `
+    <div style="font-size:11px;line-height:1.8">
+      <div style="display:flex;justify-content:space-between"><span style="color:var(--text2)">Inlet moisture load</span><span style="font-family:monospace">${(totalCond*1000).toFixed(0)} ml/hr</span></div>
+      <div style="display:flex;justify-content:space-between"><span style="color:var(--text2)">Aftercooler condensate</span><span style="font-family:monospace">${totalCond.toFixed(2)} gal/hr</span></div>
+      <div style="display:flex;justify-content:space-between"><span style="color:var(--text2)">Dryer type</span><span style="font-family:monospace">${hasDryer?(dryers[0].props.name||'Dryer'):'None'}</span></div>
+      <div style="display:flex;justify-content:space-between"><span style="color:var(--text2)">Pressure dewpoint</span><span style="font-family:monospace">${hasDryer?dryerDp+'°F':'N/A'}</span></div>
+      <div style="display:flex;justify-content:space-between"><span style="color:${riskClr};font-weight:600">Condensation risk</span><span style="font-family:monospace;color:${riskClr};font-weight:600">${riskIcon} ${risk.toUpperCase()}</span></div>
+    </div>
+    ${drainNodes.length>0?`<div style="margin-top:8px;padding-top:6px;border-top:1px solid var(--border);font-size:11px;line-height:1.8">
+      <div style="display:flex;justify-content:space-between"><span style="color:var(--text2)">Total drain air loss</span><span style="font-family:monospace">${totalDrainLoss.toFixed(2)} scfm</span></div>
+      <div style="display:flex;justify-content:space-between"><span style="color:${CLR.danger};font-weight:600">Annual drain cost</span><span style="font-family:monospace;color:${CLR.danger}">$${drainCost.toFixed(0)}/yr</span></div>
+    </div>`:'<div class="mode-note" style="margin-top:6px">No drain nodes added. Add drain nodes to model condensate removal costs.</div>'}`;
+}
+
+// ═══════════════════════════════════════════
+// REPORT GENERATION
+// ═══════════════════════════════════════════
+function closeReport() { document.getElementById('reportOverlay').classList.remove('open'); }
+
+function generateReport(type) {
+  const rate  = parseFloat(document.getElementById('elec-rate')?.value||0.10);
+  const hours = parseFloat(document.getElementById('hours-year')?.value||6000);
+  const amb   = getAmbient();
+  const compressors = nodes.filter(n=>n.type==='compressor');
+  const loads       = nodes.filter(n=>n.type==='load');
+  const leaks       = nodes.filter(n=>n.type==='leak');
+  const drains      = nodes.filter(n=>n.type==='drain');
+  const totPwr = compressors.reduce((s,n)=>s+(n._stagedPower||0),0)+nodes.filter(n=>n.type==='dryer').reduce((s,n)=>s+(n.props.power||0),0);
+  const annCost     = totPwr*hours*rate;
+  const totalLeakFlow = leaks.reduce((s,n)=>s+(n.props.flowRate||0),0);
+  const leakCost    = totalLeakFlow * getSystemSPP() * hours * rate;
+  const totalDrainLoss = drains.reduce((s,n)=>{
+    const att=drainAttachments.find(a=>a.drainNodeId===n.id);
+    const hostP=att?(nodes.find(h=>h.id===att.hostNodeId)?.props?.workingPressure||nodes.find(h=>h.id===att.hostNodeId)?.props?.pressure||100):100;
+    return s+computeDrainAirLoss(n,hostP);
+  },0);
+  const drainCost = totalDrainLoss * getSystemSPP() * hours * rate;
+  const today = new Date().toLocaleDateString('en-US',{year:'numeric',month:'long',day:'numeric'});
+
+  const headerHtml = `
+    <div style="background:#0d1117;color:#00d4aa;padding:16px 20px;border-radius:6px;margin-bottom:24px">
+      <div style="font-size:22px;font-weight:700;font-family:monospace">CAS·Analyzer</div>
+      <div style="font-size:13px;color:#8b949e;margin-top:4px">Compressed Air System Analysis Report</div>
+      <div style="font-size:11px;color:#6e7681;margin-top:2px">Generated: ${today}</div>
+    </div>`;
+
+  if (type === 'management') {
+    const savings = leakCost + drainCost;
+    const payback = savings > 0 ? (500*leaks.length + 2000*drains.filter(d=>d.props.drainType!=='zeroloss').length)/savings : null;
+    const recs = [];
+    if (leakCost > 200)  recs.push({title:'Repair Compressed Air Leaks', saving:`$${leakCost.toFixed(0)}/yr`, payback:'< 1 year', detail:`${leaks.length} leak point${leaks.length!==1?'s':''} identified totalling ${totalLeakFlow.toFixed(1)} scfm of waste.`});
+    if (drainCost > 200) recs.push({title:'Upgrade to Zero-Loss Drains', saving:`$${drainCost.toFixed(0)}/yr`, payback:'1–2 years', detail:`${drains.length} drain${drains.length!==1?'s':''} wasting ${totalDrainLoss.toFixed(2)} scfm of compressed air on open cycles.`});
+    if (totPwr > 0)      recs.push({title:'Optimise Supply Pressure', saving:'$'+( totPwr*0.05*hours*rate).toFixed(0)+'/yr', payback:'< 1 year', detail:'Every 2 psi reduction saves ~1% compressor energy. Target minimum pressure to meet all loads.'});
+
+    document.getElementById('reportContent').innerHTML = headerHtml + `
+      <h1 style="font-size:20px;color:#0d1117;margin-bottom:6px">Executive Summary</h1>
+      <p style="color:#444;font-size:13px;margin-bottom:20px">This report summarises the energy performance of the compressed air system and identifies the highest-value improvement opportunities.</p>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-bottom:24px">
+        <div style="border:2px solid #0096ff;border-radius:8px;padding:14px;text-align:center">
+          <div style="font-size:11px;color:#666;margin-bottom:4px">Annual Energy Cost</div>
+          <div style="font-size:28px;font-weight:700;color:#0d1117">$${annCost>=1000?(annCost/1000).toFixed(1)+'k':annCost.toFixed(0)}</div>
+          <div style="font-size:11px;color:#666">${totPwr.toFixed(1)} kW · ${hours.toFixed(0)} hr/yr</div>
+        </div>
+        <div style="border:2px solid #f85149;border-radius:8px;padding:14px;text-align:center">
+          <div style="font-size:11px;color:#666;margin-bottom:4px">Leak + Drain Waste</div>
+          <div style="font-size:28px;font-weight:700;color:#f85149">$${savings>=1000?(savings/1000).toFixed(1)+'k':savings.toFixed(0)}</div>
+          <div style="font-size:11px;color:#666">per year</div>
+        </div>
+        <div style="border:2px solid #3fb950;border-radius:8px;padding:14px;text-align:center">
+          <div style="font-size:11px;color:#666;margin-bottom:4px">Identified Savings</div>
+          <div style="font-size:28px;font-weight:700;color:#3fb950">$${(leakCost+drainCost+totPwr*0.05*hours*rate>=1000?((leakCost+drainCost+totPwr*0.05*hours*rate)/1000).toFixed(1)+'k':(leakCost+drainCost+totPwr*0.05*hours*rate).toFixed(0))}</div>
+          <div style="font-size:11px;color:#666">potential/year</div>
+        </div>
+      </div>
+
+      <h2 style="font-size:16px;color:#0d1117;margin-bottom:12px;border-bottom:1px solid #ddd;padding-bottom:6px">Top Recommendations</h2>
+      ${recs.length ? recs.map((r,i)=>`
+        <div style="border:1px solid #ddd;border-radius:6px;padding:12px 14px;margin-bottom:10px;display:flex;gap:14px;align-items:flex-start">
+          <div style="background:#0096ff;color:#fff;border-radius:50%;width:28px;height:28px;display:flex;align-items:center;justify-content:center;font-weight:700;flex-shrink:0">${i+1}</div>
+          <div>
+            <div style="font-weight:600;font-size:14px;color:#0d1117;margin-bottom:3px">${r.title}</div>
+            <div style="font-size:12px;color:#444;margin-bottom:5px">${r.detail}</div>
+            <div style="display:flex;gap:16px;font-size:12px">
+              <span style="color:#3fb950;font-weight:600">Saves ${r.saving}</span>
+              <span style="color:#666">Payback: ${r.payback}</span>
+            </div>
+          </div>
+        </div>`).join('') : '<p style="color:#666;font-size:13px">No significant improvement opportunities identified at current settings.</p>'}
+
+      <p style="font-size:11px;color:#999;margin-top:24px;border-top:1px solid #eee;padding-top:10px">Analysis performed using CAS·Analyzer. Results are estimates based on system inputs and standard engineering assumptions. Actual savings may vary. Contact your compressed air specialist for detailed implementation guidance.</p>`;
+  } else {
+    // Engineering report
+    const res = analyzeSystem();
+    document.getElementById('reportContent').innerHTML = headerHtml + `
+      <h1 style="font-size:20px;color:#0d1117;margin-bottom:16px">Engineering Analysis Report</h1>
+
+      <h2 style="font-size:15px;color:#0d1117;margin-bottom:8px;border-bottom:1px solid #ddd;padding-bottom:4px">System Inventory</h2>
+      <table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:20px">
+        <tr style="background:#f5f5f5"><th style="text-align:left;padding:6px 8px;border:1px solid #ddd">Component</th><th style="padding:6px 8px;border:1px solid #ddd;text-align:right">Flow (scfm)</th><th style="padding:6px 8px;border:1px solid #ddd;text-align:right">Power (kW)</th><th style="padding:6px 8px;border:1px solid #ddd;text-align:left">Notes</th></tr>
+        ${compressors.map(n=>`<tr><td style="padding:5px 8px;border:1px solid #ddd">${n.props.name} [${ctrlLabel(n.props.controlType||'lu')}]</td><td style="padding:5px 8px;border:1px solid #ddd;text-align:right">${(n._stagedFlow||0).toFixed(1)}</td><td style="padding:5px 8px;border:1px solid #ddd;text-align:right">${(n._stagedPower||0).toFixed(1)}</td><td style="padding:5px 8px;border:1px solid #ddd">Priority ${n.props.stagingPriority||1} · Load: ${n._stagedLoadFrac!=null?(n._stagedLoadFrac*100).toFixed(1)+'%':'—'} · SPP: ${n._stagedFlow>0?((n._stagedPower||0)/(n._stagedFlow/100)).toFixed(2):'—'} kW/100scfm</td></tr>`).join('')}
+        ${loads.map(n=>`<tr><td style="padding:5px 8px;border:1px solid #ddd">${n.props.name}</td><td style="padding:5px 8px;border:1px solid #ddd;text-align:right">${((n.props.flowRate||0)*(n.props.dutyCycle||100)/100).toFixed(1)}</td><td style="padding:5px 8px;border:1px solid #ddd;text-align:right">—</td><td style="padding:5px 8px;border:1px solid #ddd">Req. ${n.props.pressure||0} psi · Duty ${n.props.dutyCycle||100}%</td></tr>`).join('')}
+        ${leaks.map(n=>`<tr style="color:#c00"><td style="padding:5px 8px;border:1px solid #ddd">${n.props.name} (Leak)</td><td style="padding:5px 8px;border:1px solid #ddd;text-align:right">${n.props.flowRate||0}</td><td style="padding:5px 8px;border:1px solid #ddd;text-align:right">—</td><td style="padding:5px 8px;border:1px solid #ddd">$${(n.props.flowRate||0)*getSystemSPP()*hours*rate|0}/yr waste</td></tr>`).join('')}
+        ${drains.map(n=>{const att=drainAttachments.find(a=>a.drainNodeId===n.id);const hostP=att?(nodes.find(h=>h.id===att.hostNodeId)?.props?.workingPressure||100):100;const loss=computeDrainAirLoss(n,hostP);return`<tr style="color:#c00"><td style="padding:5px 8px;border:1px solid #ddd">${n.props.name} (Drain)</td><td style="padding:5px 8px;border:1px solid #ddd;text-align:right">${loss.toFixed(3)}</td><td style="padding:5px 8px;border:1px solid #ddd;text-align:right">—</td><td style="padding:5px 8px;border:1px solid #ddd">${n.props.drainType} type</td></tr>`;}).join('')}
+      </table>
+
+      <h2 style="font-size:15px;color:#0d1117;margin-bottom:8px;border-bottom:1px solid #ddd;padding-bottom:4px">Flow Balance</h2>
+      <table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:20px">
+        <tr style="background:#f5f5f5"><th style="text-align:left;padding:6px 8px;border:1px solid #ddd">Category</th><th style="padding:6px 8px;border:1px solid #ddd;text-align:right">scfm</th><th style="padding:6px 8px;border:1px solid #ddd;text-align:right">% of Supply</th></tr>
+        <tr><td style="padding:5px 8px;border:1px solid #ddd">Total Supply</td><td style="padding:5px 8px;border:1px solid #ddd;text-align:right">${res.totalSupply.toFixed(1)}</td><td style="padding:5px 8px;border:1px solid #ddd;text-align:right">100%</td></tr>
+        <tr><td style="padding:5px 8px;border:1px solid #ddd">Productive Demand</td><td style="padding:5px 8px;border:1px solid #ddd;text-align:right">${res.totalDemand.toFixed(1)}</td><td style="padding:5px 8px;border:1px solid #ddd;text-align:right">${res.totalSupply>0?(res.totalDemand/res.totalSupply*100).toFixed(1):'0'}%</td></tr>
+        <tr style="color:#c00"><td style="padding:5px 8px;border:1px solid #ddd">Leaks + Drains</td><td style="padding:5px 8px;border:1px solid #ddd;text-align:right">${res.totalLeaks.toFixed(1)}</td><td style="padding:5px 8px;border:1px solid #ddd;text-align:right">${res.totalSupply>0?(res.totalLeaks/res.totalSupply*100).toFixed(1):'0'}%</td></tr>
+        <tr style="font-weight:600"><td style="padding:5px 8px;border:1px solid #ddd">Net Balance</td><td style="padding:5px 8px;border:1px solid #ddd;text-align:right;color:${res.surplus>=0?'#3fb950':'#f85149'}">${res.surplus>=0?'+':''}${res.surplus.toFixed(1)}</td><td style="padding:5px 8px;border:1px solid #ddd"></td></tr>
+      </table>
+
+      <h2 style="font-size:15px;color:#0d1117;margin-bottom:8px;border-bottom:1px solid #ddd;padding-bottom:4px">Path Pressure Analysis</h2>
+      ${res.paths.length ? res.paths.map(p=>`
+        <div style="border:1px solid #ddd;border-radius:4px;padding:10px;margin-bottom:8px;font-size:12px">
+          <div style="font-weight:600;margin-bottom:4px">${p.srcName} → ${p.sinkName}</div>
+          <div style="display:flex;gap:20px;flex-wrap:wrap">
+            <span>Flow: <strong>${p.actualFlow.toFixed(1)} scfm</strong></span>
+            <span>Source: <strong>${p.srcP} psi</strong></span>
+            <span>Path dP: <strong style="color:#c66">−${p.pathDrop.toFixed(2)} psi</strong></span>
+            <span>Delivered: <strong style="color:${p.margin>=0?'#3a7':'#c00'}">${p.endP.toFixed(1)} psi</strong></span>
+            <span>Required: <strong>${p.reqP} psi</strong></span>
+            <span style="color:${p.margin>=0?'#3a7':'#c00'}">Margin: ${p.margin>=0?'+':''}${p.margin.toFixed(1)} psi ${p.margin<0?'⚠ INSUFFICIENT':''}</span>
+          </div>
+        </div>`).join('') : '<p style="color:#666;font-size:12px">No complete paths found. Ensure compressors are connected to loads.</p>'}
+
+      <h2 style="font-size:15px;color:#0d1117;margin-bottom:8px;border-bottom:1px solid #ddd;padding-bottom:4px">Energy Summary</h2>
+      <table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:20px">
+        <tr style="background:#f5f5f5"><th style="text-align:left;padding:6px 8px;border:1px solid #ddd">Item</th><th style="padding:6px 8px;border:1px solid #ddd;text-align:right">Value</th><th style="padding:6px 8px;border:1px solid #ddd;text-align:left">Unit</th></tr>
+        <tr><td style="padding:5px 8px;border:1px solid #ddd">Total system power</td><td style="padding:5px 8px;border:1px solid #ddd;text-align:right">${totPwr.toFixed(1)}</td><td style="padding:5px 8px;border:1px solid #ddd">kW</td></tr>
+        <tr><td style="padding:5px 8px;border:1px solid #ddd">Annual energy</td><td style="padding:5px 8px;border:1px solid #ddd;text-align:right">${(totPwr*hours/1000).toFixed(1)}</td><td style="padding:5px 8px;border:1px solid #ddd">MWh/yr</td></tr>
+        <tr><td style="padding:5px 8px;border:1px solid #ddd">Annual energy cost</td><td style="padding:5px 8px;border:1px solid #ddd;text-align:right">$${annCost.toFixed(0)}</td><td style="padding:5px 8px;border:1px solid #ddd">/yr</td></tr>
+        <tr><td style="padding:5px 8px;border:1px solid #ddd">Leak cost</td><td style="padding:5px 8px;border:1px solid #ddd;text-align:right;color:#c00">$${leakCost.toFixed(0)}</td><td style="padding:5px 8px;border:1px solid #ddd">/yr</td></tr>
+        <tr><td style="padding:5px 8px;border:1px solid #ddd">Drain waste cost</td><td style="padding:5px 8px;border:1px solid #ddd;text-align:right;color:#c00">$${drainCost.toFixed(0)}</td><td style="padding:5px 8px;border:1px solid #ddd">/yr</td></tr>
+      </table>
+
+      <p style="font-size:11px;color:#999;margin-top:16px;border-top:1px solid #eee;padding-top:10px">Generated by CAS·Analyzer on ${today}. Calculations use CAGI data inputs, ISO 1217 site correction, and engineering approximations per Compressed Air Challenge best practices.</p>`;
+  }
+  document.getElementById('reportOverlay').classList.add('open');
+}
+
+window.addEventListener('resize', renderConnections);
+
+// nodesContainer (z-index 10) and connCanvas (z-index 5) both sit above canvasArea
+// and intercept dragover/drop. Forward to dropComponent but guard against double-firing.
+let _dropHandled = false;
+function _onDrop(e) {
+  e.preventDefault();
+  e.stopPropagation();
+  if (_dropHandled) return;
+  _dropHandled = true;
+  dropComponent(e);
+  setTimeout(() => { _dropHandled = false; }, 100);
+}
+function _onDragOver(e) { e.preventDefault(); e.stopPropagation(); }
+
+const nodesContainer = document.getElementById('nodesContainer');
+nodesContainer.addEventListener('dragover', _onDragOver);
+nodesContainer.addEventListener('drop',     _onDrop);
+canvas.addEventListener('dragover', _onDragOver);
+canvas.addEventListener('drop',     _onDrop);
+document.getElementById('canvasArea').addEventListener('dragover', _onDragOver);
+document.getElementById('canvasArea').addEventListener('drop',     _onDrop);
+
+updateSummary();
+
+</script>
+<!-- ═══════ REPORT OVERLAY ═══════ -->
+<div id="reportOverlay" onclick="if(event.target===this)closeReport()">
+  <div id="reportFrame">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:24px;border-bottom:2px solid #0096ff;padding-bottom:12px">
+      <span style="font-size:18px;font-weight:700;color:#0d1117">CAS·Analyzer Report</span>
+      <div style="display:flex;gap:8px">
+        <button onclick="window.print()" style="padding:6px 14px;border-radius:5px;border:1px solid #ccc;background:#f5f5f5;cursor:pointer;font-size:12px">&#128438; Print / Save PDF</button>
+        <button onclick="closeReport()" style="padding:6px 14px;border-radius:5px;border:1px solid #ccc;background:#f5f5f5;cursor:pointer;font-size:12px">&#10005; Close</button>
+      </div>
+    </div>
+    <div id="reportContent"></div>
+  </div>
+</div>
+
+</body>
+</html>
+<div id="sim8760Overlay" style="display:none;position:fixed;inset:0;z-index:1000;background:var(--bg);display:none;flex-direction:column;">
+
+  <!-- Overlay header -->
+  <div style="display:flex;align-items:center;padding:0 16px;height:48px;background:var(--surface);border-bottom:1px solid var(--border);gap:12px;flex-shrink:0;">
+    <div style="font-family:'IBM Plex Mono',monospace;font-weight:600;font-size:14px;color:var(--accent)">8760<span style="color:var(--text2);font-weight:400">·Simulation</span></div>
+    <div style="width:1px;height:24px;background:var(--border)"></div>
+    <!-- Pre/Post tabs -->
+    <div style="display:flex;gap:2px;" id="simCaseTabs">
+      <div class="tab active" id="tabPre"  onclick="setSimCase('pre')">Pre Case</div>
+      <div class="tab"        id="tabPost" onclick="setSimCase('post')">Post Case</div>
+    </div>
+    <div style="width:1px;height:24px;background:var(--border)"></div>
+    <button class="btn" id="btnDupPre" onclick="duplicatePreCase()" title="Copy Pre Case to Post Case">&#10064; Duplicate Pre&#8594;Post</button>
+    <button class="btn primary" onclick="runSim8760()">&#9654; Run Simulation</button>
+    <div style="margin-left:auto;display:flex;gap:8px;">
+      <button class="btn" id="btnDlPre"  onclick="downloadCSV('pre')"  style="display:none">&#8659; Pre CSV</button>
+      <button class="btn" id="btnDlPost" onclick="downloadCSV('post')" style="display:none">&#8659; Post CSV</button>
+      <button class="btn danger-btn" onclick="close8760()">&#10005; Close</button>
+    </div>
+  </div>
+
+  <!-- Main body -->
+  <div style="display:flex;flex:1;overflow:hidden;">
+
+    <!-- Left: Schedule manager -->
+    <div id="simLeft" style="width:290px;background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;flex-shrink:0;overflow:hidden;">
+      <div style="padding:10px 12px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:6px;">
+        <span style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.8px;flex:1">Schedules</span>
+        <button class="btn" style="padding:3px 8px;font-size:11px" onclick="addSchedule()">+ Add</button>
+      </div>
+      <div id="scheduleList" style="overflow-y:auto;flex-shrink:0;max-height:160px;"></div>
+      <div style="padding:8px 12px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);">
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.8px;margin-bottom:6px">Editing: <span id="editingSchedName" style="color:var(--accent)">—</span></div>
+        <div id="dayBlockEditor" style="font-size:11px;color:var(--text3)">Select a schedule above</div>
+      </div>
+      <div style="padding:8px 12px;border-bottom:1px solid var(--border);">
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.8px;margin-bottom:6px">Equipment Assignment</div>
+        <div id="equipAssignment" style="font-size:11px;color:var(--text3)">—</div>
+      </div>
+      <div style="padding:8px 12px;">
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.8px;margin-bottom:6px">Simulation Year</div>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <input class="prop-input" type="number" id="simYear" value="2025" step="1" min="2020" max="2035" style="width:80px">
+          <span style="font-size:11px;color:var(--text2)">Federal holidays auto-applied</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Center: Component list + results -->
+    <div style="flex:1;overflow-y:auto;display:flex;flex-direction:column;">
+
+      <!-- Component list (pre or post) -->
+      <div id="simComponentArea" style="padding:12px 14px;border-bottom:1px solid var(--border);">
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.8px;margin-bottom:8px">Components — <span id="simCaseLabel">Pre Case</span></div>
+        <div id="simComponentList"></div>
+      </div>
+
+      <!-- Results area -->
+      <div id="simResultsArea" style="padding:12px 14px;flex:1;">
+        <div id="simNoResults" style="color:var(--text3);font-size:12px;padding:20px 0">Click &#9654; Run Simulation to compute 8760-hour performance.</div>
+        <div id="simResults" style="display:none;">
+
+          <!-- Summary metrics -->
+          <div style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.8px;margin-bottom:8px">Annual Summary</div>
+          <div id="simSummaryGrid" style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:16px;"></div>
+
+          <!-- Delta table -->
+          <div id="simDeltaTable" style="margin-bottom:16px;display:none;"></div>
+
+          <!-- Charts -->
+          <div style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.8px;margin-bottom:8px">Load Duration Curve</div>
+          <canvas id="chartLDC"     height="160" style="width:100%;margin-bottom:16px;"></canvas>
+          <div style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.8px;margin-bottom:8px">Monthly Energy (kWh)</div>
+          <canvas id="chartMonthly" height="160" style="width:100%;margin-bottom:16px;"></canvas>
+          <div style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.8px;margin-bottom:8px">Average Daily Profile (kW by hour)</div>
+          <canvas id="chartDaily"   height="160" style="width:100%;margin-bottom:16px;"></canvas>
+          <div style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.8px;margin-bottom:8px">Annual Flow Balance (scfm&#183;hr)</div>
+          <canvas id="chartFlow"    height="140" style="width:100%;margin-bottom:8px;"></canvas>
+
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>
