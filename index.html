@@ -725,8 +725,12 @@ const compDefs = {
       stagingPriority:['Staging Priority','#']},
     metrics:['flowRate','pressure','power']},
   dryer:{label:'Dryer',icon:'&#10052;',color:CLR.dryer,bgColor:'#2a1a3a',
-    defaultProps:{name:'Dryer',flowRate:100,pressureDrop:2,power:1.5,dewPoint:-40},
-    propLabels:{flowRate:['Flow Capacity','scfm'],pressureDrop:['Rated dP','psi'],power:['Power Draw','kW'],dewPoint:['Dew Point','degF']},
+    defaultProps:{name:'Dryer',flowRate:100,pressureDrop:2,power:1.5,dewPoint:38,
+      dryerType:'refrigerated', // refrigerated | heated | heatless
+      purgeFraction:15          // % of rated flow used as purge air (heatless only)
+    },
+    propLabels:{flowRate:['Flow Capacity','scfm'],pressureDrop:['Rated dP','psi'],
+      power:['Electrical Power','kW'],dewPoint:['Pressure Dewpoint','°F']},
     metrics:['pressureDrop','dewPoint']},
   filter:{label:'Filter',icon:'&#9635;',color:CLR.filter,bgColor:'#1a2a3a',
     defaultProps:{name:'Filter',flowRate:100,pressureDrop:1,micronRating:5},
@@ -1389,6 +1393,52 @@ function showProperties(node) {
     return;
   }
 
+  // Dryer gets a type-aware panel
+  if (node.type === 'dryer') {
+    const dt = node.props.dryerType || 'refrigerated';
+    const isHeatless = dt === 'heatless';
+    const purge = dryerPurgeScfm(node);
+    const elec  = dryerElecKw(node);
+    document.getElementById('propFields').innerHTML = `
+      <div class="prop-row"><span class="prop-label">Name</span>
+        <input class="prop-input" type="text" value="${node.props.name||''}" style="width:130px" onchange="updateProp('${node.id}','name',this.value)">
+        <span class="prop-unit"></span></div>
+      <div class="prop-divider">Dryer Type</div>
+      <div class="mode-toggle" style="margin-bottom:8px">
+        <button class="mode-toggle-btn ${dt==='refrigerated'?'active':''}" onclick="updateProp('${node.id}','dryerType','refrigerated')">Refrigerated</button>
+        <button class="mode-toggle-btn ${dt==='heated'?'active':''}"       onclick="updateProp('${node.id}','dryerType','heated')">Heated Desic.</button>
+        <button class="mode-toggle-btn ${dt==='heatless'?'active':''}"     onclick="updateProp('${node.id}','dryerType','heatless')">Heatless</button>
+      </div>
+      <div class="prop-divider">Performance</div>
+      <div class="prop-row"><span class="prop-label">Flow capacity</span>
+        <input class="prop-input" type="number" value="${node.props.flowRate??100}" step="10" onchange="updateProp('${node.id}','flowRate',this.value)">
+        <span class="prop-unit">scfm</span></div>
+      <div class="prop-row"><span class="prop-label">Rated dP</span>
+        <input class="prop-input" type="number" value="${node.props.pressureDrop??2}" step="0.5" onchange="updateProp('${node.id}','pressureDrop',this.value)">
+        <span class="prop-unit">psi</span></div>
+      <div class="prop-row"><span class="prop-label">Pressure dewpoint</span>
+        <input class="prop-input" type="number" value="${node.props.dewPoint??dryerDefaultDewpoint(dt)}" step="1" onchange="updateProp('${node.id}','dewPoint',this.value)">
+        <span class="prop-unit">°F PDP</span></div>
+      ${!isHeatless ? `
+      <div class="prop-divider">${dt==='heated'?'Heater':'Refrigeration'} Power</div>
+      <div class="prop-row"><span class="prop-label">Electrical power</span>
+        <input class="prop-input" type="number" value="${node.props.power??1.5}" step="0.1" onchange="updateProp('${node.id}','power',this.value)">
+        <span class="prop-unit">kW</span></div>
+      <div class="mode-note">${dt==='heated'?'Enter average heater power over the regeneration cycle.':'Runs continuously whenever compressor is on.'}</div>
+      ` : `
+      <div class="prop-divider">Purge Air (Heatless Regeneration)</div>
+      <div class="prop-row"><span class="prop-label">Purge fraction</span>
+        <input class="prop-input" type="number" value="${node.props.purgeFraction??15}" step="1" min="10" max="30" onchange="updateProp('${node.id}','purgeFraction',this.value)">
+        <span class="prop-unit">%</span></div>
+      <div class="prop-row"><span class="prop-label">Purge flow</span>
+        <div class="prop-computed">${purge.toFixed(1)}</div>
+        <span class="prop-unit">scfm</span></div>
+      <div class="mode-note">Purge air is exhausted to atmosphere continuously. It is treated as system demand — compressors must supply it. No electrical power draw.</div>
+      `}
+      <div class="mode-note" style="margin-top:4px">Typical PDP: Refrigerated +38°F · Heated/Heatless desiccant -40°F</div>`;
+    return;
+  }
+
   // Compressor gets an enhanced panel
   if (node.type === 'compressor') {
     const ct = node.props.controlType || 'lu';
@@ -1598,71 +1648,29 @@ function computeCapFlows() {
 }
 
 function computeActualFlows(nodeInCap, cap) {
-  // To correctly handle topologies where sources share downstream merge nodes
-  // AND have independent branches, we need each source to know its
-  // "effective demand" — the portion of downstream demand it is responsible for,
-  // accounting for capacity-fraction sharing at merge nodes.
+  // Forward topo pass seeded from _stagedFlow on each compressor.
   //
-  // Algorithm:
-  //   1. Reverse topo pass: propagate "attributed demand" backward through the graph.
-  //      At merge nodes, split the attributed demand among upstream connectors by
-  //      capacity fraction. At split nodes, sum all outgoing attributed demands.
-  //   2. Each source's effective demand = sum of attributed demand arriving at it.
-  //   3. Forward topo pass: seed sources with min(supply, effective_demand).
-  //      Distribute using capacity fractions at merges, demand fractions at splits —
-  //      exactly what the attributed demand pass already encoded.
+  // Split strategy for multiple children:
+  //   1. Sink children (load/leak) receive exactly their own demand flow,
+  //      capped at actOut available.
+  //   2. Remaining flow after sinks is distributed to pass-through children
+  //      proportional to their downstream demand.
+  //   3. Single child: ratio = 1.0 (full flow, handles merge accumulation).
 
-  const {dn, up} = buildGraph();
-  const order    = topoSort();
-  const revOrder = [...order].reverse();
-
-  // ── STEP 1: reverse pass — attribute demand back to each connector ──────────
-  // attrDemand[connId] = scfm of actual demand attributable to this connector
-  const attrDemand  = {};
-  const nodeAttrDem = {};   // total attributed demand pulling through each node
-  connections.forEach(c => attrDemand[c.id] = 0);
-  nodes.forEach(n => nodeAttrDem[n.id] = 0);
-
-  // Seed sinks with their own demand
-  nodes.forEach(n => {
-    if (n.type === 'load') nodeAttrDem[n.id] = (n.props.flowRate||0) * (n.props.dutyCycle||100) / 100;
-    else if (n.type === 'leak') nodeAttrDem[n.id] = n.props.flowRate || 0;
-  });
-
-  revOrder.forEach(nodeId => {
-    const pullDown = nodeAttrDem[nodeId];
-    if (pullDown <= 0) return;
-    const parents = up[nodeId] || [];
-    if (!parents.length) return; // source — stop here
-
-    // Split demand among incoming connectors by capacity fraction
-    const totalCapIn = nodeInCap[nodeId] || 0;
-    parents.forEach(parentId => {
-      const conn = connections.find(c => c.from === parentId && c.to === nodeId);
-      if (!conn) return;
-      const fraction = totalCapIn > 0 ? (cap[conn.id] || 0) / totalCapIn : 1 / parents.length;
-      const attributed = pullDown * fraction;
-      attrDemand[conn.id] += attributed;
-      // Propagate attributed demand upward to the parent
-      nodeAttrDem[parentId] = (nodeAttrDem[parentId] || 0) + attributed;
-    });
-  });
-
-  // ── STEP 2: each source's effective demand is nodeAttrDem[src] ───────────────
-  // (already accumulated by the reverse pass)
-
-  // ── STEP 3: forward pass — propagate actual flow ─────────────────────────────
-  const flow       = {};
+  const {dn} = buildGraph();
+  const order = topoSort();
+  const flow     = {};
   const nodeActOut = {};
   connections.forEach(c => flow[c.id] = 0);
   nodes.forEach(n => nodeActOut[n.id] = 0);
 
-  // Seed sources — use site-corrected actual flow
-  const ambient = getAmbient();
+  const demand = computeDownstreamDemand();
+
   nodes.filter(n => n.type === 'compressor').forEach(src => {
-    const { actualFlow: corrFlow } = compressorOutput(src, ambient);
-    nodeActOut[src.id] = Math.min(corrFlow, nodeAttrDem[src.id] || 0);
+    nodeActOut[src.id] = src._stagedFlow || 0;
   });
+
+  const SINKS = new Set(['load', 'leak']);
 
   order.forEach(fromId => {
     const actOut = nodeActOut[fromId];
@@ -1670,25 +1678,54 @@ function computeActualFlows(nodeInCap, cap) {
     const children = dn[fromId] || [];
     if (!children.length) return;
 
-    // Distribute using the same attributed-demand fractions computed in reverse pass
-    // This guarantees forward and reverse passes are consistent.
-    const totalAttrOut = children.reduce((s, cid) => {
-      const conn = connections.find(c => c.from === fromId && c.to === cid);
-      return s + (conn ? (attrDemand[conn.id] || 0) : 0);
-    }, 0);
-
-    children.forEach(childId => {
+    if (children.length === 1) {
+      // Single child — full flow
+      const childId = children[0];
       const conn = connections.find(c => c.from === fromId && c.to === childId);
       if (!conn) return;
-
-      const ratio = totalAttrOut > 0 ? (attrDemand[conn.id] || 0) / totalAttrOut : 1 / children.length;
-      let cf = actOut * ratio;
-
-      // Cap at treatment component rated capacity
+      let cf = actOut;
       const childNode = nodes.find(n => n.id === childId);
       if (childNode && (childNode.type === 'dryer' || childNode.type === 'filter'))
         cf = Math.min(cf, childNode.props.flowRate || Infinity);
+      flow[conn.id] += cf;
+      nodeActOut[childId] = (nodeActOut[childId] || 0) + cf;
+      return;
+    }
 
+    // Multiple children: sinks first, then pass-throughs
+    const sinkChildren      = children.filter(cid => { const n=nodes.find(x=>x.id===cid); return n&&SINKS.has(n.type); });
+    const passThruChildren  = children.filter(cid => { const n=nodes.find(x=>x.id===cid); return !n||!SINKS.has(n.type); });
+
+    // Step 1: allocate exact demand to each sink child
+    let remaining = actOut;
+    sinkChildren.forEach(childId => {
+      const conn = connections.find(c => c.from === fromId && c.to === childId);
+      if (!conn) return;
+      const childNode = nodes.find(n => n.id === childId);
+      const sinkDemand = childNode
+        ? (childNode.type === 'load'
+            ? (childNode.props.flowRate||0) * (childNode.props.dutyCycle||100) / 100
+            : (childNode.props.flowRate||0))
+        : 0;
+      const cf = Math.min(sinkDemand, remaining);
+      remaining = Math.max(0, remaining - cf);
+      flow[conn.id] += cf;
+      nodeActOut[childId] = (nodeActOut[childId] || 0) + cf;
+    });
+
+    // Step 2: distribute remaining flow to pass-through children by downstream demand
+    if (passThruChildren.length === 0) return;
+    const totalPassThruDemand = passThruChildren.reduce((s,cid) => s+(demand[cid]||0), 0);
+    passThruChildren.forEach(childId => {
+      const conn = connections.find(c => c.from === fromId && c.to === childId);
+      if (!conn) return;
+      const ratio = totalPassThruDemand > 0
+        ? (demand[childId]||0) / totalPassThruDemand
+        : 1 / passThruChildren.length;
+      let cf = remaining * ratio;
+      const childNode = nodes.find(n => n.id === childId);
+      if (childNode && (childNode.type === 'dryer' || childNode.type === 'filter'))
+        cf = Math.min(cf, childNode.props.flowRate || Infinity);
       flow[conn.id] += cf;
       nodeActOut[childId] = (nodeActOut[childId] || 0) + cf;
     });
@@ -1999,6 +2036,30 @@ function computePressureReductionOpportunity(paths, compressors) {
   return { currentP, minHeaderP, reduction, bindingPath, savingPerPsi };
 }
 
+// ═══════════════════════════════════════════
+// DRYER MODEL
+// ═══════════════════════════════════════════
+function dryerPurgeScfm(dryer) {
+  // Returns purge air flow (scfm) — only heatless desiccant wastes compressed air
+  if ((dryer.props.dryerType || 'refrigerated') !== 'heatless') return 0;
+  return (dryer.props.flowRate || 0) * (dryer.props.purgeFraction || 15) / 100;
+}
+
+function dryerElecKw(dryer) {
+  // Returns electrical power draw (kW) when dryer is running
+  // Heatless dryers use no electrical power (purge air does the regeneration)
+  if ((dryer.props.dryerType || 'refrigerated') === 'heatless') return 0;
+  return dryer.props.power || 0;
+}
+
+function dryerTypeLabel(type) {
+  return {refrigerated:'Refrigerated', heated:'Heated Desiccant', heatless:'Heatless Desiccant'}[type] || 'Refrigerated';
+}
+
+function dryerDefaultDewpoint(type) {
+  return type === 'refrigerated' ? 38 : -40; // °F PDP
+}
+
 function analyzeSystem() {
   const res={valid:true,errors:[],warnings:[],paths:[],
     totalSupply:0,totalDemand:0,totalLeaks:0,surplus:0,leakPct:0,prodEff:0};
@@ -2012,16 +2073,9 @@ function analyzeSystem() {
     return res;
   }
 
-  const demand               = computeDownstreamDemand();
   const { cap, nodeInCap }   = computeCapFlows();
-  const actualFlow           = computeActualFlows(nodeInCap, cap);
   const ambient              = getAmbient();
-
-  // Stamp onto connections for rendering
-  connections.forEach(c=>{
-    c._actualFlow = actualFlow[c.id] || 0;
-    c._capFlow    = cap[c.id]        || 0;
-  });
+  // computeDownstreamDemand is used inside computeActualFlows for demand-weighted splits
 
   const compressors = nodes.filter(n=>n.type==='compressor');
   const loads       = nodes.filter(n=>n.type==='load');
@@ -2038,10 +2092,11 @@ function analyzeSystem() {
 
   res.totalDemand = loads.reduce((s,n)=>s+(n.props.flowRate||0)*(n.props.dutyCycle||100)/100, 0);
   res.totalLeaks  = leaks.reduce((s,n)=>s+(n.props.flowRate||0), 0) + res.totalDrainLoss;
-  const totalSystemDemand = res.totalDemand + res.totalLeaks;
+  res.totalPurge  = nodes.filter(n=>n.type==='dryer').reduce((s,n)=>s+dryerPurgeScfm(n), 0);
+  const totalSystemDemand = res.totalDemand + res.totalLeaks + res.totalPurge;
 
   // ── Demand-driven staging for steady-state ──
-  // Run staging engine against current system demand, store results on nodes
+  // Must run BEFORE computeActualFlows so _stagedFlow is set on each compressor
   const stagingResults = stageCompressors(compressors, totalSystemDemand, ambient);
   stagingResults.forEach(sr => {
     sr.node._stagedLoadFrac  = sr.loadFrac;
@@ -2053,14 +2108,21 @@ function analyzeSystem() {
 
   res.totalSupply = stagingResults.reduce((s,sr)=>s+sr.actualFlow, 0);
 
+  // Now compute connection flows — AFTER staging so _stagedFlow is set
+  const actualFlow = computeActualFlows(nodeInCap, cap);
+  connections.forEach(c=>{
+    c._actualFlow = actualFlow[c.id] || 0;
+    c._capFlow    = cap[c.id]        || 0;
+  });
+
   // Unaccounted demand: when supply > identified loads+leaks, flag the gap
   res.unaccountedDemand = Math.max(0, res.totalSupply - totalSystemDemand);
   if (res.unaccountedDemand > 1.0) {
     res.warnings.push(`Unaccounted demand: ${res.unaccountedDemand.toFixed(1)} scfm — supply (${res.totalSupply.toFixed(1)}) exceeds identified loads + leaks (${totalSystemDemand.toFixed(1)}). Check for unmapped loads, unreported leaks, or purge/blow-off points.`);
   }
 
-  res.surplus  = res.totalSupply - res.totalDemand - res.totalLeaks;
-  res.leakPct  = res.totalSupply>0 ? res.totalLeaks/res.totalSupply*100 : 0;
+  res.surplus  = res.totalSupply - res.totalDemand - res.totalLeaks - res.totalPurge;
+  res.leakPct  = res.totalSupply>0 ? (res.totalLeaks+res.totalPurge)/res.totalSupply*100 : 0;
   res.prodEff  = res.totalSupply>0 ? res.totalDemand/res.totalSupply*100 : 0;
   res.stagingResults = stagingResults; // expose for runAnalysis
 
@@ -2216,7 +2278,7 @@ function runAnalysis() {
 
   // Corrected compressor outputs
   const totCompPwr  = res.stagingResults.reduce((s,sr)=>s+sr.actualPower, 0);
-  const totDryerPwr = dryers.reduce((s,n)=>s+(n.props.power||0), 0);
+  const totDryerPwr = dryers.reduce((s,n)=>s+dryerElecKw(n), 0);
   const totPwr      = totCompPwr + totDryerPwr;
   const annCost     = totPwr * hrs * rate;
 
@@ -2243,8 +2305,16 @@ function runAnalysis() {
   });
   nodes.filter(n=>n.type==='load').forEach(n=>{const f=(n.props.flowRate||0)*(n.props.dutyCycle||100)/100; fb+=`<div class="flow-row"><div class="flow-dot" style="background:${CLR.load}"></div><div class="flow-name">${n.props.name}</div><div class="flow-val" style="color:${CLR.warn}">-${f.toFixed(1)} scfm</div></div>`;});
   nodes.filter(n=>n.type==='leak').forEach(n=>{fb+=`<div class="flow-row"><div class="flow-dot" style="background:${CLR.leak}"></div><div class="flow-name">${n.props.name}</div><div class="flow-val" style="color:${CLR.danger}">-${n.props.flowRate||0} scfm</div></div>`;});
+  // Dryer electrical power and purge flow
+  dryers.forEach(n=>{
+    const elec=dryerElecKw(n), purge=dryerPurgeScfm(n);
+    const typeLabel=dryerTypeLabel(n.props.dryerType||'refrigerated');
+    if(elec>0) fb+=`<div class="flow-row"><div class="flow-dot" style="background:${CLR.dryer}"></div><div class="flow-name">${n.props.name} <span style="font-size:9px;color:var(--text3)">${typeLabel}</span></div><div class="flow-val" style="color:var(--text2)">${elec.toFixed(1)} kW</div></div>`;
+    if(purge>0) fb+=`<div class="flow-row"><div class="flow-dot" style="background:${CLR.dryer}"></div><div class="flow-name">${n.props.name} purge</div><div class="flow-val" style="color:${CLR.danger}">-${purge.toFixed(1)} scfm</div></div>`;
+  });
   const bal=res.surplus;
-  fb+=`<div class="flow-row" style="margin-top:6px;border-top:1px solid var(--border);padding-top:8px"><div class="flow-dot" style="background:${bal>=0?CLR.success:CLR.danger}"></div><div class="flow-name" style="font-weight:600">Net Balance</div><div class="flow-val" style="color:${bal>=0?CLR.success:CLR.danger};font-weight:600">${bal>=0?'+':''}${bal.toFixed(1)} scfm</div></div>`;
+  const purgeNote = res.totalPurge>0 ? ` (incl. ${res.totalPurge.toFixed(1)} scfm purge)` : '';
+  fb+=`<div class="flow-row" style="margin-top:6px;border-top:1px solid var(--border);padding-top:8px"><div class="flow-dot" style="background:${bal>=0?CLR.success:CLR.danger}"></div><div class="flow-name" style="font-weight:600">Net Balance${purgeNote}</div><div class="flow-val" style="color:${bal>=0?CLR.success:CLR.danger};font-weight:600">${bal>=0?'+':''}${bal.toFixed(1)} scfm</div></div>`;
   document.getElementById('flowBalance').innerHTML=fb||'<div style="font-size:11px;color:var(--text3)">No components</div>';
 
   // Path pressure
@@ -2391,7 +2461,7 @@ function loadExample(){
       controlType:'lu',unloadPower:20,ratedInletPres:14.696,ratedInletTemp:68,stagingPriority:1};
     nodes[1].props={name:'Compressor 2',flowRate:80, pressure:125,operatingPressure:110,power:20,load:60,
       controlType:'vsd',unloadPower:20,ratedInletPres:14.696,ratedInletTemp:68,stagingPriority:2};
-    nodes[2].props={name:'Refrigerated Dryer',flowRate:180,pressureDrop:2,power:2,dewPoint:-40};
+    nodes[2].props={name:'Refrigerated Dryer',flowRate:180,pressureDrop:2,power:2,dewPoint:38,dryerType:'refrigerated',purgeFraction:15};
     nodes[3].props={name:'Line Loss',ratedDp:1.5,ratedFlow:180,measured:false}; // header run
     nodes[4].props={name:'Coalescing Filter', flowRate:180,pressureDrop:1,micronRating:5};
     nodes[5].props={name:'Main Receiver',     volume:240,maxPressure:150,workingPressure:120};
@@ -2917,7 +2987,7 @@ function runOneHour(hrData, nodeList, connList, eqMap, schedList, ambient) {
   const leakNodes = nodeList.filter(n => n.type === 'leak');
   const leakScfm  = anyCompOn ? leakNodes.reduce((s,n) => s+(n.props.flowRate||0), 0) : 0;
 
-  // ── 4. Drain losses when system is on ──
+  // ── 4. Drain losses and dryer purge when system is on ──
   const drainScfm = anyCompOn ? nodeList.filter(n=>n.type==='drain').reduce((s,n)=>{
     const att=drainAttachments.find(a=>a.drainNodeId===n.id);
     const hostP=att?(nodeList.find(h=>h.id===att.hostNodeId)?.props?.operatingPressure||
@@ -2925,7 +2995,11 @@ function runOneHour(hrData, nodeList, connList, eqMap, schedList, ambient) {
     return s+computeDrainAirLoss(n,hostP);
   },0) : 0;
 
-  const totalDemand = demandScfm + leakScfm + drainScfm;
+  // Heatless desiccant dryer purge air — runs whenever system is pressurized
+  const dryerNodes = nodeList.filter(n=>n.type==='dryer');
+  const purgeScfm  = anyCompOn ? dryerNodes.reduce((s,n)=>s+dryerPurgeScfm(n),0) : 0;
+
+  const totalDemand = demandScfm + leakScfm + drainScfm + purgeScfm;
 
   // ── 5. Stage compressors against demand ──
   const compResults = anyCompOn
@@ -2936,7 +3010,7 @@ function runOneHour(hrData, nodeList, connList, eqMap, schedList, ambient) {
   const supplyScfm = compResults.reduce((s,c) => s+c.actualFlow, 0);
   const compKw     = compResults.reduce((s,c) => s+c.actualPower, 0);
   const dryerKw    = anyCompOn
-    ? nodeList.filter(n=>n.type==='dryer').reduce((s,n)=>s+(n.props.power||0),0)
+    ? dryerNodes.reduce((s,n)=>s+dryerElecKw(n),0)
     : 0;
   const systemKw   = compKw + dryerKw;
   const heatKw     = compKw * 0.85;
@@ -2962,7 +3036,7 @@ function runOneHour(hrData, nodeList, connList, eqMap, schedList, ambient) {
 
   return {
     supplyScfm, demandScfm, leakScfm,
-    balanceScfm: supplyScfm - demandScfm - leakScfm - drainScfm,
+    balanceScfm: supplyScfm - demandScfm - leakScfm - drainScfm - purgeScfm,
     systemKw, heatKw, delivPressure, utilPct,
     compResults
   };
@@ -3066,7 +3140,7 @@ function computeHourlyMetrics(localNodes, connList, ambient) {
   const demandScfm = loads.reduce((s,n)=>s+(n.props.flowRate||0)*(n.props.dutyCycle||0)/100,0);
   const leakScfm   = leaks.reduce((s,n)=>s+(n.props.flowRate||0),0);
   const systemKw   = comps.reduce((s,n)=>s+compressorOutput(n,ambient).actualPower,0)
-                   + dryers.reduce((s,n)=>s+(n.props.power||0)*(nodeActOut[n.id]>0?1:0),0);
+                   + dryers.reduce((s,n)=>s+dryerElecKw(n)*(nodeActOut[n.id]>0?1:0),0);
   const heatKw     = comps.reduce((s,n)=>s+compressorOutput(n,ambient).actualPower*0.85,0);
 
   // Pressure: find worst-case path dP using actual flows
@@ -3399,7 +3473,8 @@ function renderMoisturePanel(compressors, ambient) {
   const totalCond = condRate * totalFlow;
   const dryers    = nodes.filter(n=>n.type==='dryer');
   const hasDryer  = dryers.length > 0;
-  const dryerDp   = dryers[0]?.props.dewPoint || (hasDryer ? 38 : 999);
+  const dryerDp   = dryers[0]?.props.dewPoint ?? (hasDryer ? dryerDefaultDewpoint(dryers[0]?.props.dryerType||'refrigerated') : 999);
+  const dryerLabel= hasDryer ? dryerTypeLabel(dryers[0]?.props.dryerType||'refrigerated') : 'None';
   const risk      = condensationRisk(dryers[0]||null, ambTempF, avgDischP+14.696);
   const riskClr   = risk==='low'?CLR.success:risk==='medium'?CLR.warn:CLR.danger;
   const riskIcon  = risk==='low'?'✓':risk==='medium'?'⚠':'✗';
@@ -3420,7 +3495,7 @@ function renderMoisturePanel(compressors, ambient) {
     <div style="font-size:11px;line-height:1.8">
       <div style="display:flex;justify-content:space-between"><span style="color:var(--text2)">Inlet moisture load</span><span style="font-family:monospace">${(totalCond*1000).toFixed(0)} ml/hr</span></div>
       <div style="display:flex;justify-content:space-between"><span style="color:var(--text2)">Aftercooler condensate</span><span style="font-family:monospace">${totalCond.toFixed(2)} gal/hr</span></div>
-      <div style="display:flex;justify-content:space-between"><span style="color:var(--text2)">Dryer type</span><span style="font-family:monospace">${hasDryer?(dryers[0].props.name||'Dryer'):'None'}</span></div>
+      <div style="display:flex;justify-content:space-between"><span style="color:var(--text2)">Dryer type</span><span style="font-family:monospace">${hasDryer?dryerLabel:'None'}</span></div>
       <div style="display:flex;justify-content:space-between"><span style="color:var(--text2)">Pressure dewpoint</span><span style="font-family:monospace">${hasDryer?dryerDp+'°F':'N/A'}</span></div>
       <div style="display:flex;justify-content:space-between"><span style="color:${riskClr};font-weight:600">Condensation risk</span><span style="font-family:monospace;color:${riskClr};font-weight:600">${riskIcon} ${risk.toUpperCase()}</span></div>
     </div>
@@ -3443,7 +3518,7 @@ function generateReport(type) {
   const loads       = nodes.filter(n=>n.type==='load');
   const leaks       = nodes.filter(n=>n.type==='leak');
   const drains      = nodes.filter(n=>n.type==='drain');
-  const totPwr = compressors.reduce((s,n)=>s+(n._stagedPower||0),0)+nodes.filter(n=>n.type==='dryer').reduce((s,n)=>s+(n.props.power||0),0);
+  const totPwr = compressors.reduce((s,n)=>s+(n._stagedPower||0),0)+nodes.filter(n=>n.type==='dryer').reduce((s,n)=>s+dryerElecKw(n),0);
   const annCost     = totPwr*hours*rate;
   const totalLeakFlow = leaks.reduce((s,n)=>s+(n.props.flowRate||0),0);
   const leakCost    = totalLeakFlow * getSystemSPP() * hours * rate;
@@ -3517,6 +3592,14 @@ function generateReport(type) {
       <table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:20px">
         <tr style="background:#f5f5f5"><th style="text-align:left;padding:6px 8px;border:1px solid #ddd">Component</th><th style="padding:6px 8px;border:1px solid #ddd;text-align:right">Flow (scfm)</th><th style="padding:6px 8px;border:1px solid #ddd;text-align:right">Power (kW)</th><th style="padding:6px 8px;border:1px solid #ddd;text-align:left">Notes</th></tr>
         ${compressors.map(n=>`<tr><td style="padding:5px 8px;border:1px solid #ddd">${n.props.name} [${ctrlLabel(n.props.controlType||'lu')}]</td><td style="padding:5px 8px;border:1px solid #ddd;text-align:right">${(n._stagedFlow||0).toFixed(1)}</td><td style="padding:5px 8px;border:1px solid #ddd;text-align:right">${(n._stagedPower||0).toFixed(1)}</td><td style="padding:5px 8px;border:1px solid #ddd">Priority ${n.props.stagingPriority||1} · Load: ${n._stagedLoadFrac!=null?(n._stagedLoadFrac*100).toFixed(1)+'%':'—'} · SPP: ${n._stagedFlow>0?((n._stagedPower||0)/(n._stagedFlow/100)).toFixed(2):'—'} kW/100scfm</td></tr>`).join('')}
+        ${nodes.filter(n=>n.type==='dryer').map(n=>{
+          const elec=dryerElecKw(n), purge=dryerPurgeScfm(n);
+          const typeStr=dryerTypeLabel(n.props.dryerType||'refrigerated');
+          const noteParts=[`PDP: ${n.props.dewPoint??'—'}°F`];
+          if(purge>0) noteParts.push(`Purge: ${purge.toFixed(1)} scfm (${n.props.purgeFraction||15}%)`);
+          if(elec>0)  noteParts.push(`Elec: ${elec.toFixed(1)} kW`);
+          return`<tr><td style="padding:5px 8px;border:1px solid #ddd">${n.props.name} [${typeStr}]</td><td style="padding:5px 8px;border:1px solid #ddd;text-align:right">${(n.props.flowRate||0).toFixed(0)}</td><td style="padding:5px 8px;border:1px solid #ddd;text-align:right">${elec>0?elec.toFixed(1):'—'}</td><td style="padding:5px 8px;border:1px solid #ddd">${noteParts.join(' · ')}</td></tr>`;
+        }).join('')}
         ${loads.map(n=>`<tr><td style="padding:5px 8px;border:1px solid #ddd">${n.props.name}</td><td style="padding:5px 8px;border:1px solid #ddd;text-align:right">${((n.props.flowRate||0)*(n.props.dutyCycle||100)/100).toFixed(1)}</td><td style="padding:5px 8px;border:1px solid #ddd;text-align:right">—</td><td style="padding:5px 8px;border:1px solid #ddd">Req. ${n.props.pressure||0} psi · Duty ${n.props.dutyCycle||100}%</td></tr>`).join('')}
         ${leaks.map(n=>`<tr style="color:#c00"><td style="padding:5px 8px;border:1px solid #ddd">${n.props.name} (Leak)</td><td style="padding:5px 8px;border:1px solid #ddd;text-align:right">${n.props.flowRate||0}</td><td style="padding:5px 8px;border:1px solid #ddd;text-align:right">—</td><td style="padding:5px 8px;border:1px solid #ddd">$${(n.props.flowRate||0)*getSystemSPP()*hours*rate|0}/yr waste</td></tr>`).join('')}
         ${drains.map(n=>{const att=drainAttachments.find(a=>a.drainNodeId===n.id);const hostP=att?(nodes.find(h=>h.id===att.hostNodeId)?.props?.workingPressure||100):100;const loss=computeDrainAirLoss(n,hostP);return`<tr style="color:#c00"><td style="padding:5px 8px;border:1px solid #ddd">${n.props.name} (Drain)</td><td style="padding:5px 8px;border:1px solid #ddd;text-align:right">${loss.toFixed(3)}</td><td style="padding:5px 8px;border:1px solid #ddd;text-align:right">—</td><td style="padding:5px 8px;border:1px solid #ddd">${n.props.drainType} type</td></tr>`;}).join('')}
@@ -3527,7 +3610,9 @@ function generateReport(type) {
         <tr style="background:#f5f5f5"><th style="text-align:left;padding:6px 8px;border:1px solid #ddd">Category</th><th style="padding:6px 8px;border:1px solid #ddd;text-align:right">scfm</th><th style="padding:6px 8px;border:1px solid #ddd;text-align:right">% of Supply</th></tr>
         <tr><td style="padding:5px 8px;border:1px solid #ddd">Total Supply</td><td style="padding:5px 8px;border:1px solid #ddd;text-align:right">${res.totalSupply.toFixed(1)}</td><td style="padding:5px 8px;border:1px solid #ddd;text-align:right">100%</td></tr>
         <tr><td style="padding:5px 8px;border:1px solid #ddd">Productive Demand</td><td style="padding:5px 8px;border:1px solid #ddd;text-align:right">${res.totalDemand.toFixed(1)}</td><td style="padding:5px 8px;border:1px solid #ddd;text-align:right">${res.totalSupply>0?(res.totalDemand/res.totalSupply*100).toFixed(1):'0'}%</td></tr>
-        <tr style="color:#c00"><td style="padding:5px 8px;border:1px solid #ddd">Leaks + Drains</td><td style="padding:5px 8px;border:1px solid #ddd;text-align:right">${res.totalLeaks.toFixed(1)}</td><td style="padding:5px 8px;border:1px solid #ddd;text-align:right">${res.totalSupply>0?(res.totalLeaks/res.totalSupply*100).toFixed(1):'0'}%</td></tr>
+        <tr style="color:#c00"><td style="padding:5px 8px;border:1px solid #ddd">Leaks + Drains</td><td style="padding:5px 8px;border:1px solid #ddd;text-align:right">${(res.totalLeaks-(res.totalDrainLoss||0)).toFixed(1)}</td><td style="padding:5px 8px;border:1px solid #ddd;text-align:right">${res.totalSupply>0?((res.totalLeaks-(res.totalDrainLoss||0))/res.totalSupply*100).toFixed(1):'0'}%</td></tr>
+        ${(res.totalDrainLoss||0)>0?`<tr style="color:#c00"><td style="padding:5px 8px;border:1px solid #ddd">Drain Losses</td><td style="padding:5px 8px;border:1px solid #ddd;text-align:right">${(res.totalDrainLoss||0).toFixed(3)}</td><td style="padding:5px 8px;border:1px solid #ddd;text-align:right">${res.totalSupply>0?((res.totalDrainLoss||0)/res.totalSupply*100).toFixed(2):'0'}%</td></tr>`:''}
+        ${(res.totalPurge||0)>0?`<tr style="color:#c00"><td style="padding:5px 8px;border:1px solid #ddd">Dryer Purge</td><td style="padding:5px 8px;border:1px solid #ddd;text-align:right">${(res.totalPurge||0).toFixed(1)}</td><td style="padding:5px 8px;border:1px solid #ddd;text-align:right">${res.totalSupply>0?((res.totalPurge||0)/res.totalSupply*100).toFixed(1):'0'}%</td></tr>`:''}
         <tr style="font-weight:600"><td style="padding:5px 8px;border:1px solid #ddd">Net Balance</td><td style="padding:5px 8px;border:1px solid #ddd;text-align:right;color:${res.surplus>=0?'#3fb950':'#f85149'}">${res.surplus>=0?'+':''}${res.surplus.toFixed(1)}</td><td style="padding:5px 8px;border:1px solid #ddd"></td></tr>
       </table>
 
@@ -3548,11 +3633,28 @@ function generateReport(type) {
       <h2 style="font-size:15px;color:#0d1117;margin-bottom:8px;border-bottom:1px solid #ddd;padding-bottom:4px">Energy Summary</h2>
       <table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:20px">
         <tr style="background:#f5f5f5"><th style="text-align:left;padding:6px 8px;border:1px solid #ddd">Item</th><th style="padding:6px 8px;border:1px solid #ddd;text-align:right">Value</th><th style="padding:6px 8px;border:1px solid #ddd;text-align:left">Unit</th></tr>
-        <tr><td style="padding:5px 8px;border:1px solid #ddd">Total system power</td><td style="padding:5px 8px;border:1px solid #ddd;text-align:right">${totPwr.toFixed(1)}</td><td style="padding:5px 8px;border:1px solid #ddd">kW</td></tr>
-        <tr><td style="padding:5px 8px;border:1px solid #ddd">Annual energy</td><td style="padding:5px 8px;border:1px solid #ddd;text-align:right">${(totPwr*hours/1000).toFixed(1)}</td><td style="padding:5px 8px;border:1px solid #ddd">MWh/yr</td></tr>
-        <tr><td style="padding:5px 8px;border:1px solid #ddd">Annual energy cost</td><td style="padding:5px 8px;border:1px solid #ddd;text-align:right">$${annCost.toFixed(0)}</td><td style="padding:5px 8px;border:1px solid #ddd">/yr</td></tr>
-        <tr><td style="padding:5px 8px;border:1px solid #ddd">Leak cost</td><td style="padding:5px 8px;border:1px solid #ddd;text-align:right;color:#c00">$${leakCost.toFixed(0)}</td><td style="padding:5px 8px;border:1px solid #ddd">/yr</td></tr>
-        <tr><td style="padding:5px 8px;border:1px solid #ddd">Drain waste cost</td><td style="padding:5px 8px;border:1px solid #ddd;text-align:right;color:#c00">$${drainCost.toFixed(0)}</td><td style="padding:5px 8px;border:1px solid #ddd">/yr</td></tr>
+        <tr style="background:#f9f9f9"><td colspan="3" style="padding:5px 8px;border:1px solid #ddd;font-weight:600;color:#444">Compressors</td></tr>
+        ${compressors.map(n=>`<tr><td style="padding:5px 8px;border:1px solid #ddd;padding-left:16px">${n.props.name}</td><td style="padding:5px 8px;border:1px solid #ddd;text-align:right">${(n._stagedPower||0).toFixed(1)}</td><td style="padding:5px 8px;border:1px solid #ddd">kW · ${((n._stagedPower||0)*hours/1000).toFixed(1)} MWh/yr · $${((n._stagedPower||0)*hours*rate).toFixed(0)}/yr</td></tr>`).join('')}
+        <tr style="font-weight:600"><td style="padding:5px 8px;border:1px solid #ddd;padding-left:16px">Compressor subtotal</td><td style="padding:5px 8px;border:1px solid #ddd;text-align:right">${compressors.reduce((s,n)=>s+(n._stagedPower||0),0).toFixed(1)}</td><td style="padding:5px 8px;border:1px solid #ddd">kW · ${(compressors.reduce((s,n)=>s+(n._stagedPower||0),0)*hours/1000).toFixed(1)} MWh/yr · $${(compressors.reduce((s,n)=>s+(n._stagedPower||0),0)*hours*rate).toFixed(0)}/yr</td></tr>
+        ${nodes.filter(n=>n.type==='dryer').length>0?`
+        <tr style="background:#f9f9f9"><td colspan="3" style="padding:5px 8px;border:1px solid #ddd;font-weight:600;color:#444">Dryers</td></tr>
+        ${nodes.filter(n=>n.type==='dryer').map(n=>{
+          const elec=dryerElecKw(n), purge=dryerPurgeScfm(n);
+          const typeStr=dryerTypeLabel(n.props.dryerType||'refrigerated');
+          const purgeCost=purge*getSystemSPP()*hours*rate;
+          if(elec>0) return`<tr><td style="padding:5px 8px;border:1px solid #ddd;padding-left:16px">${n.props.name} [${typeStr}] — electrical</td><td style="padding:5px 8px;border:1px solid #ddd;text-align:right">${elec.toFixed(1)}</td><td style="padding:5px 8px;border:1px solid #ddd">kW · ${(elec*hours/1000).toFixed(1)} MWh/yr · $${(elec*hours*rate).toFixed(0)}/yr</td></tr>`;
+          if(purge>0) return`<tr style="color:#c00"><td style="padding:5px 8px;border:1px solid #ddd;padding-left:16px">${n.props.name} [${typeStr}] — purge air cost</td><td style="padding:5px 8px;border:1px solid #ddd;text-align:right">${purge.toFixed(1)} scfm</td><td style="padding:5px 8px;border:1px solid #ddd">equivalent $${purgeCost.toFixed(0)}/yr compressor energy</td></tr>`;
+          return`<tr><td style="padding:5px 8px;border:1px solid #ddd;padding-left:16px">${n.props.name} [${typeStr}]</td><td style="padding:5px 8px;border:1px solid #ddd;text-align:right">—</td><td style="padding:5px 8px;border:1px solid #ddd">No electrical load or purge</td></tr>`;
+        }).join('')}
+        <tr style="font-weight:600"><td style="padding:5px 8px;border:1px solid #ddd;padding-left:16px">Dryer electrical subtotal</td><td style="padding:5px 8px;border:1px solid #ddd;text-align:right">${nodes.filter(n=>n.type==='dryer').reduce((s,n)=>s+dryerElecKw(n),0).toFixed(1)}</td><td style="padding:5px 8px;border:1px solid #ddd">kW · ${(nodes.filter(n=>n.type==='dryer').reduce((s,n)=>s+dryerElecKw(n),0)*hours/1000).toFixed(1)} MWh/yr · $${(nodes.filter(n=>n.type==='dryer').reduce((s,n)=>s+dryerElecKw(n),0)*hours*rate).toFixed(0)}/yr</td></tr>
+        `:''}
+        <tr style="background:#f9f9f9"><td colspan="3" style="padding:5px 8px;border:1px solid #ddd;font-weight:600;color:#444">Waste Streams</td></tr>
+        <tr style="color:#c00"><td style="padding:5px 8px;border:1px solid #ddd;padding-left:16px">Leak losses</td><td style="padding:5px 8px;border:1px solid #ddd;text-align:right">$${leakCost.toFixed(0)}</td><td style="padding:5px 8px;border:1px solid #ddd">/yr equivalent compressor energy</td></tr>
+        <tr style="color:#c00"><td style="padding:5px 8px;border:1px solid #ddd;padding-left:16px">Drain losses</td><td style="padding:5px 8px;border:1px solid #ddd;text-align:right">$${drainCost.toFixed(0)}</td><td style="padding:5px 8px;border:1px solid #ddd">/yr equivalent compressor energy</td></tr>
+        ${(res.totalPurge||0)>0?`<tr style="color:#c00"><td style="padding:5px 8px;border:1px solid #ddd;padding-left:16px">Dryer purge losses</td><td style="padding:5px 8px;border:1px solid #ddd;text-align:right">$${((res.totalPurge||0)*getSystemSPP()*hours*rate).toFixed(0)}</td><td style="padding:5px 8px;border:1px solid #ddd">/yr equivalent compressor energy</td></tr>`:''}
+        <tr style="font-weight:700;background:#f0f0f0"><td style="padding:6px 8px;border:1px solid #ddd">Total system power</td><td style="padding:6px 8px;border:1px solid #ddd;text-align:right">${totPwr.toFixed(1)}</td><td style="padding:6px 8px;border:1px solid #ddd">kW</td></tr>
+        <tr style="font-weight:700;background:#f0f0f0"><td style="padding:6px 8px;border:1px solid #ddd">Annual energy</td><td style="padding:6px 8px;border:1px solid #ddd;text-align:right">${(totPwr*hours/1000).toFixed(1)}</td><td style="padding:6px 8px;border:1px solid #ddd">MWh/yr</td></tr>
+        <tr style="font-weight:700;background:#f0f0f0"><td style="padding:6px 8px;border:1px solid #ddd">Annual energy cost</td><td style="padding:6px 8px;border:1px solid #ddd;text-align:right">$${annCost.toFixed(0)}</td><td style="padding:6px 8px;border:1px solid #ddd">/yr</td></tr>
       </table>
 
       <p style="font-size:11px;color:#999;margin-top:16px;border-top:1px solid #eee;padding-top:10px">Generated by CAS·Analyzer on ${today}. Calculations use CAGI data inputs, ISO 1217 site correction, and engineering approximations per Compressed Air Challenge best practices.</p>`;
