@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CAS Analyzer Validation Harness</title>
+<style>
+  body{font-family:Segoe UI,Arial,sans-serif;margin:24px;background:#f6f8fa;color:#1f2328;line-height:1.45;}
+  h1{font-size:22px;margin:0 0 8px;}
+  p{margin:0 0 16px;color:#57606a;}
+  button{padding:8px 14px;border:1px solid #1f883d;background:#2da44e;color:#fff;border-radius:6px;cursor:pointer;font-weight:600;}
+  button:disabled{opacity:.6;cursor:wait;}
+  table{border-collapse:collapse;width:100%;margin-top:18px;background:#fff;border:1px solid #d0d7de;}
+  th,td{padding:8px 10px;border-bottom:1px solid #d0d7de;text-align:left;font-size:13px;vertical-align:top;}
+  th{background:#f6f8fa;font-weight:600;}
+  .pass{color:#1a7f37;font-weight:600;}
+  .fail{color:#cf222e;font-weight:600;}
+  .skip{color:#9a6700;font-weight:600;}
+  .detail{font-family:Consolas,monospace;white-space:pre-wrap;font-size:12px;color:#57606a;}
+  iframe{position:absolute;width:1px;height:1px;border:0;left:-9999px;top:-9999px;}
+</style>
+</head>
+<body>
+<h1>CAS Analyzer Validation Harness</h1>
+<p>Runs deterministic calculation, savings, schedule, and Excel-workbook structure checks against the local app.</p>
+<button id="runBtn">Run Validation Checks</button>
+<table>
+  <thead><tr><th>Status</th><th>Check</th><th>Details</th></tr></thead>
+  <tbody id="results"><tr><td class="skip">WAIT</td><td>Not run</td><td class="detail">Click Run Validation Checks.</td></tr></tbody>
+</table>
+<iframe id="appFrame" src="../index.html"></iframe>
+
+<script>
+const resultsEl = document.getElementById('results');
+const runBtn = document.getElementById('runBtn');
+
+function approx(actual, expected, tolerance, label) {
+  const diff = Math.abs(actual - expected);
+  if (diff > tolerance) throw new Error(`${label}: expected ${expected}, actual ${actual}, diff ${diff}, tolerance ${tolerance}`);
+}
+
+function isoScale(comp, ambient) {
+  const pIn = comp.props.ratedInletPres || 14.696;
+  const pRatedAbs = (comp.props.pressure || 125) + pIn;
+  const pOpAbs = (comp.props.operatingPressure ?? comp.props.pressure ?? 125) + pIn;
+  const k = 0.286;
+  const rated = Math.pow(pRatedAbs / pIn, k) - 1;
+  const op = Math.pow(pOpAbs / pIn, k) - 1;
+  return rated > 0 ? op / rated : 1;
+}
+
+function siteCorrection(comp, ambient) {
+  const pref = comp.props.ratedInletPres || 14.696;
+  const tref = (comp.props.ratedInletTemp || 68) + 459.67;
+  return (ambient.psia / pref) * Math.sqrt(tref / (ambient.tempF + 459.67));
+}
+
+function partLoadFactor(comp, loadFrac) {
+  const type = comp.props.controlType || 'lu';
+  if (loadFrac <= 0) return 0;
+  if (loadFrac >= 1) return 1;
+  if (type === 'lu') return loadFrac + (1 - loadFrac) * ((comp.props.unloadPower || 20) / 100);
+  if (type === 'mod') return 0.30 + 0.70 * loadFrac;
+  if (type === 'vsd') return Math.pow(loadFrac, 1.3);
+  return loadFrac;
+}
+
+function allOnSchedule(id) {
+  const days = {};
+  ['mon','tue','wed','thu','fri','sat','sun','holiday'].forEach(day => days[day] = [{start:'00:00', stop:'24:00', factor:100}]);
+  return {id, name:id, days};
+}
+
+function aggregate(hours) {
+  return {
+    kwh: hours.reduce((sum, hour) => sum + hour.systemKw, 0),
+    peakKw: Math.max(...hours.map(hour => hour.systemKw)),
+    supplyScfmHr: hours.reduce((sum, hour) => sum + hour.supplyScfm, 0),
+    leakScfmHr: hours.reduce((sum, hour) => sum + hour.leakScfm, 0)
+  };
+}
+
+async function waitForApp(frame) {
+  const win = frame.contentWindow;
+  for (let i = 0; i < 100; i++) {
+    if (win && win.document && typeof win.runOneHour === 'function' && typeof win.addCalcSheet === 'function') return win;
+    await new Promise(resolve => setTimeout(resolve, 50));
+  }
+  throw new Error('Timed out waiting for index.html to expose validation targets.');
+}
+
+async function runChecks() {
+  runBtn.disabled = true;
+  const rows = [];
+  function record(status, name, detail) { rows.push({status, name, detail}); }
+  try {
+    const win = await waitForApp(document.getElementById('appFrame'));
+    const ambient = {psia:14.696, tempF:68};
+    const compressor = {id:'c1', type:'compressor', props:{name:'Baseline Compressor', flowRate:100, pressure:125, power:25, controlType:'lu', unloadPower:20, stagingPriority:1, ratedInletPres:14.696, ratedInletTemp:68, operatingPressure:110}};
+    const vsdCompressor = JSON.parse(JSON.stringify(compressor));
+    vsdCompressor.props.name = 'Post VSD Compressor';
+    vsdCompressor.props.controlType = 'vsd';
+    const load = {id:'l1', type:'load', props:{name:'Production Load', flowRate:60, pressure:90, dutyCycle:100}};
+    const leak = {id:'lk1', type:'leak', props:{name:'Measured Leak', flowRate:10, pressure:100}};
+    const nodesPre = [compressor, load, leak];
+    const nodesPost = [vsdCompressor, load];
+    const connectionsPre = [{id:'p1', from:'c1', to:'l1'}, {id:'p2', from:'c1', to:'lk1'}];
+    const connectionsPost = [{id:'q1', from:'c1', to:'l1'}];
+    const schedules = [allOnSchedule('always')];
+    const equipment = {c1:'always', l1:'always'};
+    const {rows: calendarRows, holidays} = win.buildHourlyCalendar(2025);
+    calendarRows.forEach(row => row.holidays = holidays);
+
+    try {
+      const expectedLoadFrac = 0.70;
+      const expectedKw = compressor.props.power * isoScale(compressor, ambient) * partLoadFactor(compressor, expectedLoadFrac);
+      const staged = win.stageCompressors([compressor], 70, ambient)[0];
+      approx(staged.loadFrac, expectedLoadFrac, 1e-9, 'load fraction');
+      approx(staged.actualPower, expectedKw, 1e-9, 'staged kW');
+      record('pass', 'Compressor staging and part-load power', `Demand 70 scfm produced ${(staged.loadFrac*100).toFixed(1)}% load and ${staged.actualPower.toFixed(6)} kW.`);
+    } catch (err) { record('fail', 'Compressor staging and part-load power', err.message); }
+
+    let preAgg = null;
+    let postAgg = null;
+    let preHours = null;
+    let postHours = null;
+    try {
+      preHours = calendarRows.map(hour => ({...hour, ...win.runOneHour(hour, nodesPre, connectionsPre, equipment, schedules, ambient)}));
+      postHours = calendarRows.map(hour => ({...hour, ...win.runOneHour(hour, nodesPost, connectionsPost, equipment, schedules, ambient)}));
+      preAgg = aggregate(preHours);
+      postAgg = aggregate(postHours);
+      const preExpectedKw = compressor.props.power * isoScale(compressor, ambient) * partLoadFactor(compressor, 0.70);
+      const postExpectedKw = vsdCompressor.props.power * isoScale(vsdCompressor, ambient) * partLoadFactor(vsdCompressor, 0.60);
+      approx(preAgg.kwh, preExpectedKw * 8760, 0.001, 'pre annual kWh');
+      approx(postAgg.kwh, postExpectedKw * 8760, 0.001, 'post annual kWh');
+      if (!(preAgg.kwh > postAgg.kwh)) throw new Error('Expected post annual kWh to be lower than pre annual kWh.');
+      record('pass', '8760 energy-savings fixture', `Pre ${(preAgg.kwh/1000).toFixed(2)} MWh, post ${(postAgg.kwh/1000).toFixed(2)} MWh, savings ${((preAgg.kwh-postAgg.kwh)/1000).toFixed(2)} MWh.`);
+    } catch (err) { record('fail', '8760 energy-savings fixture', err.message); }
+
+    try {
+      const receiver = {id:'r1', type:'receiver', props:{name:'Receiver', volume:120, maxPressure:150, workingPressure:125}};
+      const receiverNodes = [compressor, receiver, load];
+      const receiverConnections = [{id:'r-p1', from:'c1', to:'r1'}, {id:'r-p2', from:'r1', to:'l1'}];
+      const receiverHours = calendarRows.map(hour => ({...hour, ...win.runOneHour(hour, receiverNodes, receiverConnections, equipment, schedules, ambient)}));
+      const receiverAgg = aggregate(receiverHours);
+      const expectedLoadFrac = 0.60;
+      const expectedKw = compressor.props.power * isoScale(compressor, ambient) * partLoadFactor(compressor, expectedLoadFrac);
+      approx(receiverAgg.kwh, expectedKw * 8760, 0.001, 'receiver annual kWh');
+      approx(receiverAgg.peakKw, expectedKw, 1e-9, 'receiver peak kW');
+      record('pass', '8760 receiver pass-through topology', `Compressor→receiver→load produced ${(receiverAgg.kwh/1000).toFixed(2)} MWh and ${receiverAgg.peakKw.toFixed(3)} peak kW.`);
+    } catch (err) { record('fail', '8760 receiver pass-through topology', err.message); }
+
+    try {
+      const weekdayOnly = {id:'weekday', name:'Weekday 8-17', days:{mon:[{start:'08:00', stop:'17:00', factor:100}], tue:[{start:'08:00', stop:'17:00', factor:100}], wed:[{start:'08:00', stop:'17:00', factor:100}], thu:[{start:'08:00', stop:'17:00', factor:100}], fri:[{start:'08:00', stop:'17:00', factor:100}], sat:[], sun:[], holiday:[]}};
+      const jan2 = new Date(2025, 0, 2);
+      const jan4 = new Date(2025, 0, 4);
+      approx(win.getHourFactor('l1', jan2, 10, holidays, {l1:'weekday'}, [weekdayOnly]), 1, 0, 'weekday active factor');
+      approx(win.getHourFactor('l1', jan2, 20, holidays, {l1:'weekday'}, [weekdayOnly]), 0, 0, 'weekday inactive factor');
+      approx(win.getHourFactor('l1', jan4, 10, holidays, {l1:'weekday'}, [weekdayOnly]), 0, 0, 'weekend inactive factor');
+      record('pass', 'Schedule factor boundaries', 'Weekday, off-hour, and weekend schedule states match expected factors.');
+    } catch (err) { record('fail', 'Schedule factor boundaries', err.message); }
+
+    try {
+      const shiftSchedule = {id:'shift', name:'Day 100 / Night 62', days:{mon:[{start:'00:00', stop:'06:00', factor:62}, {start:'06:00', stop:'24:00', factor:100}], tue:[{start:'00:00', stop:'06:00', factor:62}, {start:'06:00', stop:'24:00', factor:100}], wed:[{start:'00:00', stop:'06:00', factor:62}, {start:'06:00', stop:'24:00', factor:100}], thu:[{start:'00:00', stop:'06:00', factor:62}, {start:'06:00', stop:'24:00', factor:100}], fri:[{start:'00:00', stop:'06:00', factor:62}, {start:'06:00', stop:'24:00', factor:100}], sat:[{start:'00:00', stop:'06:00', factor:62}, {start:'06:00', stop:'24:00', factor:100}], sun:[{start:'00:00', stop:'06:00', factor:62}, {start:'06:00', stop:'24:00', factor:100}], holiday:[{start:'00:00', stop:'06:00', factor:62}, {start:'06:00', stop:'24:00', factor:100}]}};
+      const jan2 = new Date(2025, 0, 2);
+      const nightHour = {date:jan2, hourOfDay:2, holidays};
+      const dayHour = {date:jan2, hourOfDay:8, holidays};
+      const scheduleNodes = [compressor, {...load, props:{...load.props, dutyCycle:100}}];
+      const scheduleEquipment = {c1:'always', l1:'shift'};
+      const night = win.runOneHour(nightHour, scheduleNodes, connectionsPre.slice(0, 1), scheduleEquipment, [schedules[0], shiftSchedule], ambient);
+      const day = win.runOneHour(dayHour, scheduleNodes, connectionsPre.slice(0, 1), scheduleEquipment, [schedules[0], shiftSchedule], ambient);
+      approx(night.demandScfm, load.props.flowRate * 0.62, 1e-9, 'night schedule-scaled demand');
+      approx(day.demandScfm, load.props.flowRate, 1e-9, 'day schedule-scaled demand');
+      if (!(night.systemKw < day.systemKw)) throw new Error('Expected 62% night schedule to lower compressor kW below daytime.');
+      record('pass', 'Schedule percentage scales load demand', `Night demand ${night.demandScfm.toFixed(1)} scfm vs day ${day.demandScfm.toFixed(1)} scfm.`);
+    } catch (err) { record('fail', 'Schedule percentage scales load demand', err.message); }
+
+    try {
+      const noHolidaySchedule = {id:'noholiday', name:'Weekdays No Holidays', days:{mon:[{start:'00:30', stop:'24:00', factor:100}], tue:[{start:'00:30', stop:'24:00', factor:100}], wed:[{start:'00:30', stop:'24:00', factor:100}], thu:[{start:'00:30', stop:'24:00', factor:100}], fri:[{start:'00:30', stop:'24:00', factor:100}], sat:[], sun:[], holiday:[]}};
+      const holidayHour = calendarRows.find(row => row.isHoliday && row.hourOfDay === 8);
+      const weekdayEarly = calendarRows.find(row => !row.isHoliday && row.dayName === 'Thu' && row.hourOfDay === 0);
+      const dryer = {id:'d1', type:'dryer', props:{name:'Dryer', flowRate:100, pressureDrop:2, power:2, dryerType:'refrigerated', purgeFraction:15}};
+      const noHolidayNodes = [compressor, dryer, load];
+      const noHolidayConnections = [{id:'nh1', from:'c1', to:'d1'}, {id:'nh2', from:'d1', to:'l1'}];
+      const noHolidayEquipment = {c1:'noholiday', l1:'always'};
+      const holidayResult = win.runOneHour(holidayHour, noHolidayNodes, noHolidayConnections, noHolidayEquipment, [noHolidaySchedule, schedules[0]], ambient);
+      const weekdayResult = win.runOneHour(weekdayEarly, noHolidayNodes, noHolidayConnections, noHolidayEquipment, [noHolidaySchedule, schedules[0]], ambient);
+      approx(holidayResult.systemKw, 0, 1e-9, 'holiday compressor and dryer kW');
+      if (!(weekdayResult.systemKw > 0)) throw new Error('Expected 00:30 start to count hour 0 as on when using whole-hour schedule logic.');
+      if (win.scheduleFactorFormula && !win.scheduleFactorFormula('noholiday', '$C2', '$D2', 2).includes('INT(Schedules!$D$2:$D$2)')) throw new Error('Excel schedule formula should use whole-hour INT comparisons.');
+      record('pass', 'Holiday/off-hour schedule parity', `Holiday system kW ${holidayResult.systemKw.toFixed(3)}; 00:30 start treats hour 0 as on.`);
+    } catch (err) { record('fail', 'Holiday/off-hour schedule parity', err.message); }
+
+    try {
+      if (!win.ExcelJS) throw new Error('ExcelJS is not loaded; check network or vendor the library for offline validation.');
+      win.eval(`
+        nodes = ${JSON.stringify(nodesPre)};
+        connections = ${JSON.stringify(connectionsPre)};
+        drainAttachments = [];
+        SIM.schedules = ${JSON.stringify(schedules)};
+        SIM.equipment = ${JSON.stringify(equipment)};
+        SIM.postNodes = ${JSON.stringify(nodesPost)};
+        SIM.postConnections = ${JSON.stringify(connectionsPost)};
+        SIM.postEquipment = ${JSON.stringify(equipment)};
+        SIM.resultsPreHours = ${JSON.stringify((preHours || []).map(hour => ({...hour, date:null})))};
+        SIM.resultsPostHours = ${JSON.stringify((postHours || []).map(hour => ({...hour, date:null})))};
+      `);
+      const wb = new win.ExcelJS.Workbook();
+      const preRows = win.buildInputRows('Pre', nodesPre, equipment);
+      const postRows = win.buildInputRows('Post', nodesPost, equipment);
+      win.addInputsSheet(wb, 'Inputs_Pre', preRows);
+      win.addInputsSheet(wb, 'Inputs_Post', postRows);
+      const schedWs = win.addSchedulesSheet(wb);
+      win.addAssignmentsSheet(wb, preRows, postRows);
+      win.addCalendarSheet(wb, 2025);
+      const lastScheduleRow = Math.max(2, schedWs.rowCount);
+      const preCalc = win.addCalcSheet(wb, 'Calc_Pre', nodesPre, equipment, 'Inputs_Pre', preHours, lastScheduleRow, ambient);
+      const postCalc = win.addCalcSheet(wb, 'Calc_Post', nodesPost, equipment, 'Inputs_Post', postHours, lastScheduleRow, ambient);
+      win.addResultsSheet(wb, win.aggHours(preHours), win.aggHours(postHours), preCalc, postCalc);
+      win.addWarningsSheet(wb);
+      const requiredSheets = ['Inputs_Pre','Inputs_Post','Schedules','Assignments','Calendar_8760','Calc_Pre','Calc_Post','Results_QC','Warnings_Assumptions'];
+      const missing = requiredSheets.filter(name => !wb.getWorksheet(name));
+      if (missing.length) throw new Error('Missing sheets: ' + missing.join(', '));
+      if (wb.getWorksheet('Calc_Pre').rowCount !== 8761) throw new Error('Calc_Pre should include header + 8760 rows.');
+      if (wb.getWorksheet('Calc_Post').rowCount !== 8761) throw new Error('Calc_Post should include header + 8760 rows.');
+      const qcHeader = wb.getWorksheet('Results_QC').getRow(1).values.join('|');
+      if (!qcHeader.includes('Web Result') || !qcHeader.includes('Excel Formula Result') || !qcHeader.includes('QC Status')) throw new Error('Results_QC does not expose required audit columns.');
+      const webKwHeader = wb.getWorksheet('Calc_Pre').getRow(1).values.indexOf('Web System kW');
+      if (webKwHeader < 1) throw new Error('Calc_Pre is missing the Web System kW review column.');
+      approx(wb.getWorksheet('Calc_Pre').getRow(2).getCell(webKwHeader).value, preHours[0].systemKw, 1e-9, 'first-hour web kW');
+      record('pass', 'Excel workbook audit structure', `Required sheets present; Calc sheets have 8,760 formula rows; Results_QC exposes web-vs-Excel QC fields.`);
+    } catch (err) { record(err.message.includes('ExcelJS is not loaded') ? 'skip' : 'fail', 'Excel workbook audit structure', err.message); }
+  } catch (err) {
+    record('fail', 'Harness setup', err.message);
+  }
+
+  resultsEl.innerHTML = rows.map(row => `<tr><td class="${row.status}">${row.status.toUpperCase()}</td><td>${row.name}</td><td class="detail">${row.detail}</td></tr>`).join('');
+  runBtn.disabled = false;
+}
+
+runBtn.addEventListener('click', runChecks);
+</script>
+</body>
+</html>

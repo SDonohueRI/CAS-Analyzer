@@ -15,6 +15,7 @@ CAS·Analyzer lets you draw a compressed air system as a flow diagram and immedi
 - What is the impact of restaging compressors or adding a VSD?
 - How does the system perform across a full year of operation?
 - Can the 8760 savings and demand reduction be replicated in a reviewer-friendly Excel workbook?
+- Can I save the complete project and reload it later from the static HTML tool?
 
 ---
 
@@ -25,10 +26,33 @@ CAS·Analyzer lets you draw a compressed air system as a flow diagram and immedi
 3. Drag components from the left palette onto the canvas
 4. Connect them by dragging from a green output port to a gray input port
 5. Enter equipment data in the right panel
-6. Click **▶ Analyze** to run the steady-state analysis
-7. Click **Detailed Mode** to model Pre/Post cases, schedules, 8760 results, and Excel export
+6. Enter **Project Info** such as project name and customer name
+7. Click **▶ Analyze** to run the steady-state analysis
+8. Click **Detailed Mode** to model Pre/Post cases, schedules, 8760 results, and Excel export
+
+Use **Save Project** to download a versioned JSON project file and **Load Project** to restore it later.
 
 No build step, no npm, no account required.
+
+### Project Files
+
+CAS·Analyzer can save and reload complete projects directly from the browser. The saved file is JSON and includes:
+
+- Project name and customer name
+- Components, locations, properties, and connections
+- Drain attachments
+- Site conditions and settings
+- Schedules and equipment assignments
+- Pre/Post detailed-mode case data
+- Change groups and post-case edits
+
+Saved filenames include a CAS project type/version indicator so they are easy to distinguish from other JSON exports:
+
+```text
+plant_air_study_CAS-v1_2026-08-18.json
+```
+
+The JSON payload also includes `schema`, `version`, `appName`, `fileType`, and `fileVersion` fields. The loader accepts only the CAS project schema, which reduces the risk of loading the wrong JSON type.
 
 ### Hosting
 
@@ -103,7 +127,14 @@ Runs instantly when you click **▶ Analyze**. Shows the current operating point
 
 Launched from the **Detailed Mode** button in the header. Detailed Mode keeps the 8760 engine, but gives it a canvas-based Pre/Post workflow.
 
-**Schedules** define which equipment is on or off during each time block. A schedule is a set of day-type blocks (Monday through Sunday plus Holiday) each with a start time, stop time, and on/off state. Multiple schedules can be defined and assigned independently to each compressor and each load.
+**Schedules** define how equipment operates during each time block. A schedule is a set of day-type blocks (Monday through Sunday plus Holiday) each with a start hour, stop hour, and factor percentage. Multiple schedules can be defined and assigned independently to each compressor and each load.
+
+Schedule factors are interpreted differently by equipment type:
+
+- **Compressor schedules** are on/off availability. Any block factor greater than 0 means the compressor is available for staging during that hour.
+- **Load schedules** scale demand. Hourly demand is `flow rate × duty cycle × schedule factor`, so a 62% block runs a 100 scfm, 100% duty load at 62 scfm.
+
+Schedule calculations use the **hour of day only** and ignore minutes. For example, a `00:30` start is treated as hour `0`; a `06:15` stop is treated as hour `6`. This keeps the browser and Excel formula workbook aligned.
 
 **Pre Case** — the system as currently drawn. Schedule assignments define the baseline operating pattern.
 
@@ -129,6 +160,7 @@ Detailed Mode includes **Export to Excel**, which generates a modern Excel workb
 Workbook sheets include:
 
 - **Project** — export metadata, basis, ambient inputs, QC threshold
+- **System_Diagram** — generated canvas-style PNG image of the current system model
 - **Inputs_Pre** and **Inputs_Post** — component inputs by case
 - **Schedules** — schedule blocks by day type
 - **Assignments** — component-to-schedule mapping
@@ -138,6 +170,8 @@ Workbook sheets include:
 - **Warnings_Assumptions** — calculation assumptions and current model warnings
 
 The workbook targets Microsoft 365 / modern Excel and uses formulas without macros. QC columns compare the web result to Excel formula results and flag **ERROR** when the difference exceeds 1%.
+
+Project name and customer name are included in the **Project** sheet and reports. When a project name is present, the Excel filename uses it as the base name.
 
 ---
 
@@ -271,6 +305,17 @@ Generated from the **Scenarios** tab.
 - **8760 engine** — 8,760 hourly iterations with demand-driven staging each hour. Typical runtime < 2 seconds in modern browsers.
 - **Excel formula engine** — exported workbooks use project-specific fixed columns for visible, reviewable formulas and 1% QC checks against web-calculated results.
 - **Browser support** — Chrome 90+, Firefox 88+, Edge 90+, Safari 14+
+
+---
+
+## Validation and Testing
+
+Testing materials live in `tests/`:
+
+- `tests/cas-validation-harness.html` — self-contained browser checks for compressor staging, 8760 Pre/Post savings, schedule boundaries, and Excel workbook audit structure.
+- `tests/VALIDATION_PROTOCOL.md` — review protocol for defensible savings, field validation with measured data, and Excel workbook calculation audit requirements.
+
+To run the executable checks, open `tests/cas-validation-harness.html` in a browser and click **Run Validation Checks**. The harness loads the local `index.html` and reports pass/fail results.
 
 ---
 

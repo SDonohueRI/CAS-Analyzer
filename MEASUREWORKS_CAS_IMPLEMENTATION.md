@@ -2,7 +2,7 @@
 
 **Repository:** `SDonohueRI/CAS-Analyzer`  
 **Date:** 2026-08-18  
-**Status:** Draft implementation plan  
+**Status:** Draft implementation plan with current single-file implementation notes  
 **Source framework:** `MeasureWorks-Lighting-Beta/MEASUREWORKS.md` and related expansion specs
 
 ---
@@ -174,6 +174,8 @@ CAS export layout should follow:
 
 Excel formulas should reference input cells where practical. Hourly 8760 rows may be exported as values, with their basis cited in Assumptions.
 
+Current single-file implementation note: the Excel workbook includes project/customer metadata, Pre/Post inputs, schedules, assignments, calendar, 8,760-row Calc sheets, Results_QC, Warnings_Assumptions, and a `System_Diagram` sheet with an embedded generated PNG-style diagram of the current system layout.
+
 ### 2.11 Version stamping and change governance
 
 Profiles should be versioned data packages. User edits to profile assumptions should require a change note and should not silently mutate shipped defaults.
@@ -187,6 +189,8 @@ CAS outputs should stamp:
 - CAS engine version
 - Calculation basis
 - Export/report generated date
+
+Current single-file implementation note: CAS project saves include `schema = measureworks-cas-project`, numeric `version`, `appName`, `fileType`, and `fileVersion` such as `CAS-v1`. Saved filenames include the same CAS/version indicator, for example `plant_air_study_CAS-v1_2026-08-18.json`, so future JSON artifact types can be distinguished before loading.
 
 Profile changes should flow through repo commits or PRs so assumption changes have an audit trail.
 
@@ -219,6 +223,8 @@ project = {
   warnings
 }
 ```
+
+Current single-file implementation note: the project JSON currently persists project name, customer name, nodes, connections, drain attachments, site conditions, schedules, equipment assignments, post case state, and change groups. Hourly 8760 results are intentionally not trusted as durable state and are recalculated after load.
 
 ### 3.2 Component object
 
