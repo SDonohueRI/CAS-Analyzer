@@ -1,6 +1,6 @@
 # CAS·Analyzer — Compressed Air System Analyzer
 
-A self-contained, single-file web tool for modeling, analyzing, and optimizing industrial compressed air systems. No installation, no server, no dependencies — open the HTML file in any modern browser and start building.
+A browser-based web tool for modeling, analyzing, and optimizing industrial compressed air systems. No installation and no server are required — open the HTML file in any modern browser and start building. Core analysis runs fully in the browser; Excel export uses the ExcelJS browser library.
 
 ---
 
@@ -14,17 +14,19 @@ CAS·Analyzer lets you draw a compressed air system as a flow diagram and immedi
 - How much could I save by lowering supply pressure?
 - What is the impact of restaging compressors or adding a VSD?
 - How does the system perform across a full year of operation?
+- Can the 8760 savings and demand reduction be replicated in a reviewer-friendly Excel workbook?
 
 ---
 
 ## Getting Started
 
-1. Download `compressed-air-analyzer.html`
+1. Download or open `index.html`
 2. Open it in Chrome, Firefox, Edge, or Safari
 3. Drag components from the left palette onto the canvas
 4. Connect them by dragging from a green output port to a gray input port
 5. Enter equipment data in the right panel
 6. Click **▶ Analyze** to run the steady-state analysis
+7. Click **Detailed Mode** to model Pre/Post cases, schedules, 8760 results, and Excel export
 
 No build step, no npm, no account required.
 
@@ -97,26 +99,45 @@ Runs instantly when you click **▶ Analyze**. Shows the current operating point
 - **Moisture & Drains** — aftercooler condensate rate, dryer type and PDP, condensation risk, drain air loss cost
 - **Efficiency** — productive efficiency %, leak-free score, system SPP
 
-### 8760 Annual Simulation
+### Detailed Mode and 8760 Annual Simulation
 
-Launched from the **Opportunities tab**. Computes system performance for all 8,760 hours of a calendar year.
+Launched from the **Detailed Mode** button in the header. Detailed Mode keeps the 8760 engine, but gives it a canvas-based Pre/Post workflow.
 
 **Schedules** define which equipment is on or off during each time block. A schedule is a set of day-type blocks (Monday through Sunday plus Holiday) each with a start time, stop time, and on/off state. Multiple schedules can be defined and assigned independently to each compressor and each load.
 
 **Pre Case** — the system as currently drawn. Schedule assignments define the baseline operating pattern.
 
-**Post Case** — a deep copy of the Pre case that you can modify freely: change component properties (operating pressure, leak rates, drain types), remove components, or reassign to different schedules. Modified properties are highlighted in amber. Removed components appear as ghosts.
+**Post Case** — a deep copy of the Pre case that you can modify freely on its own canvas: change component properties, move equipment, delete/reconnect components, replace compatible equipment types, or reassign schedules. The Post canvas can show the Pre case as a faded non-editable reference layer.
+
+**Replacement workflow** — in Post Case, select a component and use **Change Tools** to apply a compatible replacement. The tool preserves compatible connections and schedule assignments while clearing editable numeric/text inputs so the replacement equipment must be defined. Dropdown-style fields such as compressor control type remain valid defaults.
 
 **Running the simulation:**
 1. Define schedules and assign equipment
-2. Optionally duplicate Pre → Post and make changes
+2. Click **Duplicate Pre→Post** and make proposed changes
 3. Click **▶ Run Simulation**
-4. Results appear in the left sidebar: annual MWh, peak kW, supply Mscf, leak loss, avg pressure, specific energy
+4. Results show annual MWh, peak kW, supply Mscf, leak loss, average pressure, and specific energy
 5. Pre/Post delta shows energy and cost savings
-6. Charts: load duration curve, monthly energy, average daily profile, annual flow balance
-7. Download 8,760-row CSV for each case
+6. Charts show load duration curve, monthly energy, average daily profile, and annual flow balance
+7. Download 8,760-row CSV for each case or click **Export to Excel** for a formula workbook
 
 **Federal holidays** are computed automatically for the selected year using standard US federal holiday rules.
+
+### Excel Formula Workbook Export
+
+Detailed Mode includes **Export to Excel**, which generates a modern Excel workbook intended for review and replication of the 8760 savings calculation.
+
+Workbook sheets include:
+
+- **Project** — export metadata, basis, ambient inputs, QC threshold
+- **Inputs_Pre** and **Inputs_Post** — component inputs by case
+- **Schedules** — schedule blocks by day type
+- **Assignments** — component-to-schedule mapping
+- **Calendar_8760** — hourly calendar used by the formulas
+- **Calc_Pre** and **Calc_Post** — 8,760 formula rows for hourly demand, staging, compressor kW, dryer kW, and system kW
+- **Results_QC** — annual kWh, peak kW, energy savings, demand reduction, and QC status
+- **Warnings_Assumptions** — calculation assumptions and current model warnings
+
+The workbook targets Microsoft 365 / modern Excel and uses formulas without macros. QC columns compare the web result to Excel formula results and flag **ERROR** when the difference exceeds 1%.
 
 ---
 
@@ -209,7 +230,7 @@ Set in the **System Design** tab. These affect all compressor corrections and th
 
 ## Reports
 
-Generated from the **Opportunities tab**.
+Generated from the **Scenarios** tab.
 
 **Management Summary** — one-page executive report with three headline numbers (annual cost, waste cost, identified savings) and top recommendations ranked by payback period.
 
@@ -242,11 +263,13 @@ Generated from the **Opportunities tab**.
 
 ## Technical Notes
 
-- **Single file** — all HTML, CSS, and JavaScript in one self-contained file (~3,900 lines). No external CDN dependencies. Works offline once downloaded.
+- **Single file app shell** — all application HTML, CSS, and JavaScript are in `index.html`.
 - **No server required** — all computation runs in the browser. No data is transmitted anywhere.
+- **Excel export** — formula workbook generation uses ExcelJS from a browser CDN in the current static build. For fully offline distribution, vendor or inline the ExcelJS bundle.
 - **Canvas rendering** — system diagram uses HTML5 Canvas 2D for connections (with DPR scaling) and HTML div elements for nodes.
 - **Topology engine** — Kahn's algorithm for topological sort, depth-first search for cycle detection, reverse-pass attributed demand for flow splitting at merge nodes.
 - **8760 engine** — 8,760 hourly iterations with demand-driven staging each hour. Typical runtime < 2 seconds in modern browsers.
+- **Excel formula engine** — exported workbooks use project-specific fixed columns for visible, reviewable formulas and 1% QC checks against web-calculated results.
 - **Browser support** — Chrome 90+, Firefox 88+, Edge 90+, Safari 14+
 
 ---

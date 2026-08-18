@@ -141,10 +141,22 @@
   .canvas-grid{position:absolute;inset:0;background-image:linear-gradient(var(--border) 1px,transparent 1px),linear-gradient(90deg,var(--border) 1px,transparent 1px);background-size:40px 40px;opacity:.3;pointer-events:none;}
   /* Canvas 2D layer for connections - sits below nodes */
   #connCanvas{position:absolute;inset:0;z-index:5;cursor:default;}
+  #detailedConnCanvas{position:absolute;inset:0;z-index:5;cursor:default;}
+  #detailedGhostConnCanvas{position:absolute;inset:0;z-index:4;pointer-events:none;}
   /* Pending line SVG - pointer-events none, sits above canvas, below nodes */
   #pendingSvg{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:8;}
   /* Nodes sit above both */
   #nodesContainer{position:absolute;inset:0;z-index:10;}
+  #detailedNodesContainer{position:absolute;inset:0;z-index:10;}
+  #detailedGhostNodesContainer{position:absolute;inset:0;z-index:9;pointer-events:none;}
+  .ghost-node{opacity:.28;filter:grayscale(.8);border-style:dashed!important;pointer-events:none;}
+  .ghost-node .port{display:none;}
+  .canvas-legend{position:absolute;left:50%;bottom:12px;transform:translateX(-50%);z-index:30;display:flex;align-items:center;gap:10px;padding:6px 10px;background:rgba(13,17,23,.88);border:1px solid var(--border);border-radius:6px;box-shadow:0 4px 16px rgba(0,0,0,.25);font-size:10px;color:var(--text2);pointer-events:none;white-space:nowrap;}
+  .legend-title{font-family:'IBM Plex Mono',monospace;color:var(--text3);text-transform:uppercase;letter-spacing:.7px;}
+  .legend-item{display:flex;align-items:center;gap:4px;}
+  .legend-line{width:24px;height:0;border-top:2px solid var(--border2);}
+  .legend-line.dashed{border-top-style:dashed;}
+  .legend-gradient{width:48px;height:6px;border-radius:4px;background:linear-gradient(90deg,rgb(240,169,58),rgb(0,150,255));border:1px solid var(--border2);}
   /* Node styles */
   .node{position:absolute;border-radius:8px;border:1px solid var(--border);background:var(--surface);min-width:130px;cursor:move;user-select:none;transition:box-shadow .15s,border-color .15s;}
   .node:hover{border-color:var(--border2);box-shadow:0 4px 20px rgba(0,0,0,.4);}
@@ -228,6 +240,7 @@
     <div class="tab" onclick="setTab('methods')">Methods</div>
   </div>
   <div class="header-right">
+    <button class="btn" onclick="open8760()">Detailed Mode</button>
     <button class="btn" onclick="clearAll()">Clear</button>
     <button class="btn" onclick="loadExample()">Load Example</button>
     <button class="btn primary" onclick="runAnalysis()">&#9654; Analyze</button>
@@ -284,6 +297,7 @@
     </svg>
     <!-- Node HTML divs (z-index 10) -->
     <div id="nodesContainer"></div>
+    <div class="canvas-legend" id="mainCanvasLegend"></div>
     <div class="empty-state" id="emptyState">
       <div class="empty-icon">&#127744;</div>
       <div class="empty-text">Drag components from the palette<br>to build your compressed air system</div>
@@ -393,16 +407,19 @@
 
       <div class="ref-section">
         <div class="ref-h2">5 &#8212; 8760 Annual Simulation</div>
-        <div class="ref-step"><div class="ref-step-num">1</div><div class="ref-step-body"><strong>Open the simulation</strong> from the Scenarios tab. Define schedules — which compressors and loads are on during each shift. Compressor schedules are on/off per block; load schedules gate whether a load is active (duty cycle still applies when on).</div></div>
-        <div class="ref-step"><div class="ref-step-num">2</div><div class="ref-step-body"><strong>Assign equipment to schedules</strong> in the Equipment Assignment panel. All compressors default to Compressor Schedule 1; all loads to Load Schedule 1.</div></div>
-        <div class="ref-step"><div class="ref-step-num">3</div><div class="ref-step-body"><strong>Duplicate Pre&#8594;Post</strong> to create the post-improvement case. Modify component properties in the Post Case tab (e.g. set leak flow to zero, change a compressor's operating pressure, swap a timer drain to zero-loss). Modified fields are highlighted in amber.</div></div>
-        <div class="ref-step"><div class="ref-step-num">4</div><div class="ref-step-body"><strong>Run Simulation</strong> to compute all 8,760 hours. Results show annual energy (MWh), peak demand (kW), supply volume (Mscf), leak loss, average pressure, and specific energy (kWh/kscf). Pre and Post are compared side-by-side. <span class="ref-link" onclick="showMethod('sim8760')">see: 8760 Simulation Method</span></div></div>
-        <div class="ref-step"><div class="ref-step-num">5</div><div class="ref-step-body"><strong>Download CSV</strong> for the full 8,760-row hourly dataset for external analysis in Excel or other tools.</div></div>
+        <div class="ref-step"><div class="ref-step-num">1</div><div class="ref-step-body"><strong>Open Detailed Mode</strong> from the header. The left side contains schedules and component tools, the center is the case canvas, and the right side shows case summary or component characteristics.</div></div>
+        <div class="ref-step"><div class="ref-step-num">2</div><div class="ref-step-body"><strong>Define schedules</strong> for compressor availability and load activity. Compressor schedules are on/off per block; load schedules gate whether a load is active (duty cycle still applies when on).</div></div>
+        <div class="ref-step"><div class="ref-step-num">3</div><div class="ref-step-body"><strong>Assign equipment to schedules</strong> in the Equipment Assignment panel. All compressors default to Compressor Schedule 1; all loads default to Load Schedule 1.</div></div>
+        <div class="ref-step"><div class="ref-step-num">4</div><div class="ref-step-body"><strong>Duplicate Pre&#8594;Post</strong> to create the post-improvement case. The Post canvas can show the Pre case as a faded reference layer. Move, edit, delete, reconnect, or replace compatible components to define the proposed system.</div></div>
+        <div class="ref-step"><div class="ref-step-num">5</div><div class="ref-step-body"><strong>Use Change Tools</strong> on a selected Post component to apply a compatible replacement. Compatible connections and schedule assignments are preserved where possible, while editable equipment parameters are cleared so the replacement must be defined.</div></div>
+        <div class="ref-step"><div class="ref-step-num">6</div><div class="ref-step-body"><strong>Run Simulation</strong> to compute all 8,760 hours. Results show annual energy (MWh), peak demand (kW), supply volume (Mscf), leak loss, average pressure, and specific energy (kWh/kscf). Pre and Post are compared side-by-side. <span class="ref-link" onclick="showMethod('sim8760')">see: 8760 Simulation Method</span></div></div>
+        <div class="ref-step"><div class="ref-step-num">7</div><div class="ref-step-body"><strong>Export results</strong> with Pre/Post CSV downloads or <strong>Export to Excel</strong>. The Excel workbook includes 8,760 formula rows for Pre and Post, annual savings formulas, demand reduction formulas, assumptions, warnings, and QC checks that flag differences over 1%.</div></div>
       </div>
 
       <div class="ref-section">
         <div class="ref-h2">6 &#8212; Reports</div>
-        <div class="ref-p">Generate reports from the Scenarios tab. <strong>Management Summary</strong> is a one-page executive report with headline numbers and top recommendations. <strong>Engineering Report</strong> includes full component inventory, flow balance table, path pressure analysis, and energy summary. Use the browser Print function (Ctrl+P / Cmd+P) to save as PDF.</div>
+        <div class="ref-p">Generate PDF-style reports from the Scenarios tab. <strong>Management Summary</strong> is a one-page executive report with headline numbers and top recommendations. <strong>Engineering Report</strong> includes full component inventory, flow balance table, path pressure analysis, and energy summary. Use the browser Print function (Ctrl+P / Cmd+P) to save as PDF.</div>
+        <div class="ref-p">For calculation review, use <strong>Export to Excel</strong> in Detailed Mode. The workbook is designed for modern Excel and reproduces the 8760 energy and demand calculations with visible formulas and web-vs-Excel QC checks.</div>
       </div>
     </div>
 
@@ -639,11 +656,6 @@
         <button class="scenario-btn" onclick="runScenario('vsd')"><span class="scn-dot" style="background:var(--purple)"></span><span class="scn-label">Add VSD Compressor</span><span class="scn-delta" id="scn-vsd">--</span></button>
         <button class="scenario-btn" onclick="runScenario('heat_recovery')"><span class="scn-dot" style="background:var(--warn)"></span><span class="scn-label">Heat Recovery</span><span class="scn-delta" id="scn-heat">--</span></button>
         <button class="scenario-btn" onclick="runScenario('night_off')"><span class="scn-dot" style="background:var(--pink)"></span><span class="scn-label">Shut Down Nights/Weekends</span><span class="scn-delta" id="scn-night">--</span></button>
-      </div>
-      <div class="panel-section">
-        <div class="panel-title">Annual Simulation</div>
-        <button class="btn primary" style="width:100%;margin-bottom:6px" onclick="open8760()">&#9654; Run 8760 Simulation</button>
-        <div style="font-size:11px;color:var(--text3);line-height:1.6">Full year hourly simulation with schedules, pre/post comparison, and CSV export.</div>
       </div>
       <div class="panel-section">
         <div class="panel-title">Reports</div>
@@ -923,6 +935,7 @@ function renderConnections() {
     ctx.beginPath(); ctx.arc(dx,dy,4,0,Math.PI*2); ctx.fill();
     ctx.restore();
   });
+  renderCanvasLegend('mainCanvasLegend');
 }
 
 function roundRect(ctx, x, y, w, h, r) {
@@ -1854,6 +1867,8 @@ function setColourMode(mode) {
   document.getElementById('clrBtn-flow').classList.toggle('active',     mode==='flow');
   document.getElementById('clrBtn-pressure').classList.toggle('active', mode==='pressure');
   renderConnections();
+  renderDetailedConnections();
+  renderCanvasLegend('detailedCanvasLegend');
 }
 
 // ═══════════════════════════════════════════
@@ -2115,6 +2130,21 @@ function analyzeSystem() {
     c._capFlow    = cap[c.id]        || 0;
   });
 
+  loads.forEach(load => {
+    const required = (load.props.flowRate || 0) * (load.props.dutyCycle || 100) / 100;
+    const incoming = connections.filter(c => c.to === load.id);
+    const delivered = incoming.reduce((s,c) => s + (c._actualFlow || 0), 0);
+    const available = incoming.reduce((s,c) => {
+      const capFlow = c._capFlow || 0;
+      const actual = c._actualFlow || 0;
+      return s + (capFlow > 0 ? Math.min(actual || capFlow, capFlow) : actual);
+    }, 0);
+    const limitingFlow = Math.min(delivered || available, available || delivered);
+    if (required > 0 && limitingFlow + 0.5 < required) {
+      res.warnings.push(`Load "${load.props.name || 'Load'}" requires ${required.toFixed(1)} scfm but only ${limitingFlow.toFixed(1)} scfm is available. Check upstream component capacity or restrictions.`);
+    }
+  });
+
   // Unaccounted demand: when supply > identified loads+leaks, flag the gap
   res.unaccountedDemand = Math.max(0, res.totalSupply - totalSystemDemand);
   if (res.unaccountedDemand > 1.0) {
@@ -2230,6 +2260,20 @@ function updateSummary() {
   document.getElementById('alertsList').innerHTML=alerts.map(a=>
     `<div class="alert alert-${a.t}"><div class="alert-icon">${a.t==='warn'?'!':a.t==='ok'?'OK':'i'}</div><div>${a.m}</div></div>`
   ).join('')||'<div class="alert alert-ok"><div class="alert-icon">OK</div><div>No issues.</div></div>';
+}
+
+function renderAnalysisAlerts(res) {
+  const el = document.getElementById('alertsList');
+  if (!el) return;
+  if (res.errors && res.errors.length) {
+    el.innerHTML = res.errors.map(e=>`<div class="alert alert-err"><div class="alert-icon">X</div><div>${e}</div></div>`).join('');
+    return;
+  }
+  if (res.warnings && res.warnings.length) {
+    el.innerHTML = res.warnings.map(w=>`<div class="alert alert-warn"><div class="alert-icon">!</div><div>${w}</div></div>`).join('');
+    return;
+  }
+  el.innerHTML = '<div class="alert alert-ok"><div class="alert-icon">OK</div><div>Analysis complete. No issues found.</div></div>';
 }
 
 // ═══════════════════════════════════════════
@@ -2356,6 +2400,7 @@ function runAnalysis() {
   document.getElementById('scn-night').textContent    =fmt(annCost*0.25);
 
   updateSummary();
+  renderAnalysisAlerts(res);
 }
 
 function bar(lbl,val,clr){
@@ -2509,7 +2554,11 @@ const SIM = {
   editingDay: 'mon',
   resultsPreHours:  null, // 8760 row objects for pre
   resultsPostHours: null, // 8760 row objects for post
+  changeGroups: [],       // [{id,type,removedNodeIds,addedNodeIds,note}]
 };
+
+let detailedCanvas=null, detailedCtx=null, detailedGhostCanvas=null, detailedGhostCtx=null, detailedConnectingPort=null, detailedDragType=null;
+let detailedSelectedNode=null, detailedSelectedConn=null, detailedHoveredConnId=null;
 
 const DAY_KEYS  = ['mon','tue','wed','thu','fri','sat','sun','holiday'];
 const DAY_NAMES = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday','Holiday'];
@@ -2611,6 +2660,7 @@ function getHourFactor(nodeId, date, hour, holidays, equipMap, schedList) {
 // ── Open / Close ─────────────────────────────────────────────────
 function open8760() {
   initSchedules();
+  initDetailedCanvas();
   document.getElementById('sim8760Overlay').style.display = 'flex';
   setSimCase('pre');
   renderScheduleList();
@@ -2618,6 +2668,627 @@ function open8760() {
 }
 function close8760() {
   document.getElementById('sim8760Overlay').style.display = 'none';
+  syncMainCanvasFromState();
+}
+
+function getDetailedCaseData() {
+  const isPost = SIM.currentCase === 'post';
+  return {
+    isPost,
+    nodes: isPost ? (SIM.postNodes || []) : nodes,
+    connections: isPost ? (SIM.postConnections || []) : connections,
+    equipment: isPost ? SIM.postEquipment : SIM.equipment
+  };
+}
+
+function syncMainCanvasFromState() {
+  document.getElementById('nodesContainer').innerHTML = '';
+  nodes.forEach(renderNode);
+  selectNode(null);
+  selectConn(null);
+  renderConnections();
+  updateSummary();
+  document.getElementById('emptyState').style.display = nodes.length ? 'none' : '';
+}
+
+function initDetailedCanvas() {
+  if (detailedCanvas) return;
+  detailedCanvas = document.getElementById('detailedConnCanvas');
+  detailedCtx = detailedCanvas.getContext('2d');
+  detailedGhostCanvas = document.getElementById('detailedGhostConnCanvas');
+  detailedGhostCtx = detailedGhostCanvas.getContext('2d');
+  const area = document.getElementById('detailedCanvasArea');
+  const container = document.getElementById('detailedNodesContainer');
+  area.addEventListener('mousedown', detailedCanvasMouseDown);
+  area.addEventListener('mousemove', detailedCanvasMouseMove);
+  area.addEventListener('mouseup', detailedCanvasMouseUp);
+  area.addEventListener('click', detailedCanvasClick);
+  area.addEventListener('dblclick', detailedCanvasDblClick);
+  [area, detailedCanvas, container].forEach(el => {
+    el.addEventListener('dragover', e => { e.preventDefault(); e.stopPropagation(); });
+    el.addEventListener('drop', detailedDropComponent);
+  });
+  new ResizeObserver(resizeDetailedCanvas).observe(area);
+  resizeDetailedCanvas();
+}
+
+function resizeDetailedCanvas() {
+  if (!detailedCanvas) return;
+  const area = document.getElementById('detailedCanvasArea');
+  [detailedCanvas, detailedGhostCanvas].forEach(c => {
+    c.width  = area.clientWidth  * DPR;
+    c.height = area.clientHeight * DPR;
+    c.style.width  = area.clientWidth  + 'px';
+    c.style.height = area.clientHeight + 'px';
+  });
+  detailedCtx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  detailedGhostCtx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  renderDetailedConnections();
+}
+
+function renderDetailedMode() {
+  initDetailedCanvas();
+  detailedSelectedNode = null;
+  detailedSelectedConn = null;
+  document.getElementById('simCaseLabel').textContent = SIM.currentCase === 'pre' ? 'Pre Case' : 'Post Case';
+  renderDetailedCanvas();
+  renderDetailedPanel();
+}
+
+function startDetailedDrag(e, type) {
+  detailedDragType = type;
+  e.dataTransfer.setData('type', type);
+}
+
+function detailedDropComponent(e) {
+  e.preventDefault();
+  e.stopPropagation();
+  const type = e.dataTransfer.getData('type') || detailedDragType;
+  if (!type) return;
+  if (SIM.currentCase === 'post' && !SIM.postNodes) {
+    alert('Duplicate Pre to Post before editing the post case.');
+    return;
+  }
+  const r = document.getElementById('detailedCanvasArea').getBoundingClientRect();
+  const x = Math.round((e.clientX - r.left - 65) / 20) * 20;
+  const y = Math.round((e.clientY - r.top  - 30) / 20) * 20;
+  addDetailedNode(type, Math.max(0,x), Math.max(0,y));
+  detailedDragType = null;
+}
+
+function addDetailedNode(type, x, y) {
+  const def = compDefs[type]; if (!def) return;
+  const ctxData = getDetailedCaseData();
+  nodeCounter++;
+  const id = 'n' + nodeCounter;
+  const props = {...def.defaultProps, name: def.label + ' ' + nodeCounter};
+  const node = {id, type, x, y, props};
+  ctxData.nodes.push(node);
+  if (type === 'compressor' && SIM.schedules[0]) ctxData.equipment[id] = SIM.schedules[0].id;
+  if (type === 'load' && SIM.schedules[1]) ctxData.equipment[id] = SIM.schedules[1].id;
+  renderDetailedCanvas();
+  detailedSelectNode(node);
+  renderEquipAssignment();
+  commitDetailedCaseChange(ctxData);
+}
+
+function renderDetailedCanvas() {
+  const ctxData = getDetailedCaseData();
+  const container = document.getElementById('detailedNodesContainer');
+  const ghostContainer = document.getElementById('detailedGhostNodesContainer');
+  container.innerHTML = '';
+  ghostContainer.innerHTML = '';
+  if (shouldShowPreGhost()) nodes.forEach(renderDetailedGhostNode);
+  ctxData.nodes.forEach(renderDetailedNode);
+  document.getElementById('detailedEmptyState').style.display = ctxData.nodes.length ? 'none' : '';
+  renderDetailedConnections();
+  renderCanvasLegend('detailedCanvasLegend');
+}
+
+function shouldShowPreGhost() {
+  return SIM.currentCase === 'post' && !!document.getElementById('showPreGhost')?.checked && nodes.length > 0;
+}
+
+function renderDetailedGhostNode(node) {
+  const def = compDefs[node.type];
+  const el = document.createElement('div');
+  el.id = 'ghost-' + node.id;
+  el.className = 'node ghost-node' + (node.type === 'lineloss' || node.type === 'drain' ? ' node-compact' : '');
+  el.style.left = node.x + 'px';
+  el.style.top = node.y + 'px';
+  const metrics = (def.metrics || []).slice(0,2).map(k => {
+    const [label, unit] = def.propLabels[k] || [k, ''];
+    return `<div class="node-metric"><span class="node-metric-label">${label}</span><span class="node-metric-value" style="color:${def.color}">${node.props[k] ?? '--'}<span style="color:var(--text3);font-size:9px"> ${unit}</span></span></div>`;
+  }).join('');
+  el.innerHTML = `
+    <div class="node-header" style="border-bottom:1px solid ${def.color}40">
+      <div class="node-icon" style="background:${def.bgColor};border:1px solid ${def.color}60;color:${def.color}">${def.icon}</div>
+      <div class="node-name">${node.props.name || def.label}</div>
+    </div>
+    <div class="node-body">${metrics || `<div class="node-metric"><span class="node-metric-value" style="color:${def.color};font-size:11px">Pre Reference</span></div>`}</div>`;
+  document.getElementById('detailedGhostNodesContainer').appendChild(el);
+}
+
+function renderDetailedNode(node) {
+  const def = compDefs[node.type];
+  const el = document.createElement('div');
+  el.id = 'detail-' + node.id;
+  el.className = 'node' + (node.type === 'lineloss' || node.type === 'drain' ? ' node-compact' : '');
+  el.style.left = node.x + 'px';
+  el.style.top = node.y + 'px';
+  const metrics = (def.metrics || []).slice(0,3).map(k => {
+    const [label, unit] = def.propLabels[k] || [k, ''];
+    return `<div class="node-metric"><span class="node-metric-label">${label}</span><span class="node-metric-value" style="color:${def.color}">${node.props[k] ?? '--'}<span style="color:var(--text3);font-size:9px"> ${unit}</span></span></div>`;
+  }).join('');
+  const hasIn = nodeHasInput(node.type);
+  const hasOut = nodeHasOutput(node.type);
+  const ctBadge = node.type === 'compressor'
+    ? `<span class="ctrl-badge ${ctrlClass(node.props.controlType||'lu')}">${ctrlLabel(node.props.controlType||'lu')}</span>`
+    : '';
+  el.innerHTML = `
+    <div class="node-header" style="border-bottom:1px solid ${def.color}40">
+      <div class="node-icon" style="background:${def.bgColor};border:1px solid ${def.color}60;color:${def.color}">${def.icon}</div>
+      <div class="node-name">${node.props.name || def.label}${ctBadge}</div>
+    </div>
+    <div class="node-body">${metrics || `<div class="node-metric"><span class="node-metric-value" style="color:${def.color};font-size:11px">${def.label}</span></div>`}</div>
+    <div class="node-ports">
+      ${hasIn ? `<div class="port input" data-node="${node.id}" data-port="in"><span class="port-label">in</span></div>` : '<div></div>'}
+      ${hasOut ? `<div class="port output" data-node="${node.id}" data-port="out"><span class="port-label">out</span></div>` : '<div></div>'}
+    </div>`;
+  el.addEventListener('mousedown', detailedNodeMouseDown);
+  el.querySelectorAll('.port').forEach(p => p.addEventListener('mousedown', detailedPortMouseDown));
+  document.getElementById('detailedNodesContainer').appendChild(el);
+}
+
+function detailedNodeMouseDown(e) {
+  if (e.target.closest('.port')) return;
+  e.preventDefault();
+  e.stopPropagation();
+  const ctxData = getDetailedCaseData();
+  const el = e.currentTarget;
+  const id = el.id.replace('detail-', '');
+  const node = ctxData.nodes.find(n => n.id === id);
+  if (!node) return;
+  detailedSelectNode(node);
+  const cr = document.getElementById('detailedCanvasArea').getBoundingClientRect();
+  const offsetX = e.clientX - cr.left - node.x;
+  const offsetY = e.clientY - cr.top - node.y;
+  const onMove = ev => {
+    node.x = Math.max(0, Math.round((ev.clientX - cr.left - offsetX) / 10) * 10);
+    node.y = Math.max(0, Math.round((ev.clientY - cr.top - offsetY) / 10) * 10);
+    el.style.left = node.x + 'px';
+    el.style.top = node.y + 'px';
+    renderDetailedConnections();
+  };
+  const onUp = () => {
+    document.removeEventListener('mousemove', onMove);
+    document.removeEventListener('mouseup', onUp);
+    commitDetailedCaseChange(ctxData);
+  };
+  document.addEventListener('mousemove', onMove);
+  document.addEventListener('mouseup', onUp);
+}
+
+function detailedPortMouseDown(e) {
+  e.stopPropagation();
+  e.preventDefault();
+  const port = e.currentTarget;
+  if (port.dataset.port !== 'out') return;
+  const sourceNodeId = port.dataset.node;
+  const cRect = document.getElementById('detailedCanvasArea').getBoundingClientRect();
+  const pRect = port.getBoundingClientRect();
+  detailedConnectingPort = {
+    nodeId: sourceNodeId,
+    startX: pRect.left + 6 - cRect.left,
+    startY: pRect.top + 6 - cRect.top
+  };
+  const onMove = ev => updateDetailedPendingPath(ev.clientX - cRect.left, ev.clientY - cRect.top);
+  const onUp = ev => {
+    document.removeEventListener('mousemove', onMove);
+    document.removeEventListener('mouseup', onUp, true);
+    document.getElementById('detailedPendingPath').setAttribute('d','');
+    const target = document.elementFromPoint(ev.clientX, ev.clientY);
+    const tPort = target && target.closest('.port');
+    if (tPort && tPort.dataset.port === 'in' && tPort.dataset.node !== sourceNodeId) {
+      const ctxData = getDetailedCaseData();
+      const exists = ctxData.connections.find(c => c.from === sourceNodeId && c.to === tPort.dataset.node);
+      if (!exists) ctxData.connections.push({id:'c'+(++nodeCounter), from:sourceNodeId, to:tPort.dataset.node, _actualFlow:0, _capFlow:0});
+      renderDetailedCanvas();
+      renderDetailedPanel();
+      commitDetailedCaseChange(ctxData);
+    }
+    detailedConnectingPort = null;
+  };
+  document.addEventListener('mousemove', onMove);
+  document.addEventListener('mouseup', onUp, true);
+}
+
+function updateDetailedPendingPath(x, y) {
+  if (!detailedConnectingPort) return;
+  const cx = (detailedConnectingPort.startX + x) / 2;
+  document.getElementById('detailedPendingPath').setAttribute('d',
+    `M${detailedConnectingPort.startX} ${detailedConnectingPort.startY} C${cx} ${detailedConnectingPort.startY},${cx} ${y},${x} ${y}`);
+}
+
+function getDetailedPortXY(nodeId, portType) {
+  const el = document.getElementById('detail-' + nodeId);
+  if (!el) return null;
+  const port = el.querySelector('.port.' + portType);
+  if (!port) return null;
+  const cRect = document.getElementById('detailedCanvasArea').getBoundingClientRect();
+  const pRect = port.getBoundingClientRect();
+  return { x: pRect.left + 6 - cRect.left, y: pRect.top + 6 - cRect.top };
+}
+
+function renderDetailedConnections() {
+  if (!detailedCanvas || !detailedCtx) return;
+  const ctxData = getDetailedCaseData();
+  const w = detailedCanvas.clientWidth || detailedCanvas.width / DPR;
+  const h = detailedCanvas.clientHeight || detailedCanvas.height / DPR;
+  detailedCtx.clearRect(0, 0, w, h);
+  detailedGhostCtx.clearRect(0, 0, w, h);
+  if (shouldShowPreGhost()) renderDetailedGhostConnections(w, h);
+  ctxData.connections.forEach(conn => {
+    const p1 = getDetailedPortXY(conn.from, 'output');
+    const p2 = getDetailedPortXY(conn.to, 'input');
+    if (!p1 || !p2) return;
+    const isSelected = detailedSelectedConn && detailedSelectedConn.id === conn.id;
+    const cx = (p1.x + p2.x) / 2;
+    detailedCtx.save();
+    detailedCtx.beginPath();
+    detailedCtx.moveTo(p1.x, p1.y);
+    detailedCtx.bezierCurveTo(cx, p1.y, cx, p2.y, p2.x, p2.y);
+    detailedCtx.strokeStyle = isSelected ? CLR.accent : CLR.border2;
+    detailedCtx.lineWidth = isSelected ? 2.5 : 1.5;
+    if (!isSelected) detailedCtx.setLineDash([4,3]);
+    detailedCtx.stroke();
+    detailedCtx.setLineDash([]);
+    detailedCtx.restore();
+    drawDetailedArrowhead(p2.x, p2.y, p1.x, p1.y, isSelected ? CLR.accent : CLR.border2);
+  });
+}
+
+function renderDetailedGhostConnections() {
+  connections.forEach(conn => {
+    const p1 = getDetailedGhostPortXY(conn.from, 'output');
+    const p2 = getDetailedGhostPortXY(conn.to, 'input');
+    if (!p1 || !p2) return;
+    const cx = (p1.x + p2.x) / 2;
+    detailedGhostCtx.save();
+    detailedGhostCtx.globalAlpha = 0.28;
+    detailedGhostCtx.beginPath();
+    detailedGhostCtx.moveTo(p1.x, p1.y);
+    detailedGhostCtx.bezierCurveTo(cx, p1.y, cx, p2.y, p2.x, p2.y);
+    detailedGhostCtx.strokeStyle = CLR.text3;
+    detailedGhostCtx.lineWidth = 1.5;
+    detailedGhostCtx.setLineDash([5,4]);
+    detailedGhostCtx.stroke();
+    detailedGhostCtx.restore();
+  });
+}
+
+function getDetailedGhostPortXY(nodeId, portType) {
+  const node = nodes.find(n => n.id === nodeId);
+  const el = document.getElementById('ghost-' + nodeId);
+  if (!node || !el) return null;
+  const cRect = document.getElementById('detailedCanvasArea').getBoundingClientRect();
+  const r = el.getBoundingClientRect();
+  const hasIn = nodeHasInput(node.type);
+  const hasOut = nodeHasOutput(node.type);
+  if (portType === 'input' && !hasIn) return null;
+  if (portType === 'output' && !hasOut) return null;
+  const y = r.bottom - cRect.top - 6;
+  if (portType === 'input') return { x: r.left - cRect.left + 12, y };
+  return { x: r.right - cRect.left - 12, y };
+}
+
+function nodeHasInput(type) { return type !== 'compressor' && type !== 'drain'; }
+function nodeHasOutput(type) { return type !== 'load' && type !== 'leak' && type !== 'drain'; }
+
+function drawDetailedArrowhead(x2, y2, x1, y1, color, size=8) {
+  const angle = Math.atan2(y2-y1, x2-x1);
+  detailedCtx.save();
+  detailedCtx.translate(x2, y2);
+  detailedCtx.rotate(angle);
+  detailedCtx.beginPath();
+  detailedCtx.moveTo(0, 0);
+  detailedCtx.lineTo(-size, -size*0.4);
+  detailedCtx.lineTo(-size, size*0.4);
+  detailedCtx.closePath();
+  detailedCtx.fillStyle = color;
+  detailedCtx.fill();
+  detailedCtx.restore();
+}
+
+function detailedCanvasXY(e) {
+  const r = document.getElementById('detailedCanvasArea').getBoundingClientRect();
+  return { x: e.clientX - r.left, y: e.clientY - r.top };
+}
+
+function detailedHitTestConnections(px, py) {
+  const ctxData = getDetailedCaseData();
+  for (let i = ctxData.connections.length-1; i >= 0; i--) {
+    const conn = ctxData.connections[i];
+    const p1 = getDetailedPortXY(conn.from, 'output');
+    const p2 = getDetailedPortXY(conn.to, 'input');
+    if (!p1 || !p2) continue;
+    if (distToBezier(px, py, p1.x, p1.y, p2.x, p2.y) <= HIT_THRESHOLD) return conn;
+  }
+  return null;
+}
+
+function detailedCanvasMouseDown(e) {
+  if (e.target.closest('.node')) return;
+  const {x,y} = detailedCanvasXY(e);
+  if (!detailedHitTestConnections(x,y)) {
+    detailedSelectNode(null);
+    detailedSelectConn(null);
+  }
+}
+
+function detailedCanvasMouseMove(e) {
+  if (e.target.closest('.node')) return;
+  const {x,y} = detailedCanvasXY(e);
+  if (detailedConnectingPort) updateDetailedPendingPath(x,y);
+  const hit = detailedHitTestConnections(x,y);
+  const newHover = hit ? hit.id : null;
+  if (newHover !== detailedHoveredConnId) {
+    detailedHoveredConnId = newHover;
+    document.getElementById('detailedCanvasArea').style.cursor = newHover ? 'pointer' : 'default';
+  }
+}
+
+function detailedCanvasMouseUp(e) {
+  if (e && e.target.closest('.node')) return;
+  if (detailedConnectingPort) {
+    document.getElementById('detailedPendingPath').setAttribute('d','');
+    detailedConnectingPort = null;
+    renderDetailedConnections();
+  }
+}
+
+function detailedCanvasClick(e) {
+  if (e.target.closest('.node')) return;
+  const {x,y} = detailedCanvasXY(e);
+  const hit = detailedHitTestConnections(x,y);
+  if (hit) detailedSelectConn(hit);
+}
+
+function detailedCanvasDblClick(e) {
+  if (e.target.closest('.node')) return;
+  const {x,y} = detailedCanvasXY(e);
+  const hit = detailedHitTestConnections(x,y);
+  if (!hit) return;
+  const ctxData = getDetailedCaseData();
+  const idx = ctxData.connections.findIndex(c => c.id === hit.id);
+  if (idx >= 0) ctxData.connections.splice(idx, 1);
+  detailedSelectConn(null);
+  renderDetailedCanvas();
+  commitDetailedCaseChange(ctxData);
+}
+
+function renderCanvasLegend(targetId) {
+  const el = document.getElementById(targetId);
+  if (!el) return;
+  if (colourMode === 'pressure') {
+    const pMin = window._pressureMin || 60;
+    const pMax = window._pressureMax || 130;
+    el.innerHTML = `<span class="legend-title">Pressure</span><span>${pMin.toFixed(0)} psi</span><span class="legend-gradient"></span><span>${pMax.toFixed(0)} psi</span>`;
+    return;
+  }
+  el.innerHTML = `
+    <span class="legend-title">Flow</span>
+    <span class="legend-item"><span class="legend-line" style="border-color:${CLR.accent}"></span>Normal</span>
+    <span class="legend-item"><span class="legend-line" style="border-color:${CLR.warn}"></span>Elevated</span>
+    <span class="legend-item"><span class="legend-line" style="border-color:${CLR.danger}"></span>High</span>
+    <span class="legend-item"><span class="legend-line dashed"></span>No flow</span>`;
+}
+
+function detailedSelectNode(node) {
+  document.querySelectorAll('#detailedNodesContainer .node').forEach(el => el.classList.remove('selected'));
+  detailedSelectedNode = node;
+  detailedSelectedConn = null;
+  if (node) document.getElementById('detail-' + node.id)?.classList.add('selected');
+  renderDetailedPanel();
+  renderDetailedConnections();
+}
+
+function detailedSelectConn(conn) {
+  document.querySelectorAll('#detailedNodesContainer .node').forEach(el => el.classList.remove('selected'));
+  detailedSelectedConn = conn;
+  detailedSelectedNode = null;
+  renderDetailedPanel();
+  renderDetailedConnections();
+}
+
+function renderDetailedPanel() {
+  const ctxData = getDetailedCaseData();
+  document.getElementById('detailedPropEditor').style.display = detailedSelectedNode ? '' : 'none';
+  document.getElementById('detailedConnEditor').style.display = detailedSelectedConn ? '' : 'none';
+  document.getElementById('detailedSummaryPanel').style.display = (!detailedSelectedNode && !detailedSelectedConn) ? '' : 'none';
+  document.getElementById('d-components').textContent = ctxData.nodes.length;
+  document.getElementById('d-connections').textContent = ctxData.connections.length;
+  document.getElementById('d-compressors').textContent = ctxData.nodes.filter(n=>n.type==='compressor').length;
+  document.getElementById('d-loads').textContent = ctxData.nodes.filter(n=>n.type==='load').length;
+  if (detailedSelectedNode) renderDetailedProperties(detailedSelectedNode);
+}
+
+function detailedLabelUnit(node, key) {
+  const fromDef = compDefs[node.type]?.propLabels?.[key];
+  if (fromDef) return fromDef;
+  const labels = {
+    name:['Name',''], controlType:['Control Type',''], unloadPower:['Unload Power','%'], stagingPriority:['Staging Priority','#'],
+    minStableLoad:['Min Stable Load','%'], ratedInletPres:['Rated Inlet Pres','psia'], ratedInletTemp:['Rated Inlet Temp','F'],
+    operatingPressure:['Operating Pressure','psi'], dryerType:['Dryer Type',''], purgeFraction:['Purge Fraction','%'],
+    measured:['Measured Mode',''], drainType:['Drain Type',''], condition:['Condition',''], opensPerDay:['Opens / Day',''], openDuration:['Open Duration','min']
+  };
+  return labels[key] || [key, ''];
+}
+
+function renderDetailedProperties(node) {
+  const ctxData = getDetailedCaseData();
+  const schedulePicker = ['compressor','load'].includes(node.type) ? `
+    <div class="prop-divider">Schedule</div>
+    <div class="prop-row"><span class="prop-label">Assignment</span>
+      <select onchange="updateDetailedSchedule('${node.id}',this.value)" style="font-size:11px;padding:3px 5px;background:var(--surface3);border:1px solid var(--border);border-radius:5px;color:var(--text);width:130px">
+        ${SIM.schedules.map(s=>`<option value="${s.id}" ${ctxData.equipment[node.id]===s.id?'selected':''}>${s.name}</option>`).join('')}
+      </select><span class="prop-unit"></span></div>` : '';
+  const rows = Object.entries(node.props).filter(([key]) => key !== 'load').map(([key, value]) => {
+    const [label, unit] = detailedLabelUnit(node, key);
+    const options = detailedControlOptions(node, key);
+    if (options) {
+      return `<div class="prop-row"><span class="prop-label">${label}</span>
+        <select onchange="updateDetailedProp('${node.id}','${key}',this.value)" style="font-size:11px;padding:3px 5px;background:var(--surface3);border:1px solid var(--border);border-radius:5px;color:var(--text);width:130px">
+          ${options.map(o=>`<option value="${o.value}" ${String(value)===String(o.value)?'selected':''}>${o.label}</option>`).join('')}
+        </select><span class="prop-unit">${unit}</span></div>`;
+    }
+    const defaultValue = compDefs[node.type]?.defaultProps?.[key];
+    const numericKeys = new Set(['minStableLoad']);
+    const inputType = typeof value === 'number' || typeof defaultValue === 'number' || numericKeys.has(key) ? 'number' : 'text';
+    return `<div class="prop-row"><span class="prop-label">${label}</span>
+      <input class="prop-input" type="${inputType}" value="${value ?? ''}" ${inputType==='number'?'step="any"':''} onchange="updateDetailedProp('${node.id}','${key}',this.value)">
+      <span class="prop-unit">${unit}</span></div>`;
+  }).join('');
+  const replaceTools = SIM.currentCase === 'post' ? `<div class="prop-divider">Change Tools</div>
+    <div class="mode-note" style="margin-bottom:8px">Select the replacement equipment type below, then click Apply Replacement. Editable numeric/text characteristics will be cleared so the new equipment must be defined.</div>
+    <div class="prop-row"><span class="prop-label">Replace with</span>
+      <select id="replaceType-${node.id}" style="font-size:11px;padding:3px 5px;background:var(--surface3);border:1px solid var(--border);border-radius:5px;color:var(--text);width:130px">
+        ${compatibleReplacementTypes(node.type).map(t=>`<option value="${t}" ${t===node.type?'selected':''}>${compDefs[t].label}</option>`).join('')}
+      </select><span class="prop-unit"></span></div>
+    <button class="btn" style="width:100%;margin-bottom:8px" onclick="replaceDetailedNode('${node.id}',document.getElementById('replaceType-${node.id}').value)">Apply Replacement</button>` : '';
+  document.getElementById('detailedPropFields').innerHTML = schedulePicker + replaceTools + `<div class="prop-divider">Inputs</div>` + rows;
+}
+
+function detailedControlOptions(node, key) {
+  if (key === 'controlType') return [
+    {value:'lu', label:'Load/Unload'}, {value:'mod', label:'Modulating'}, {value:'vsd', label:'VSD'}
+  ];
+  if (key === 'dryerType') return [
+    {value:'refrigerated', label:'Refrigerated'}, {value:'heated', label:'Heated Desiccant'}, {value:'heatless', label:'Heatless Desiccant'}
+  ];
+  if (key === 'drainType') return [
+    {value:'timer', label:'Timer'}, {value:'float', label:'Float'}, {value:'zeroloss', label:'Zero-Loss'}, {value:'manual', label:'Manual'}
+  ];
+  if (key === 'condition') return [
+    {value:'normal', label:'Normal'}, {value:'failed_open', label:'Failed Open'}
+  ];
+  if (key === 'measured') return [
+    {value:'false', label:'Flow-Scaled'}, {value:'true', label:'Measured'}
+  ];
+  return null;
+}
+
+function updateDetailedSchedule(nodeId, schedId) {
+  const ctxData = getDetailedCaseData();
+  ctxData.equipment[nodeId] = schedId;
+  renderEquipAssignment();
+  commitDetailedCaseChange(ctxData);
+}
+
+function updateDetailedProp(nodeId, key, val) {
+  const ctxData = getDetailedCaseData();
+  const node = ctxData.nodes.find(n => n.id === nodeId);
+  if (!node) return;
+  const num = parseFloat(val);
+  if (key === 'measured') node.props[key] = val === 'true';
+  else node.props[key] = val === '' ? '' : (isNaN(num) ? val : num);
+  renderDetailedCanvas();
+  detailedSelectNode(ctxData.nodes.find(n => n.id === nodeId));
+  commitDetailedCaseChange(ctxData);
+}
+
+function deleteDetailedSelectedNode() {
+  if (!detailedSelectedNode) return;
+  const ctxData = getDetailedCaseData();
+  const id = detailedSelectedNode.id;
+  for (let i = ctxData.connections.length-1; i >= 0; i--) {
+    if (ctxData.connections[i].from === id || ctxData.connections[i].to === id) ctxData.connections.splice(i,1);
+  }
+  const nodeIdx = ctxData.nodes.findIndex(n => n.id === id);
+  if (nodeIdx >= 0) ctxData.nodes.splice(nodeIdx,1);
+  delete ctxData.equipment[id];
+  if (!ctxData.isPost) drainAttachments = drainAttachments.filter(a=>a.drainNodeId!==id&&a.hostNodeId!==id);
+  detailedSelectedNode = null;
+  renderDetailedCanvas();
+  renderDetailedPanel();
+  renderEquipAssignment();
+  commitDetailedCaseChange(ctxData);
+}
+
+function deleteDetailedSelectedConn() {
+  if (!detailedSelectedConn) return;
+  const ctxData = getDetailedCaseData();
+  const idx = ctxData.connections.findIndex(c => c.id === detailedSelectedConn.id);
+  if (idx >= 0) ctxData.connections.splice(idx,1);
+  detailedSelectedConn = null;
+  renderDetailedCanvas();
+  renderDetailedPanel();
+  commitDetailedCaseChange(ctxData);
+}
+
+function commitDetailedCaseChange(ctxData) {
+  if (!ctxData.isPost) refreshMainCanvasFromState();
+}
+
+function refreshMainCanvasFromState() {
+  document.getElementById('nodesContainer').innerHTML = '';
+  nodes.forEach(renderNode);
+  renderConnections();
+  updateSummary();
+  document.getElementById('emptyState').style.display = nodes.length ? 'none' : '';
+}
+
+function compatibleReplacementTypes(type) {
+  if (type === 'compressor') return ['compressor'];
+  if (type === 'load' || type === 'leak') return ['load','leak'];
+  if (type === 'drain') return ['drain'];
+  return ['dryer','filter','receiver','lineloss','regulator'];
+}
+
+function blankReplacementProps(type) {
+  const enumKeys = new Set(['controlType','dryerType','drainType','condition','measured']);
+  const props = {};
+  Object.entries(compDefs[type].defaultProps).forEach(([key, value]) => {
+    if (key === 'load') return;
+    if (enumKeys.has(key)) props[key] = value;
+    else if (typeof value === 'number') props[key] = null;
+    else props[key] = '';
+  });
+  return props;
+}
+
+function replaceDetailedNode(nodeId, newType) {
+  const ctxData = getDetailedCaseData();
+  const node = ctxData.nodes.find(n => n.id === nodeId);
+  if (!node || !ctxData.isPost) return;
+  const oldType = node.type;
+  const oldName = node.props.name || compDefs[oldType].label;
+  const oldSched = ctxData.equipment[nodeId];
+  const supportsSchedule = ['compressor','load'].includes(newType);
+  node.type = newType;
+  node.props = blankReplacementProps(newType);
+  node.changeType = 'replaced';
+  node.replacesNodeId = nodeId;
+  node.previousType = oldType;
+  if (supportsSchedule && oldSched) ctxData.equipment[nodeId] = oldSched;
+  if (!supportsSchedule) delete ctxData.equipment[nodeId];
+  const canReceive = nodeHasInput(newType);
+  const canSend = nodeHasOutput(newType);
+  for (let i = ctxData.connections.length-1; i >= 0; i--) {
+    const conn = ctxData.connections[i];
+    if ((conn.to === nodeId && !canReceive) || (conn.from === nodeId && !canSend)) ctxData.connections.splice(i,1);
+  }
+  SIM.changeGroups = SIM.changeGroups.filter(g => !(g.addedNodeIds||[]).includes(nodeId));
+  SIM.changeGroups.push({
+    id: 'chg_' + Date.now(),
+    type: 'replace',
+    removedNodeIds: [nodeId],
+    addedNodeIds: [nodeId],
+    note: `${oldName} replaced with ${compDefs[newType].label}`
+  });
+  renderDetailedCanvas();
+  detailedSelectNode(node);
+  renderEquipAssignment();
 }
 
 // ── Case tabs ─────────────────────────────────────────────────────
@@ -2626,12 +3297,7 @@ function setSimCase(c) {
   document.getElementById('tabPre').classList.toggle('active', c==='pre');
   document.getElementById('tabPost').classList.toggle('active', c==='post');
   document.getElementById('simCaseLabel').textContent = c==='pre' ? 'Pre Case' : 'Post Case';
-  if (c==='post' && !SIM.postNodes) {
-    document.getElementById('simComponentList').innerHTML =
-      '<div style="color:var(--text3);font-size:11px">Click "Duplicate Pre→Post" to create the post case from the current system.</div>';
-  } else {
-    renderSimComponentList();
-  }
+  renderDetailedMode();
   renderEquipAssignment();
 }
 
@@ -2765,8 +3431,8 @@ function copyDayBlocks(schedId, fromDay) {
 // ── Equipment assignment UI ───────────────────────────────────────
 function renderEquipAssignment() {
   const el = document.getElementById('equipAssignment');
-  const isPost = SIM.currentCase==='post' && SIM.postNodes;
-  const nodeList = isPost ? SIM.postNodes : nodes;
+  const isPost = SIM.currentCase==='post';
+  const nodeList = isPost ? (SIM.postNodes||[]) : nodes;
   const eqMap    = isPost ? SIM.postEquipment : SIM.equipment;
   const relevant = nodeList.filter(n=>n.type==='compressor'||n.type==='load');
   if (!relevant.length) { el.innerHTML='<span style="color:var(--text3)">No compressors or loads in system.</span>'; return; }
@@ -3418,6 +4084,309 @@ function renderSimCharts() {
   drawChart('chartFlow','bar',post?['Pre','Post']:['Pre'],flowDs,{yFmt:v=>v.toFixed(0)+'k'});
 }
 
+// ── Formula workbook export ───────────────────────────────────────
+function xlCol(n) {
+  let s = '';
+  while (n > 0) {
+    const m = (n - 1) % 26;
+    s = String.fromCharCode(65 + m) + s;
+    n = Math.floor((n - m) / 26);
+  }
+  return s;
+}
+
+function setHeader(ws, rowNum=1) {
+  const row = ws.getRow(rowNum);
+  row.font = { bold: true, color: { argb: 'FFE6EDF3' } };
+  row.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF161B22' } };
+  row.alignment = { vertical: 'middle' };
+}
+
+function autoWidth(ws, maxWidth=28) {
+  ws.columns.forEach(col => {
+    let width = 10;
+    col.eachCell({ includeEmpty: true }, cell => {
+      const v = cell.value && typeof cell.value === 'object' && cell.value.formula ? cell.value.formula : cell.value;
+      width = Math.max(width, String(v ?? '').length + 2);
+    });
+    col.width = Math.min(width, maxWidth);
+  });
+}
+
+function scheduleFactorFormula(scheduleId, dayCell, hourCell, lastScheduleRow) {
+  if (!scheduleId || lastScheduleRow < 2) return '1';
+  return `IFERROR(MIN(1,SUMPRODUCT((Schedules!$A$2:$A$${lastScheduleRow}="${scheduleId}")*(Schedules!$C$2:$C$${lastScheduleRow}=${dayCell})*(Schedules!$D$2:$D$${lastScheduleRow}<=${hourCell})*(Schedules!$E$2:$E$${lastScheduleRow}>${hourCell})*(Schedules!$F$2:$F$${lastScheduleRow})/100)),0)`;
+}
+
+function buildInputRows(caseName, nodeList, eqMap) {
+  return nodeList.map(n => ({
+    caseName,
+    id: n.id,
+    name: n.props.name || compDefs[n.type]?.label || n.type,
+    type: n.type,
+    scheduleId: eqMap?.[n.id] || '',
+    flowRate: n.props.flowRate ?? '',
+    pressure: n.props.pressure ?? '',
+    dutyCycle: n.props.dutyCycle ?? '',
+    power: n.props.power ?? '',
+    controlType: n.props.controlType ?? '',
+    unloadPower: n.props.unloadPower ?? '',
+    stagingPriority: n.props.stagingPriority ?? '',
+    operatingPressure: n.props.operatingPressure ?? '',
+    ratedInletPres: n.props.ratedInletPres ?? '',
+    ratedInletTemp: n.props.ratedInletTemp ?? '',
+    pressureDrop: n.props.pressureDrop ?? '',
+    dryerType: n.props.dryerType ?? '',
+    purgeFraction: n.props.purgeFraction ?? '',
+    drainType: n.props.drainType ?? '',
+    measured: n.props.measured ?? ''
+  }));
+}
+
+function addInputsSheet(wb, name, rows) {
+  const ws = wb.addWorksheet(name);
+  ws.addRow(['Case','Component ID','Name','Type','Schedule ID','Flow Rate','Pressure','Duty Cycle','Power kW','Control Type','Unload Power %','Staging Priority','Operating Pressure','Rated Inlet Psia','Rated Inlet Temp F','Pressure Drop','Dryer Type','Purge Fraction %','Drain Type','Measured']);
+  rows.forEach(r => ws.addRow([r.caseName,r.id,r.name,r.type,r.scheduleId,r.flowRate,r.pressure,r.dutyCycle,r.power,r.controlType,r.unloadPower,r.stagingPriority,r.operatingPressure,r.ratedInletPres,r.ratedInletTemp,r.pressureDrop,r.dryerType,r.purgeFraction,r.drainType,r.measured]));
+  setHeader(ws);
+  autoWidth(ws);
+  return ws;
+}
+
+function addSchedulesSheet(wb) {
+  const ws = wb.addWorksheet('Schedules');
+  ws.addRow(['Schedule ID','Schedule Name','Day Type','Start Hour','Stop Hour','Factor %']);
+  SIM.schedules.forEach(s => {
+    DAY_KEYS.forEach(day => {
+      (s.days[day] || []).forEach(b => {
+        const [sh, sm] = b.start.split(':').map(Number);
+        const [eh, em] = b.stop.split(':').map(Number);
+        ws.addRow([s.id, s.name, day, sh + sm/60, eh + em/60, b.factor || 0]);
+      });
+    });
+  });
+  setHeader(ws);
+  autoWidth(ws);
+  return ws;
+}
+
+function addAssignmentsSheet(wb, preRows, postRows) {
+  const ws = wb.addWorksheet('Assignments');
+  ws.addRow(['Case','Component ID','Name','Type','Schedule ID']);
+  [...preRows, ...postRows].filter(r => r.scheduleId).forEach(r => ws.addRow([r.caseName,r.id,r.name,r.type,r.scheduleId]));
+  setHeader(ws);
+  autoWidth(ws);
+}
+
+function addCalendarSheet(wb, year) {
+  const ws = wb.addWorksheet('Calendar_8760');
+  const { rows } = buildHourlyCalendar(year);
+  ws.addRow(['Hour Index','Date','Day Name','Day Type','Hour Of Day','Month','Holiday']);
+  rows.forEach(r => {
+    const dayType = r.isHoliday ? 'holiday' : JS_DOW_TO_KEY[r.date.getDay()];
+    ws.addRow([r.hour, r.date, r.dayName, dayType, r.hourOfDay, r.month + 1, r.isHoliday ? 1 : 0]);
+  });
+  setHeader(ws);
+  ws.getColumn(2).numFmt = 'yyyy-mm-dd';
+  autoWidth(ws);
+}
+
+function addCalcSheet(wb, sheetName, nodeList, eqMap, inputSheetName, webHours, lastScheduleRow, ambient) {
+  const ws = wb.addWorksheet(sheetName);
+  const loads = nodeList.filter(n => n.type === 'load');
+  const leaks = nodeList.filter(n => n.type === 'leak');
+  const dryers = nodeList.filter(n => n.type === 'dryer');
+  const compressors = nodeList.filter(n => n.type === 'compressor')
+    .sort((a,b) => (a.props.stagingPriority ?? 1) - (b.props.stagingPriority ?? 1));
+
+  const headers = ['Hour Index','Date','Day Type','Hour Of Day','Any Compressor On'];
+  loads.forEach(n => headers.push(`${n.props.name || n.id} Demand scfm`));
+  leaks.forEach(n => headers.push(`${n.props.name || n.id} Leak scfm`));
+  dryers.forEach(n => headers.push(`${n.props.name || n.id} Purge scfm`, `${n.props.name || n.id} Dryer kW`));
+  headers.push('Total Demand scfm');
+  compressors.forEach(n => headers.push(`${n.props.name || n.id} On`, `${n.props.name || n.id} Remaining Before`, `${n.props.name || n.id} Rated Cap`, `${n.props.name || n.id} Load Fraction`, `${n.props.name || n.id} Actual Flow`, `${n.props.name || n.id} kW`, `${n.props.name || n.id} Remaining After`));
+  headers.push('Supply scfm','System kW','Web System kW','QC Diff %','QC Status');
+  ws.addRow(headers);
+  setHeader(ws);
+
+  const inputRow = {};
+  nodeList.forEach((n, i) => inputRow[n.id] = i + 2);
+  const compOnCols = [];
+  const compPowerCols = [];
+  const compFlowCols = [];
+
+  for (let i = 0; i < 8760; i++) {
+    const rowNum = i + 2;
+    const row = ws.getRow(rowNum);
+    row.getCell(1).value = { formula: `Calendar_8760!A${rowNum}`, result: i };
+    row.getCell(2).value = { formula: `Calendar_8760!B${rowNum}`, result: webHours?.[i]?.date || null };
+    row.getCell(3).value = { formula: `Calendar_8760!D${rowNum}`, result: webHours?.[i]?.isHoliday ? 'holiday' : JS_DOW_TO_KEY[webHours?.[i]?.date?.getDay?.() || 1] };
+    row.getCell(4).value = { formula: `Calendar_8760!E${rowNum}`, result: webHours?.[i]?.hourOfDay ?? 0 };
+
+    let col = 6;
+    const dayCell = `$C${rowNum}`;
+    const hourCell = `$D${rowNum}`;
+    const anyCompFormula = compressors.length
+      ? compressors.map(n => `(${scheduleFactorFormula(eqMap?.[n.id], dayCell, hourCell, lastScheduleRow)}>0)`).join('+')
+      : '0';
+    row.getCell(5).value = { formula: `--((${anyCompFormula})>0)`, result: webHours?.[i]?.systemKw > 0 ? 1 : 0 };
+
+    const demandCols = [];
+    loads.forEach(n => {
+      const r = inputRow[n.id];
+      const sf = scheduleFactorFormula(eqMap?.[n.id], dayCell, hourCell, lastScheduleRow);
+      const formula = `IF((${sf})>0,${inputSheetName}!F${r}*${inputSheetName}!H${r}/100,0)`;
+      row.getCell(col).value = { formula, result: 0 };
+      demandCols.push(col++);
+    });
+    leaks.forEach(n => {
+      const r = inputRow[n.id];
+      row.getCell(col).value = { formula: `IF($E${rowNum}=1,${inputSheetName}!F${r},0)`, result: 0 };
+      demandCols.push(col++);
+    });
+    dryers.forEach(n => {
+      const r = inputRow[n.id];
+      row.getCell(col).value = { formula: `IF($E${rowNum}=1,IF(${inputSheetName}!Q${r}="heatless",${inputSheetName}!F${r}*${inputSheetName}!R${r}/100,0),0)`, result: 0 };
+      demandCols.push(col++);
+      row.getCell(col).value = { formula: `IF($E${rowNum}=1,IF(${inputSheetName}!Q${r}="heatless",0,${inputSheetName}!I${r}),0)`, result: 0 };
+      col++;
+    });
+    const totalDemandCol = col++;
+    row.getCell(totalDemandCol).value = { formula: demandCols.length ? `SUM(${demandCols.map(c => `${xlCol(c)}${rowNum}`).join(',')})` : '0', result: webHours?.[i]?.demandScfm || 0 };
+
+    compOnCols.length = 0;
+    compPowerCols.length = 0;
+    compFlowCols.length = 0;
+    let previousRemainingCol = totalDemandCol;
+    compressors.forEach(n => {
+      const r = inputRow[n.id];
+      const onCol = col++, remBeforeCol = col++, capCol = col++, loadFracCol = col++, flowCol = col++, powerCol = col++, remAfterCol = col++;
+      const sf = scheduleFactorFormula(eqMap?.[n.id], dayCell, hourCell, lastScheduleRow);
+      const remBefore = previousRemainingCol === totalDemandCol ? `${xlCol(totalDemandCol)}${rowNum}` : `${xlCol(previousRemainingCol)}${rowNum}`;
+      const ratedCap = `${inputSheetName}!F${r}*(${ambient.psia}/${inputSheetName}!N${r})*SQRT((${inputSheetName}!O${r}+459.67)/(${ambient.tempF}+459.67))`;
+      const isoScale = `IFERROR((((${inputSheetName}!M${r}+${inputSheetName}!N${r})/${inputSheetName}!N${r})^0.286-1)/(((${inputSheetName}!G${r}+${inputSheetName}!N${r})/${inputSheetName}!N${r})^0.286-1),1)`;
+      const lfCell = `${xlCol(loadFracCol)}${rowNum}`;
+      const pf = `IF(${lfCell}<=0,IF(${inputSheetName}!J${r}="lu",${inputSheetName}!K${r}/100,0),IF(${lfCell}>=1,1,IF(${inputSheetName}!J${r}="lu",${lfCell}+(1-${lfCell})*${inputSheetName}!K${r}/100,IF(${inputSheetName}!J${r}="mod",0.3+0.7*${lfCell},IF(${inputSheetName}!J${r}="vsd",${lfCell}^1.3,${lfCell})))))`;
+      row.getCell(onCol).value = { formula: `--((${sf})>0)`, result: 0 };
+      row.getCell(remBeforeCol).value = { formula: remBefore, result: 0 };
+      row.getCell(capCol).value = { formula: `IF(${xlCol(onCol)}${rowNum}=1,${ratedCap},0)`, result: 0 };
+      row.getCell(loadFracCol).value = { formula: `IF(${xlCol(onCol)}${rowNum}=1,IF(${xlCol(capCol)}${rowNum}>0,MIN(1,${xlCol(remBeforeCol)}${rowNum}/${xlCol(capCol)}${rowNum}),0),0)`, result: 0 };
+      row.getCell(flowCol).value = { formula: `${xlCol(capCol)}${rowNum}*${xlCol(loadFracCol)}${rowNum}`, result: 0 };
+      row.getCell(powerCol).value = { formula: `IF(${xlCol(onCol)}${rowNum}=1,${inputSheetName}!I${r}*${isoScale}*${pf},0)`, result: 0 };
+      row.getCell(remAfterCol).value = { formula: `MAX(0,${xlCol(remBeforeCol)}${rowNum}-${xlCol(flowCol)}${rowNum})`, result: 0 };
+      previousRemainingCol = remAfterCol;
+      compOnCols.push(onCol);
+      compFlowCols.push(flowCol);
+      compPowerCols.push(powerCol);
+    });
+    const supplyCol = col++, systemKwCol = col++, webKwCol = col++, diffCol = col++, qcCol = col++;
+    const dryerKwCols = [];
+    let dryerFirstCol = 6 + loads.length + leaks.length + 1;
+    dryers.forEach(() => { dryerKwCols.push(dryerFirstCol); dryerFirstCol += 2; });
+    row.getCell(supplyCol).value = { formula: compFlowCols.length ? `SUM(${compFlowCols.map(c => `${xlCol(c)}${rowNum}`).join(',')})` : '0', result: webHours?.[i]?.supplyScfm || 0 };
+    row.getCell(systemKwCol).value = { formula: `SUM(${[...compPowerCols, ...dryerKwCols].map(c => `${xlCol(c)}${rowNum}`).join(',') || '0'})`, result: webHours?.[i]?.systemKw || 0 };
+    row.getCell(webKwCol).value = webHours?.[i]?.systemKw || 0;
+    row.getCell(diffCol).value = { formula: `IF(${xlCol(webKwCol)}${rowNum}=0,ABS(${xlCol(systemKwCol)}${rowNum}-${xlCol(webKwCol)}${rowNum}),ABS(${xlCol(systemKwCol)}${rowNum}-${xlCol(webKwCol)}${rowNum})/${xlCol(webKwCol)}${rowNum})`, result: 0 };
+    row.getCell(qcCol).value = { formula: `IF(${xlCol(diffCol)}${rowNum}<=1%,"OK","ERROR")`, result: 'OK' };
+  }
+  ws.getColumn(2).numFmt = 'yyyy-mm-dd';
+  autoWidth(ws, 18);
+  ws.views = [{ state: 'frozen', ySplit: 1, xSplit: 5 }];
+  return { systemKwCol: headers.indexOf('System kW') + 1, webKwCol: headers.indexOf('Web System kW') + 1, qcCol: headers.indexOf('QC Status') + 1 };
+}
+
+function addResultsSheet(wb, preAgg, postAgg, preCalc, postCalc) {
+  const ws = wb.addWorksheet('Results_QC');
+  ws.addRow(['Metric','Web Result','Excel Formula Result','Difference','Difference %','QC Status']);
+  const metrics = [
+    ['Pre Annual kWh', preAgg?.totKwh || 0, `SUM(Calc_Pre!${xlCol(preCalc.systemKwCol)}2:${xlCol(preCalc.systemKwCol)}8761)`],
+    ['Post Annual kWh', postAgg?.totKwh || 0, `SUM(Calc_Post!${xlCol(postCalc.systemKwCol)}2:${xlCol(postCalc.systemKwCol)}8761)`],
+    ['Energy Savings kWh', (preAgg?.totKwh || 0) - (postAgg?.totKwh || 0), `C2-C3`],
+    ['Pre Peak kW', preAgg?.peakKw || 0, `MAX(Calc_Pre!${xlCol(preCalc.systemKwCol)}2:${xlCol(preCalc.systemKwCol)}8761)`],
+    ['Post Peak kW', postAgg?.peakKw || 0, `MAX(Calc_Post!${xlCol(postCalc.systemKwCol)}2:${xlCol(postCalc.systemKwCol)}8761)`],
+    ['Demand Reduction kW', (preAgg?.peakKw || 0) - (postAgg?.peakKw || 0), `C5-C6`]
+  ];
+  metrics.forEach((m, i) => {
+    const r = i + 2;
+    ws.addRow([m[0], m[1], { formula: m[2], result: m[1] }, { formula: `C${r}-B${r}`, result: 0 }, { formula: `IF(B${r}=0,ABS(D${r}),ABS(D${r}/B${r}))`, result: 0 }, { formula: `IF(E${r}<=1%,"OK","ERROR")`, result: 'OK' }]);
+  });
+  ws.addRow([]);
+  ws.addRow(['Hourly QC','Formula']);
+  ws.addRow(['Pre Hourly Errors', { formula: `COUNTIF(Calc_Pre!${xlCol(preCalc.qcCol)}2:${xlCol(preCalc.qcCol)}8761,"ERROR")`, result: 0 }]);
+  ws.addRow(['Post Hourly Errors', { formula: `COUNTIF(Calc_Post!${xlCol(postCalc.qcCol)}2:${xlCol(postCalc.qcCol)}8761,"ERROR")`, result: 0 }]);
+  setHeader(ws);
+  ws.getColumn(5).numFmt = '0.00%';
+  autoWidth(ws);
+}
+
+function addWarningsSheet(wb) {
+  const ws = wb.addWorksheet('Warnings_Assumptions');
+  ws.addRow(['Type','Message']);
+  ws.addRow(['Assumption','Workbook targets modern Microsoft 365 Excel and uses formulas without macros.']);
+  ws.addRow(['Assumption','Leaks, drains, dryer purge, and dryer electrical use follow system pressurized hours.']);
+  ws.addRow(['Assumption','Compressor and load schedules directly control compressor availability and load activity.']);
+  ws.addRow(['Assumption','QC status is ERROR when Excel formula result differs from web result by more than 1%.']);
+  try {
+    const res = analyzeSystem();
+    (res.errors || []).forEach(e => ws.addRow(['Error', e]));
+    (res.warnings || []).forEach(w => ws.addRow(['Warning', w]));
+  } catch (err) {
+    ws.addRow(['Warning','Could not evaluate current web warnings during export: '+err.message]);
+  }
+  setHeader(ws);
+  autoWidth(ws, 80);
+}
+
+async function exportFormulaWorkbook() {
+  if (!window.ExcelJS) {
+    alert('Excel export library did not load. Check your internet connection or vendor ExcelJS for offline use.');
+    return;
+  }
+  if (!SIM.postNodes) duplicatePreCase();
+  if (!SIM.resultsPreHours || !SIM.resultsPostHours) await runSim8760();
+
+  const year = parseInt(document.getElementById('simYear')?.value||2025);
+  const ambient = getAmbient();
+  const wb = new ExcelJS.Workbook();
+  wb.creator = 'CAS Analyzer';
+  wb.created = new Date();
+  wb.calcProperties.fullCalcOnLoad = true;
+
+  const project = wb.addWorksheet('Project');
+  project.addRows([
+    ['CAS Analyzer Formula Workbook'],
+    ['Export Date', new Date()],
+    ['Calculation Basis', '8760'],
+    ['Excel Target', 'Microsoft 365 / modern Excel, no macros'],
+    ['Ambient Pressure psia', ambient.psia],
+    ['Ambient Temperature F', ambient.tempF],
+    ['QC Threshold', '1%']
+  ]);
+  project.getCell('A1').font = { bold:true, size:14 };
+  autoWidth(project);
+
+  const preRows = buildInputRows('Pre', nodes, SIM.equipment);
+  const postRows = buildInputRows('Post', SIM.postNodes || nodes, SIM.postEquipment || SIM.equipment);
+  addInputsSheet(wb, 'Inputs_Pre', preRows);
+  addInputsSheet(wb, 'Inputs_Post', postRows);
+  const schedWs = addSchedulesSheet(wb);
+  const lastScheduleRow = Math.max(2, schedWs.rowCount);
+  addAssignmentsSheet(wb, preRows, postRows);
+  addCalendarSheet(wb, year);
+
+  const preCalc = addCalcSheet(wb, 'Calc_Pre', nodes, SIM.equipment, 'Inputs_Pre', SIM.resultsPreHours, lastScheduleRow, ambient);
+  const postCalc = addCalcSheet(wb, 'Calc_Post', SIM.postNodes || nodes, SIM.postEquipment || SIM.equipment, 'Inputs_Post', SIM.resultsPostHours || SIM.resultsPreHours, lastScheduleRow, ambient);
+  addResultsSheet(wb, aggHours(SIM.resultsPreHours), aggHours(SIM.resultsPostHours || SIM.resultsPreHours), preCalc, postCalc);
+  addWarningsSheet(wb);
+
+  const buffer = await wb.xlsx.writeBuffer();
+  const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `cas_formula_8760_${new Date().toISOString().slice(0,10)}.xlsx`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
 // ── CSV download ──────────────────────────────────────────────────
 function downloadCSV(caseType) {
   const hours = caseType==='pre' ? SIM.resultsPreHours : SIM.resultsPostHours;
@@ -3688,6 +4657,7 @@ document.getElementById('canvasArea').addEventListener('drop',     _onDrop);
 updateSummary();
 
 </script>
+<script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
 <!-- ═══════ METHODS MODAL ═══════ -->
 <div id="methodsModal" onclick="if(event.target===this)closeMethodsModal()">
   <div id="methodsModalBox">
@@ -3709,14 +4679,11 @@ updateSummary();
     <div id="reportContent"></div>
   </div>
 </div>
-
-</body>
-</html>
 <div id="sim8760Overlay" style="display:none;position:fixed;inset:0;z-index:1000;background:var(--bg);display:none;flex-direction:column;">
 
   <!-- Overlay header -->
   <div style="display:flex;align-items:center;padding:0 16px;height:48px;background:var(--surface);border-bottom:1px solid var(--border);gap:12px;flex-shrink:0;">
-    <div style="font-family:'IBM Plex Mono',monospace;font-weight:600;font-size:14px;color:var(--accent)">8760<span style="color:var(--text2);font-weight:400">·Simulation</span></div>
+    <div style="font-family:'IBM Plex Mono',monospace;font-weight:600;font-size:14px;color:var(--accent)">Detailed<span style="color:var(--text2);font-weight:400">·Mode</span></div>
     <div style="width:1px;height:24px;background:var(--border)"></div>
     <!-- Pre/Post tabs -->
     <div style="display:flex;gap:2px;" id="simCaseTabs">
@@ -3725,8 +4692,12 @@ updateSummary();
     </div>
     <div style="width:1px;height:24px;background:var(--border)"></div>
     <button class="btn" id="btnDupPre" onclick="duplicatePreCase()" title="Copy Pre Case to Post Case">&#10064; Duplicate Pre&#8594;Post</button>
-    <button class="btn primary" onclick="runSim8760()">&#9654; Run Simulation</button>
     <div style="margin-left:auto;display:flex;gap:8px;">
+      <label style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--text2);padding:0 6px" title="Show the Pre Case as a faded reference behind the editable Post Case">
+        <input type="checkbox" id="showPreGhost" checked onchange="renderDetailedCanvas()"> Pre Reference
+      </label>
+      <button class="btn primary" onclick="runSim8760()">&#9654; Run Simulation</button>
+      <button class="btn" id="btnExportExcel" onclick="exportFormulaWorkbook()">Export to Excel</button>
       <button class="btn" id="btnDlPre"  onclick="downloadCSV('pre')"  style="display:none">&#8659; Pre CSV</button>
       <button class="btn" id="btnDlPost" onclick="downloadCSV('post')" style="display:none">&#8659; Post CSV</button>
       <button class="btn danger-btn" onclick="close8760()">&#10005; Close</button>
@@ -3758,25 +4729,73 @@ updateSummary();
           <span style="font-size:11px;color:var(--text2)">Federal holidays auto-applied</span>
         </div>
       </div>
+      <div style="padding:10px 12px;border-top:1px solid var(--border);overflow-y:auto;flex:1;">
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.8px;margin-bottom:8px">Components</div>
+        <div class="palette-item pi-compressor" draggable="true" ondragstart="startDetailedDrag(event,'compressor')"><div class="pi-icon">&#9881;</div><div class="pi-label">Compressor</div></div>
+        <div class="palette-item pi-dryer" draggable="true" ondragstart="startDetailedDrag(event,'dryer')"><div class="pi-icon">&#10052;</div><div class="pi-label">Dryer</div></div>
+        <div class="palette-item pi-filter" draggable="true" ondragstart="startDetailedDrag(event,'filter')"><div class="pi-icon">&#9635;</div><div class="pi-label">Filter</div></div>
+        <div class="palette-item pi-receiver" draggable="true" ondragstart="startDetailedDrag(event,'receiver')"><div class="pi-icon">&#9677;</div><div class="pi-label">Receiver</div></div>
+        <div class="palette-item pi-load" draggable="true" ondragstart="startDetailedDrag(event,'load')"><div class="pi-icon">&#9889;</div><div class="pi-label">Load / Tool</div></div>
+        <div class="palette-item pi-leak" draggable="true" ondragstart="startDetailedDrag(event,'leak')"><div class="pi-icon">&#9888;</div><div class="pi-label">Leak Point</div></div>
+        <div class="palette-item pi-lineloss" draggable="true" ondragstart="startDetailedDrag(event,'lineloss')"><div class="pi-icon">&#9660;</div><div class="pi-label">Line Loss</div></div>
+        <div class="palette-item pi-regulator" draggable="true" ondragstart="startDetailedDrag(event,'regulator')"><div class="pi-icon">&#9681;</div><div class="pi-label">Regulator</div></div>
+        <div class="palette-item pi-drain" draggable="true" ondragstart="startDetailedDrag(event,'drain')"><div class="pi-icon">&#9650;</div><div class="pi-label">Drain</div></div>
+      </div>
     </div>
 
-    <!-- Center: Component list + results -->
-    <div style="flex:1;overflow-y:auto;display:flex;flex-direction:column;">
-
-      <!-- Component list (pre or post) -->
-      <div id="simComponentArea" style="padding:12px 14px;border-bottom:1px solid var(--border);">
-        <div style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.8px;margin-bottom:8px">Components — <span id="simCaseLabel">Pre Case</span></div>
-        <div id="simComponentList"></div>
+    <!-- Center: Detailed canvas -->
+    <div class="canvas-area" id="detailedCanvasArea" style="flex:1;min-width:560px;">
+      <div class="canvas-grid"></div>
+      <canvas id="detailedGhostConnCanvas"></canvas>
+      <canvas id="detailedConnCanvas"></canvas>
+      <svg id="detailedPendingSvg" style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:8;">
+        <defs>
+          <marker id="arr-detail-pending" markerWidth="8" markerHeight="6" refX="6" refY="3" orient="auto">
+            <polygon points="0 0,8 3,0 6" fill="#00d4aa"/>
+          </marker>
+        </defs>
+        <path id="detailedPendingPath" fill="none" stroke="#00d4aa" stroke-width="1.5" stroke-dasharray="5 3" marker-end="url(#arr-detail-pending)" d=""/>
+      </svg>
+      <div id="detailedGhostNodesContainer"></div>
+      <div id="detailedNodesContainer"></div>
+      <div class="canvas-legend" id="detailedCanvasLegend"></div>
+      <div class="empty-state" id="detailedEmptyState">
+        <div class="empty-icon">&#127744;</div>
+        <div class="empty-text">Drag components from the schedule bar<br>to build this case</div>
       </div>
+    </div>
 
-      <!-- Results area -->
-      <div id="simResultsArea" style="padding:12px 14px;flex:1;">
-        <div id="simNoResults" style="color:var(--text3);font-size:12px;padding:20px 0">Click &#9654; Run Simulation to compute 8760-hour performance.</div>
-        <div id="simResults" style="display:none;">
+    <!-- Right: Detailed summary / properties -->
+    <div class="panel" style="width:310px;">
+      <div class="panel-section" id="detailedConnEditor" style="display:none">
+        <div class="panel-title">Connection</div>
+        <div style="font-size:11px;color:var(--text2);margin-bottom:12px;line-height:1.6;">Connection selected. Insert a Line Loss element in series to model pressure loss on this segment.</div>
+        <button class="btn danger-btn" style="width:100%" onclick="deleteDetailedSelectedConn()">Delete Connection</button>
+      </div>
+      <div class="panel-section" id="detailedPropEditor" style="display:none">
+        <div class="panel-title">Component Characteristics</div>
+        <div id="detailedPropFields"></div>
+        <button class="btn danger-btn" style="width:100%;margin-top:8px" onclick="deleteDetailedSelectedNode()">Delete Component</button>
+      </div>
+      <div id="detailedSummaryPanel">
+        <div class="panel-section">
+          <div class="panel-title">Case Summary</div>
+          <div style="font-size:11px;color:var(--text2);margin-bottom:8px">Components — <span id="simCaseLabel">Pre Case</span></div>
+          <div class="metrics-grid">
+            <div class="metric-card info"><div class="metric-card-label">Components</div><div class="metric-card-value" id="d-components">0</div><div class="metric-card-sub">in case</div></div>
+            <div class="metric-card info"><div class="metric-card-label">Connections</div><div class="metric-card-value" id="d-connections">0</div><div class="metric-card-sub">total</div></div>
+            <div class="metric-card good"><div class="metric-card-label">Compressors</div><div class="metric-card-value" id="d-compressors">0</div><div class="metric-card-sub">supply</div></div>
+            <div class="metric-card warn"><div class="metric-card-label">Loads</div><div class="metric-card-value" id="d-loads">0</div><div class="metric-card-sub">demand</div></div>
+          </div>
+        </div>
+        <div class="panel-section">
+          <div class="panel-title">Annual Summary</div>
+          <div id="simNoResults" style="color:var(--text3);font-size:12px;padding:4px 0 10px">Click &#9654; Run Simulation to compute 8760-hour performance.</div>
+          <div id="simResults" style="display:none;">
 
           <!-- Summary metrics -->
           <div style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.8px;margin-bottom:8px">Annual Summary</div>
-          <div id="simSummaryGrid" style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:16px;"></div>
+          <div id="simSummaryGrid" style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-bottom:16px;"></div>
 
           <!-- Delta table -->
           <div id="simDeltaTable" style="margin-bottom:16px;display:none;"></div>
@@ -3791,6 +4810,7 @@ updateSummary();
           <div style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.8px;margin-bottom:8px">Annual Flow Balance (scfm&#183;hr)</div>
           <canvas id="chartFlow"    height="140" style="width:100%;margin-bottom:8px;"></canvas>
 
+          </div>
         </div>
       </div>
     </div>
