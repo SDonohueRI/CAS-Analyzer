@@ -4394,7 +4394,10 @@ function autoWidth(ws, maxWidth=28) {
 
 function scheduleFactorFormula(scheduleId, dayCell, hourCell, lastScheduleRow) {
   if (!scheduleId || lastScheduleRow < 2) return '1';
-  return `IFERROR(MIN(1,SUMPRODUCT((Schedules!$A$2:$A$${lastScheduleRow}="${scheduleId}")*(Schedules!$C$2:$C$${lastScheduleRow}=${dayCell})*(INT(Schedules!$D$2:$D$${lastScheduleRow})<=${hourCell})*(INT(Schedules!$E$2:$E$${lastScheduleRow})>${hourCell})*(Schedules!$F$2:$F$${lastScheduleRow})/100)),0)`;
+  const startRange = `INT(Schedules!$D$2:$D$${lastScheduleRow})`;
+  const stopRange = `INT(Schedules!$E$2:$E$${lastScheduleRow})`;
+  const inHourRange = `(((${stopRange}>${startRange})*(${startRange}<=${hourCell})*(${stopRange}>${hourCell}))+(((${stopRange}<${startRange})*--(((${startRange}<=${hourCell})+(${stopRange}>${hourCell}))>0))))`;
+  return `IFERROR(MIN(1,SUMPRODUCT((Schedules!$A$2:$A$${lastScheduleRow}="${scheduleId}")*(Schedules!$C$2:$C$${lastScheduleRow}=${dayCell})*${inHourRange}*(Schedules!$F$2:$F$${lastScheduleRow})/100)),0)`;
 }
 
 function buildInputRows(caseName, nodeList, eqMap) {
@@ -4558,8 +4561,7 @@ function addSchedulesSheet(wb) {
   SIM.schedules.forEach(s => {
     DAY_KEYS.forEach(day => {
       (s.days[day] || []).forEach(b => {
-        const [sh] = b.start.split(':').map(Number);
-        const [eh] = b.stop.split(':').map(Number);
+        const {start: sh, stop: eh} = getBlockHourRange(b);
         ws.addRow([s.id, s.name, day, sh, eh, b.factor || 0]);
       });
     });
