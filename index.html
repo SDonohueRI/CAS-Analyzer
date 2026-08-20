@@ -4281,7 +4281,7 @@ function buildInputRows(caseName, nodeList, eqMap) {
     ratedInletPres: n.props.ratedInletPres ?? '',
     ratedInletTemp: n.props.ratedInletTemp ?? '',
     pressureDrop: n.props.pressureDrop ?? '',
-    dryerType: n.props.dryerType ?? '',
+    dryerType: n.type === 'dryer' ? (n.props.dryerType || 'refrigerated') : '',
     purgeFraction: n.props.purgeFraction ?? '',
     drainType: n.props.drainType ?? '',
     measured: n.props.measured ?? ''
