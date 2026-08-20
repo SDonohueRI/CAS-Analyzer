@@ -2772,6 +2772,81 @@ function initSchedules() {
 
 function getScheduleById(id) { return SIM.schedules.find(s => s.id === id); }
 
+// ── Schedule validation and visualization helpers ──
+function getBlockHourRange(block) {
+  // Parse start/stop from old format (HH:MM) or new format (number)
+  const start = typeof block.start === 'string' ? parseInt(block.start.split(':')[0]) : block.start;
+  const stop = typeof block.stop === 'string' ? parseInt(block.stop.split(':')[0]) : block.stop;
+  return {start, stop};
+}
+
+function detectOverlapInDay(blocks, indexToIgnore = -1) {
+  // Returns array of error messages for overlapping blocks
+  const errors = [];
+  blocks.forEach((b, i) => {
+    if (i === indexToIgnore) return;
+    const range1 = getBlockHourRange(b);
+    blocks.forEach((b2, j) => {
+      if (j <= i || j === indexToIgnore) return;
+      const range2 = getBlockHourRange(b2);
+      // Check if ranges overlap (start < other's stop AND stop > other's start)
+      if (range1.start < range2.stop && range1.stop > range2.start) {
+        errors.push(`Block ${i+1} (${range1.start}-${range1.stop}) overlaps with block ${j+1} (${range2.start}-${range2.stop})`);
+      }
+    });
+  });
+  return errors;
+}
+
+function build24HourBar(block, width = 240) {
+  // Create inline 24-hour visualization bar
+  const {start, stop} = getBlockHourRange(block);
+  const pixPerHour = width / 24;
+  const left = start * pixPerHour;
+  const barWidth = Math.max(1, (stop - start) * pixPerHour);
+  const opacity = (block.factor || 100) / 100;
+  return `<div style="position:relative;width:${width}px;height:8px;background:var(--surface3);border-radius:2px;overflow:hidden;display:inline-block;margin-left:4px;vertical-align:middle">
+    <div style="position:absolute;left:${left}px;width:${barWidth}px;height:100%;background:var(--accent);opacity:${opacity};border-radius:2px"></div>
+  </div>`;
+}
+
+// ── Schedule validation helpers ──
+function validateSchedules(nodeList, eqMap) {
+  // Returns array of warning messages about schedule issues
+  const warnings = [];
+  
+  // Check for compressor schedules with non-binary factors
+  const compressors = nodeList.filter(n => n.type === 'compressor');
+  compressors.forEach(comp => {
+    const schedId = eqMap?.[comp.id];
+    if (!schedId) return;
+    const sched = getScheduleById(schedId);
+    if (!sched) return;
+    
+    // Check all blocks in this schedule for non-binary factors
+    DAY_KEYS.forEach(day => {
+      (sched.days[day] || []).forEach(block => {
+        const factor = block.factor || 0;
+        if (factor !== 0 && factor !== 100) {
+          warnings.push(`Compressor '${comp.props.name || comp.id}' has schedule '${sched.name}' with ${factor}% factor on ${day}. Compressors are binary (on/off), so any factor > 0 means fully available during that hour.`);
+        }
+      });
+    });
+  });
+  
+  // Check for overlapping blocks in any schedule
+  SIM.schedules.forEach(sched => {
+    DAY_KEYS.forEach(day => {
+      const errors = detectOverlapInDay(sched.days[day] || []);
+      errors.forEach(err => {
+        warnings.push(`Schedule '${sched.name}': ${err}`);
+      });
+    });
+  });
+  
+  return warnings;
+}
+
 // Given a date and hour (0-23), find load factor for a node
 function getHourFactor(nodeId, date, hour, holidays, equipMap, schedList) {
   const eqMap  = equipMap || SIM.equipment;
@@ -2789,8 +2864,9 @@ function getHourFactor(nodeId, date, hour, holidays, equipMap, schedList) {
   const blocks  = sched.days[dayKey] || [];
 
   for (const blk of blocks) {
-    const [sh] = blk.start.split(':').map(Number);
-    const [eh] = blk.stop.split(':').map(Number);
+    // Handle both old format (HH:MM strings) and new format (hours as numbers)
+    const sh = typeof blk.start === 'string' ? parseInt(blk.start.split(':')[0]) : blk.start;
+    const eh = typeof blk.stop === 'string' ? parseInt(blk.stop.split(':')[0]) : blk.stop;
     if (hour >= sh && hour < eh) return (blk.factor||0)/100;
   }
   return 0;
@@ -3508,18 +3584,32 @@ function renderDayBlockEditor() {
     </span>`).join('');
 
   const blocks = sched.days[SIM.editingDay] || [];
-  const blockRows = blocks.map((b,i) => `
-    <div style="display:flex;align-items:center;gap:4px;margin-bottom:4px;">
-      <input type="time" value="${b.start}" style="width:72px;padding:3px 4px;background:var(--surface3);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:11px"
-        onchange="updateBlock('${sched.id}','${SIM.editingDay}',${i},'start',this.value)">
-      <span style="color:var(--text3);font-size:10px">to</span>
-      <input type="time" value="${b.stop}" style="width:72px;padding:3px 4px;background:var(--surface3);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:11px"
-        onchange="updateBlock('${sched.id}','${SIM.editingDay}',${i},'stop',this.value)">
-      <input type="number" value="${b.factor}" min="0" max="100" style="width:48px;padding:3px 4px;background:var(--surface3);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:11px;text-align:right"
-        onchange="updateBlock('${sched.id}','${SIM.editingDay}',${i},'factor',this.value)">
-      <span style="font-size:10px;color:var(--text3)">%</span>
-      <button onclick="removeBlock('${sched.id}','${SIM.editingDay}',${i})" style="background:none;border:none;color:var(--danger);cursor:pointer;font-size:12px;padding:0 2px">✕</button>
-    </div>`).join('');
+  
+  // Check for overlaps in this day
+  const overlapErrors = detectOverlapInDay(blocks);
+  const overlapWarning = overlapErrors.length ? `<div style="background:var(--danger);color:white;padding:6px;border-radius:4px;margin-bottom:6px;font-size:10px"><strong>⚠ Schedule conflicts:</strong><br>${overlapErrors.join('<br>')}</div>` : '';
+  
+  const blockRows = blocks.map((b,i) => {
+    const start = typeof b.start === 'string' ? parseInt(b.start.split(':')[0]) : b.start;
+    const stop = typeof b.stop === 'string' ? parseInt(b.stop.split(':')[0]) : b.stop;
+    const bar = build24HourBar(b);
+    const isInvalid = stop <= start;
+    return `
+    <div style="display:flex;align-items:center;gap:4px;margin-bottom:6px;padding:4px;background:${isInvalid?'rgba(255,0,0,0.1)':'var(--surface2)'};border-radius:4px;border:${isInvalid?'1px solid var(--danger)':'none'}">
+      <div style="display:flex;align-items:center;gap:3px;flex:1">
+        <span style="font-size:9px;color:var(--text3);width:20px">Start:</span>
+        <input type="number" value="${start}" min="0" max="23" style="width:45px;padding:3px 4px;background:var(--surface3);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:11px;text-align:center"
+          onchange="updateBlock('${sched.id}','${SIM.editingDay}',${i},'start',this.value)">
+        <span style="font-size:9px;color:var(--text3)">Stop:</span>
+        <input type="number" value="${stop}" min="1" max="24" style="width:45px;padding:3px 4px;background:var(--surface3);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:11px;text-align:center"
+          onchange="updateBlock('${sched.id}','${SIM.editingDay}',${i},'stop',this.value)">
+        <input type="number" value="${b.factor}" min="0" max="100" style="width:45px;padding:3px 4px;background:var(--surface3);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:11px;text-align:right"
+          onchange="updateBlock('${sched.id}','${SIM.editingDay}',${i},'factor',this.value)">
+        <span style="font-size:9px;color:var(--text3)">%</span>
+        ${bar}
+      </div>
+      <button onclick="removeBlock('${sched.id}','${SIM.editingDay}',${i})" style="background:none;border:none;color:var(--danger);cursor:pointer;font-size:12px;padding:0 2px;flex-shrink:0">✕</button>
+    </div>`}).join('');
 
   // Copy to days UI
   const copyTargets = DAY_KEYS.filter(k=>k!==SIM.editingDay).map(k=>`
@@ -3529,22 +3619,25 @@ function renderDayBlockEditor() {
 
   el.innerHTML = `
     <div style="margin-bottom:6px;line-height:1.8">${dayTabs}</div>
+    ${overlapWarning}
     ${blockRows}
     <button onclick="addBlock('${sched.id}','${SIM.editingDay}')"
       style="font-size:11px;padding:3px 8px;background:var(--surface3);border:1px solid var(--border);border-radius:4px;color:var(--text);cursor:pointer;margin-bottom:8px">+ Add Block</button>
-    <div style="border-top:1px solid var(--border);padding-top:6px;margin-top:2px">
-      <div style="font-size:10px;color:var(--text3);margin-bottom:4px">Copy this day's blocks to:</div>
+    <div style="border-top:1px solid var(--border);padding-top:6px;margin-top:2px;font-size:9px;color:var(--text3)">
+      <div style="margin-bottom:4px"><strong>24-hour format:</strong> Start (0-23), Stop (1-24). Example: 8-18 = 10 AM to 6 PM. Use 0-24 for all day.</div>
+      <div style="margin-bottom:4px"><strong>Copy to other days:</strong></div>
       <div>${copyTargets}</div>
       <button onclick="copyDayBlocks('${sched.id}','${SIM.editingDay}')"
         style="font-size:10px;padding:2px 7px;background:var(--surface3);border:1px solid var(--border);border-radius:4px;color:var(--text);cursor:pointer;margin-top:4px">Copy</button>
     </div>`;
+}
 }
 
 function selectEditDay(day) { SIM.editingDay = day; renderDayBlockEditor(); }
 
 function addBlock(schedId, day) {
   const s = getScheduleById(schedId); if (!s) return;
-  s.days[day].push({start:'08:00', stop:'17:00', factor:100});
+  s.days[day].push({start:8, stop:18, factor:100});
   renderDayBlockEditor();
 }
 
@@ -3556,8 +3649,27 @@ function removeBlock(schedId, day, idx) {
 
 function updateBlock(schedId, day, idx, field, val) {
   const s = getScheduleById(schedId); if (!s) return;
-  s.days[day][idx][field] = field==='factor' ? parseFloat(val)||0 : val;
+  const blocks = s.days[day];
+  
+  if (field === 'factor') {
+    blocks[idx][field] = parseFloat(val) || 0;
+  } else if (field === 'start' || field === 'stop') {
+    const numVal = parseInt(val) || 0;
+    // Clamp to valid range
+    const max = field === 'start' ? 23 : 24;
+    blocks[idx][field] = Math.max(0, Math.min(numVal, max));
+    
+    // Validate after update
+    const errors = detectOverlapInDay(blocks, -1);
+    if (errors.length) {
+      console.warn('Schedule overlap:', errors);
+    }
+  } else {
+    blocks[idx][field] = val;
+  }
+  
   invalidateSimResults();
+  renderDayBlockEditor();
 }
 
 function copyDayBlocks(schedId, fromDay) {
