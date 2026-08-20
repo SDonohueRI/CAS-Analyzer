@@ -5,7 +5,6 @@
 			<stop offset="1" stop-color="#F58220"/>
 		</linearGradient>
 	</defs>
-	<rect width="64" height="64" rx="14" fill="#5b6770"/>
 	<g id="technology-silhouette" fill="none" stroke="url(#family-gradient)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
 		<rect x="8" y="30" width="48" height="18" rx="8"/>
 		<line x1="16" y1="32" x2="16" y2="46"/>
