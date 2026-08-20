@@ -4,7 +4,6 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Compressed Air System Analyzer</title>
-<link rel="icon" type="image/svg+xml" href="favicon.svg">
 <style>
   @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap');
   :root {
@@ -242,9 +241,6 @@
   </div>
   <div class="header-right">
     <button class="btn" onclick="open8760()">Detailed Mode</button>
-    <button class="btn" onclick="saveProject()">Save Project</button>
-    <button class="btn" onclick="document.getElementById('projectFileInput').click()">Load Project</button>
-    <input id="projectFileInput" type="file" accept="application/json,.json" style="display:none" onchange="loadProjectFile(event)">
     <button class="btn" onclick="clearAll()">Clear</button>
     <button class="btn" onclick="loadExample()">Load Example</button>
     <button class="btn primary" onclick="runAnalysis()">&#9654; Analyze</button>
@@ -311,11 +307,6 @@
   <!-- Right panel -->
   <div class="panel">
     <div id="panelDesign">
-      <div class="panel-section">
-        <div class="panel-title">Project Info</div>
-        <div class="prop-row"><span class="prop-label">Project name</span><input class="prop-input" type="text" id="project-name" value="" style="width:130px;text-align:left" onchange="updateProjectInfo()"><span class="prop-unit"></span></div>
-        <div class="prop-row"><span class="prop-label">Customer</span><input class="prop-input" type="text" id="customer-name" value="" style="width:130px;text-align:left" onchange="updateProjectInfo()"><span class="prop-unit"></span></div>
-      </div>
       <!-- Connection editor - select to delete only -->
       <div class="panel-section" id="connEditor" style="display:none">
         <div class="panel-title">Connection</div>
@@ -374,16 +365,15 @@
     <div id="panelGuide" class="ref-panel" style="display:none">
       <div class="ref-section">
         <div class="ref-h1">How to Use CAS&#183;Analyzer</div>
-        <div class="ref-p">A step-by-step guide to building, saving, analyzing, and optimizing a compressed air system model.</div>
+        <div class="ref-p">A step-by-step guide to building, analyzing, and optimizing a compressed air system model.</div>
       </div>
 
       <div class="ref-section">
         <div class="ref-h2">1 &#8212; Build Your System</div>
         <div class="ref-step"><div class="ref-step-num">1</div><div class="ref-step-body"><strong>Drag components</strong> from the left palette onto the canvas. Start with your compressors, then add treatment equipment (dryer, filter, receiver) in flow order, then loads and leaks.</div></div>
         <div class="ref-step"><div class="ref-step-num">2</div><div class="ref-step-body"><strong>Connect components</strong> by dragging from a green output port to a gray input port. Air flows left-to-right by convention. Double-click a connection to delete it.</div></div>
-        <div class="ref-step"><div class="ref-step-num">3</div><div class="ref-step-body"><strong>Enter Project Info</strong> in the right panel. Project name and customer name are saved with the JSON project file, included in reports, and written to the Excel workbook.</div></div>
-        <div class="ref-step"><div class="ref-step-num">4</div><div class="ref-step-body"><strong>Click any component</strong> to select it and edit its properties in this panel. Enter CAGI data sheet values for compressors — rated capacity, package input power, rated pressure, and operating pressure.</div></div>
-        <div class="ref-step"><div class="ref-step-num">5</div><div class="ref-step-body"><strong>Add Line Loss nodes</strong> in series to model distribution pressure drops. Add <strong>Regulator</strong> nodes to define pressure zones. Add <strong>Drain</strong> nodes near receivers, dryers, and filters to model condensate removal losses.</div></div>
+        <div class="ref-step"><div class="ref-step-num">3</div><div class="ref-step-body"><strong>Click any component</strong> to select it and edit its properties in this panel. Enter CAGI data sheet values for compressors — rated capacity, package input power, rated pressure, and operating pressure.</div></div>
+        <div class="ref-step"><div class="ref-step-num">4</div><div class="ref-step-body"><strong>Add Line Loss nodes</strong> in series to model distribution pressure drops. Add <strong>Regulator</strong> nodes to define pressure zones. Add <strong>Drain</strong> nodes near receivers, dryers, and filters to model condensate removal losses.</div></div>
         <div class="ref-tip">Tip: Set Site Conditions (climate zone, elevation) first — they affect compressor capacity correction and moisture analysis throughout.</div>
       </div>
 
@@ -418,24 +408,18 @@
       <div class="ref-section">
         <div class="ref-h2">5 &#8212; 8760 Annual Simulation</div>
         <div class="ref-step"><div class="ref-step-num">1</div><div class="ref-step-body"><strong>Open Detailed Mode</strong> from the header. The left side contains schedules and component tools, the center is the case canvas, and the right side shows case summary or component characteristics.</div></div>
-        <div class="ref-step"><div class="ref-step-num">2</div><div class="ref-step-body"><strong>Define schedules</strong> for compressor availability and load activity. Compressor schedules are on/off per block; load schedules scale demand by the block factor, so a 62% block runs the load at 62% of its duty-adjusted demand. Schedule calculations use the hour of day and ignore minutes.</div></div>
+        <div class="ref-step"><div class="ref-step-num">2</div><div class="ref-step-body"><strong>Define schedules</strong> for compressor availability and load activity. Compressor schedules are on/off per block; load schedules gate whether a load is active (duty cycle still applies when on).</div></div>
         <div class="ref-step"><div class="ref-step-num">3</div><div class="ref-step-body"><strong>Assign equipment to schedules</strong> in the Equipment Assignment panel. All compressors default to Compressor Schedule 1; all loads default to Load Schedule 1.</div></div>
         <div class="ref-step"><div class="ref-step-num">4</div><div class="ref-step-body"><strong>Duplicate Pre&#8594;Post</strong> to create the post-improvement case. The Post canvas can show the Pre case as a faded reference layer. Move, edit, delete, reconnect, or replace compatible components to define the proposed system.</div></div>
         <div class="ref-step"><div class="ref-step-num">5</div><div class="ref-step-body"><strong>Use Change Tools</strong> on a selected Post component to apply a compatible replacement. Compatible connections and schedule assignments are preserved where possible, while editable equipment parameters are cleared so the replacement must be defined.</div></div>
         <div class="ref-step"><div class="ref-step-num">6</div><div class="ref-step-body"><strong>Run Simulation</strong> to compute all 8,760 hours. Results show annual energy (MWh), peak demand (kW), supply volume (Mscf), leak loss, average pressure, and specific energy (kWh/kscf). Pre and Post are compared side-by-side. <span class="ref-link" onclick="showMethod('sim8760')">see: 8760 Simulation Method</span></div></div>
-        <div class="ref-step"><div class="ref-step-num">7</div><div class="ref-step-body"><strong>Export results</strong> with Pre/Post CSV downloads or <strong>Export to Excel</strong>. The Excel workbook includes 8,760 formula rows for Pre and Post, annual savings formulas, demand reduction formulas, assumptions, warnings, QC checks that flag differences over 1%, and a System Diagram sheet with an embedded canvas-style image.</div></div>
+        <div class="ref-step"><div class="ref-step-num">7</div><div class="ref-step-body"><strong>Export results</strong> with Pre/Post CSV downloads or <strong>Export to Excel</strong>. The Excel workbook includes 8,760 formula rows for Pre and Post, annual savings formulas, demand reduction formulas, assumptions, warnings, and QC checks that flag differences over 1%.</div></div>
       </div>
 
       <div class="ref-section">
-        <div class="ref-h2">6 &#8212; Save, Load &amp; Project Files</div>
-        <div class="ref-p">Use <strong>Save Project</strong> in the header to download a JSON project file that can be loaded later with <strong>Load Project</strong>. The file stores project/customer info, components, connections, drain attachments, site conditions, schedules, equipment assignments, post case data, and change groups.</div>
-        <div class="ref-p">Saved project filenames include the CAS project file indicator and version, such as <strong>plant_air_study_CAS-v1_2026-08-18.json</strong>. The JSON also contains schema and version fields so future JSON types can be identified safely.</div>
-      </div>
-
-      <div class="ref-section">
-        <div class="ref-h2">7 &#8212; Reports</div>
+        <div class="ref-h2">6 &#8212; Reports</div>
         <div class="ref-p">Generate PDF-style reports from the Scenarios tab. <strong>Management Summary</strong> is a one-page executive report with headline numbers and top recommendations. <strong>Engineering Report</strong> includes full component inventory, flow balance table, path pressure analysis, and energy summary. Use the browser Print function (Ctrl+P / Cmd+P) to save as PDF.</div>
-        <div class="ref-p">For calculation review, use <strong>Export to Excel</strong> in Detailed Mode. The workbook is designed for modern Excel and reproduces the 8760 energy and demand calculations with visible formulas, web-vs-Excel QC checks, project metadata, and a generated System Diagram image.</div>
+        <div class="ref-p">For calculation review, use <strong>Export to Excel</strong> in Detailed Mode. The workbook is designed for modern Excel and reproduces the 8760 energy and demand calculations with visible formulas and web-vs-Excel QC checks.</div>
       </div>
     </div>
 
@@ -610,8 +594,8 @@
         <div class="meth-label">Calendar Construction</div>
         <div class="meth-assume">Each hour is classified by day of week (Mon&#8211;Sun) and whether it falls on a US federal holiday. Federal holidays are computed algorithmically using the standard rules (e.g. MLK Day = 3rd Monday of January, Thanksgiving = 4th Thursday of November, observed dates shift for weekend holidays).</div>
         <div class="meth-label">Schedule Application</div>
-        <div class="meth-eq">compressor: on/off based on schedule block covering this hour<br>load demand: Q_load &#215; duty_cycle% &#215; schedule_factor%</div>
-        <div class="meth-assume">Compressor schedules are strictly on/off — load fraction is determined by the staging engine from demand, not by the schedule. Load schedules scale demand by the schedule block factor, so a 62% block runs the load at 62% of its duty-adjusted demand.</div>
+        <div class="meth-eq">compressor: on/off based on schedule block covering this hour<br>load demand: Q_load &#215; duty_cycle% &nbsp;&nbsp;(when load schedule = on, else 0)</div>
+        <div class="meth-assume">Compressor schedules are strictly on/off — load fraction is determined by the staging engine from demand, not by the schedule. Load schedules gate whether a load is active; duty cycle applies when active.</div>
         <div class="meth-label">Hourly Calculation</div>
         <div class="meth-eq">For each hour:<br>1. Sum load demand + leak flow (if any compressor on) + drain losses<br>2. Stage online compressors against total demand (M4)<br>3. Compute system kW = compressor power + dryer power<br>4. Heat rejection = compressor shaft power &#215; 0.85<br>5. Delivered pressure = operating pressure &#8722; path losses at actual flow</div>
         <div class="meth-label">Annual Aggregations</div>
@@ -704,11 +688,7 @@ const CLR = {
 // ═══════════════════════════════════════════
 // STATE
 // ═══════════════════════════════════════════
-const PROJECT_FILE_SCHEMA = 'measureworks-cas-project';
-const PROJECT_FILE_VERSION = 1;
-const PROJECT_FILE_LABEL = `CAS-v${PROJECT_FILE_VERSION}`;
 let nodes=[], connections=[], drainAttachments=[], selectedNode=null, selectedConn=null;
-let PROJECT = { projectName:'', customerName:'' };
 // drainAttachments: [{drainNodeId, hostNodeId}] — drain satellite → host node
 let nodeCounter=0, draggingNode=null, dragOffset={x:0,y:0};
 let connectingPort=null, dragType=null, currentTab='design', analysisRan=false;
@@ -2495,117 +2475,6 @@ function closeMethodsModal() {
 // ═══════════════════════════════════════════
 // CLEAR / EXAMPLE
 // ═══════════════════════════════════════════
-function updateProjectInfo() {
-  PROJECT.projectName = document.getElementById('project-name')?.value || '';
-  PROJECT.customerName = document.getElementById('customer-name')?.value || '';
-}
-
-function renderProjectInfo() {
-  const projectEl = document.getElementById('project-name');
-  const customerEl = document.getElementById('customer-name');
-  if (projectEl) projectEl.value = PROJECT.projectName || '';
-  if (customerEl) customerEl.value = PROJECT.customerName || '';
-}
-
-function projectFilename() {
-  const base = (PROJECT.projectName || 'cas_project').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'cas_project';
-  return `${base}_${PROJECT_FILE_LABEL}_${new Date().toISOString().slice(0,10)}.json`;
-}
-
-function buildProjectData() {
-  updateProjectInfo();
-  return {
-    schema: PROJECT_FILE_SCHEMA,
-    version: PROJECT_FILE_VERSION,
-    appName: 'CAS Analyzer',
-    fileType: 'CAS Project',
-    fileVersion: PROJECT_FILE_LABEL,
-    savedAt: new Date().toISOString(),
-    project: { ...PROJECT },
-    nodes: JSON.parse(JSON.stringify(nodes)),
-    connections: JSON.parse(JSON.stringify(connections)),
-    drainAttachments: JSON.parse(JSON.stringify(drainAttachments)),
-    nodeCounter,
-    analysisRan,
-    colourMode,
-    ambient: {
-      pressure: document.getElementById('amb-pressure')?.value || '',
-      temp: document.getElementById('amb-temp')?.value || '',
-      rh: document.getElementById('amb-rh')?.value || '',
-      aftercoolerTemp: document.getElementById('aftercooler-temp')?.value || '',
-      climateZone: document.getElementById('climate-zone')?.value || 'custom',
-      elecRate: document.getElementById('elec-rate')?.value || '',
-      hoursYear: document.getElementById('hours-year')?.value || ''
-    },
-    sim: {
-      schedules: JSON.parse(JSON.stringify(SIM.schedules)),
-      equipment: JSON.parse(JSON.stringify(SIM.equipment)),
-      postNodes: SIM.postNodes ? JSON.parse(JSON.stringify(SIM.postNodes)) : null,
-      postConnections: SIM.postConnections ? JSON.parse(JSON.stringify(SIM.postConnections)) : null,
-      postEquipment: JSON.parse(JSON.stringify(SIM.postEquipment)),
-      currentCase: SIM.currentCase,
-      changeGroups: JSON.parse(JSON.stringify(SIM.changeGroups))
-    }
-  };
-}
-
-function saveProject() {
-  const data = buildProjectData();
-  const blob = new Blob([JSON.stringify(data, null, 2)], { type:'application/json' });
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = projectFilename();
-  a.click();
-  URL.revokeObjectURL(a.href);
-}
-
-function applyProjectData(data) {
-  if (!data || data.schema !== PROJECT_FILE_SCHEMA) throw new Error('This is not a CAS Analyzer project file.');
-  PROJECT = { projectName:data.project?.projectName || '', customerName:data.project?.customerName || '' };
-  nodes = JSON.parse(JSON.stringify(data.nodes || []));
-  connections = JSON.parse(JSON.stringify(data.connections || []));
-  drainAttachments = JSON.parse(JSON.stringify(data.drainAttachments || []));
-  nodeCounter = data.nodeCounter || nodes.reduce((max,n)=>Math.max(max, parseInt(String(n.id).replace(/\D/g,''))||0), 0);
-  analysisRan = !!data.analysisRan;
-  colourMode = data.colourMode === 'pressure' ? 'pressure' : 'flow';
-  const amb = data.ambient || {};
-  const setVal = (id, value) => { const el = document.getElementById(id); if (el && value !== undefined && value !== null && value !== '') el.value = value; };
-  setVal('amb-pressure', amb.pressure);
-  setVal('amb-temp', amb.temp);
-  setVal('amb-rh', amb.rh);
-  setVal('aftercooler-temp', amb.aftercoolerTemp);
-  setVal('climate-zone', amb.climateZone);
-  setVal('elec-rate', amb.elecRate);
-  setVal('hours-year', amb.hoursYear);
-  SIM.schedules = JSON.parse(JSON.stringify(data.sim?.schedules || []));
-  SIM.equipment = JSON.parse(JSON.stringify(data.sim?.equipment || {}));
-  SIM.postNodes = data.sim?.postNodes ? JSON.parse(JSON.stringify(data.sim.postNodes)) : null;
-  SIM.postConnections = data.sim?.postConnections ? JSON.parse(JSON.stringify(data.sim.postConnections)) : null;
-  SIM.postEquipment = JSON.parse(JSON.stringify(data.sim?.postEquipment || {}));
-  SIM.currentCase = data.sim?.currentCase === 'post' ? 'post' : 'pre';
-  SIM.changeGroups = JSON.parse(JSON.stringify(data.sim?.changeGroups || []));
-  SIM.resultsPreHours = null;
-  SIM.resultsPostHours = null;
-  renderProjectInfo();
-  syncMainCanvasFromState();
-  selectNode(null);
-  selectConn(null);
-  if (analysisRan) runAnalysis();
-  if (document.getElementById('sim8760Overlay')?.style.display === 'flex') renderDetailedMode();
-}
-
-function loadProjectFile(event) {
-  const file = event.target.files?.[0];
-  event.target.value = '';
-  if (!file) return;
-  const reader = new FileReader();
-  reader.onload = () => {
-    try { applyProjectData(JSON.parse(reader.result)); }
-    catch (err) { alert('Could not load project: ' + err.message); }
-  };
-  reader.readAsText(file);
-}
-
 function clearAll(){
   if(nodes.length&&!confirm('Clear all components?')) return;
   nodes=[]; connections=[]; drainAttachments=[];
@@ -2789,9 +2658,10 @@ function getHourFactor(nodeId, date, hour, holidays, equipMap, schedList) {
   const blocks  = sched.days[dayKey] || [];
 
   for (const blk of blocks) {
-    const [sh] = blk.start.split(':').map(Number);
-    const [eh] = blk.stop.split(':').map(Number);
-    if (hour >= sh && hour < eh) return (blk.factor||0)/100;
+    const [sh,sm] = blk.start.split(':').map(Number);
+    const [eh,em] = blk.stop.split(':').map(Number);
+    const startMin = sh*60+sm, stopMin = eh*60+em;
+    if (hour*60 >= startMin && hour*60 < stopMin) return (blk.factor||0)/100;
   }
   return 0;
 }
@@ -3772,13 +3642,14 @@ function stageCompressors(onlineNodes, demandScfm, ambient) {
 function runOneHour(hrData, nodeList, connList, eqMap, schedList, ambient) {
   const holidays = hrData.holidays || new Set();
 
-  // ── 1. Compute demand from loads (schedule factor × duty cycle) ──
+  // ── 1. Compute demand from loads (schedule on/off × duty cycle) ──
   let demandScfm = 0;
   const loadClones = nodeList.map(n => {
     const clone = { ...n, props: { ...n.props } };
     if (n.type === 'load') {
+      // Schedule factor is on/off: >0 means load is active, 0 means off
       const sf = getHourFactor(n.id, hrData.date, hrData.hourOfDay, holidays, eqMap, schedList);
-      clone.props.dutyCycle = (n.props.dutyCycle ?? 100) * sf;
+      clone.props.dutyCycle = sf > 0 ? (n.props.dutyCycle ?? 100) : 0;
       demandScfm += (n.props.flowRate || 0) * clone.props.dutyCycle / 100;
     }
     return clone;
@@ -4260,7 +4131,7 @@ function autoWidth(ws, maxWidth=28) {
 
 function scheduleFactorFormula(scheduleId, dayCell, hourCell, lastScheduleRow) {
   if (!scheduleId || lastScheduleRow < 2) return '1';
-  return `IFERROR(MIN(1,SUMPRODUCT((Schedules!$A$2:$A$${lastScheduleRow}="${scheduleId}")*(Schedules!$C$2:$C$${lastScheduleRow}=${dayCell})*(INT(Schedules!$D$2:$D$${lastScheduleRow})<=${hourCell})*(INT(Schedules!$E$2:$E$${lastScheduleRow})>${hourCell})*(Schedules!$F$2:$F$${lastScheduleRow})/100)),0)`;
+  return `IFERROR(MIN(1,SUMPRODUCT((Schedules!$A$2:$A$${lastScheduleRow}="${scheduleId}")*(Schedules!$C$2:$C$${lastScheduleRow}=${dayCell})*(Schedules!$D$2:$D$${lastScheduleRow}<=${hourCell})*(Schedules!$E$2:$E$${lastScheduleRow}>${hourCell})*(Schedules!$F$2:$F$${lastScheduleRow})/100)),0)`;
 }
 
 function buildInputRows(caseName, nodeList, eqMap) {
@@ -4288,127 +4159,6 @@ function buildInputRows(caseName, nodeList, eqMap) {
   }));
 }
 
-function drawRoundedRect(ctxLocal, x, y, w, h, r) {
-  ctxLocal.beginPath();
-  ctxLocal.moveTo(x+r, y);
-  ctxLocal.lineTo(x+w-r, y);
-  ctxLocal.arcTo(x+w, y, x+w, y+r, r);
-  ctxLocal.lineTo(x+w, y+h-r);
-  ctxLocal.arcTo(x+w, y+h, x+w-r, y+h, r);
-  ctxLocal.lineTo(x+r, y+h);
-  ctxLocal.arcTo(x, y+h, x, y+h-r, r);
-  ctxLocal.lineTo(x, y+r);
-  ctxLocal.arcTo(x, y, x+r, y, r);
-  ctxLocal.closePath();
-}
-
-function buildCanvasDiagramImage(nodeList=nodes, connList=connections) {
-  if (!nodeList.length) return null;
-  const margin = 50;
-  const nodeW = 150, nodeH = 82;
-  const minX = Math.min(...nodeList.map(n=>n.x));
-  const minY = Math.min(...nodeList.map(n=>n.y));
-  const maxX = Math.max(...nodeList.map(n=>n.x + nodeW));
-  const maxY = Math.max(...nodeList.map(n=>n.y + nodeH));
-  const width = Math.max(720, Math.ceil(maxX - minX + margin*2));
-  const height = Math.max(420, Math.ceil(maxY - minY + margin*2));
-  const canvasOut = document.createElement('canvas');
-  canvasOut.width = width;
-  canvasOut.height = height;
-  const ctxLocal = canvasOut.getContext('2d');
-  ctxLocal.fillStyle = '#0d1117';
-  ctxLocal.fillRect(0,0,width,height);
-  ctxLocal.strokeStyle = '#30363d';
-  ctxLocal.globalAlpha = 0.35;
-  for (let x=0; x<width; x+=40) { ctxLocal.beginPath(); ctxLocal.moveTo(x,0); ctxLocal.lineTo(x,height); ctxLocal.stroke(); }
-  for (let y=0; y<height; y+=40) { ctxLocal.beginPath(); ctxLocal.moveTo(0,y); ctxLocal.lineTo(width,y); ctxLocal.stroke(); }
-  ctxLocal.globalAlpha = 1;
-
-  const nodeMap = {};
-  nodeList.forEach(n => {
-    nodeMap[n.id] = { ...n, dx:n.x - minX + margin, dy:n.y - minY + margin };
-  });
-
-  connList.forEach(conn => {
-    const from = nodeMap[conn.from], to = nodeMap[conn.to];
-    if (!from || !to) return;
-    const x1 = from.dx + nodeW, y1 = from.dy + nodeH/2;
-    const x2 = to.dx, y2 = to.dy + nodeH/2;
-    const cx = (x1+x2)/2;
-    const flow = conn._actualFlow || 0;
-    ctxLocal.save();
-    ctxLocal.beginPath();
-    ctxLocal.moveTo(x1,y1);
-    ctxLocal.bezierCurveTo(cx,y1,cx,y2,x2,y2);
-    ctxLocal.strokeStyle = flow > 0 ? CLR.accent : CLR.border2;
-    ctxLocal.lineWidth = 2;
-    if (!flow) ctxLocal.setLineDash([5,4]);
-    ctxLocal.stroke();
-    ctxLocal.setLineDash([]);
-    const angle = Math.atan2(y2-y1, x2-x1);
-    ctxLocal.translate(x2,y2);
-    ctxLocal.rotate(angle);
-    ctxLocal.fillStyle = flow > 0 ? CLR.accent : CLR.border2;
-    ctxLocal.beginPath();
-    ctxLocal.moveTo(0,0);
-    ctxLocal.lineTo(-8,-5);
-    ctxLocal.lineTo(-8,5);
-    ctxLocal.closePath();
-    ctxLocal.fill();
-    ctxLocal.restore();
-  });
-
-  nodeList.forEach(n => {
-    const dn = nodeMap[n.id];
-    const def = compDefs[n.type] || {label:n.type, color:CLR.text2, bgColor:CLR.surface2};
-    ctxLocal.save();
-    ctxLocal.fillStyle = CLR.surface;
-    ctxLocal.strokeStyle = def.color;
-    ctxLocal.lineWidth = 1.5;
-    drawRoundedRect(ctxLocal, dn.dx, dn.dy, nodeW, nodeH, 8);
-    ctxLocal.fill();
-    ctxLocal.stroke();
-    ctxLocal.fillStyle = def.bgColor || CLR.surface2;
-    drawRoundedRect(ctxLocal, dn.dx+10, dn.dy+10, 24, 24, 5);
-    ctxLocal.fill();
-    ctxLocal.fillStyle = def.color;
-    ctxLocal.font = '600 13px Arial';
-    ctxLocal.fillText(def.label || n.type, dn.dx+42, dn.dy+27);
-    ctxLocal.fillStyle = CLR.text;
-    ctxLocal.font = '600 12px Arial';
-    ctxLocal.fillText(String(n.props.name || def.label || n.type).slice(0,22), dn.dx+12, dn.dy+52);
-    ctxLocal.fillStyle = CLR.text2;
-    ctxLocal.font = '11px Arial';
-    let metric = '';
-    if (n.type === 'compressor') metric = `${n.props.flowRate || 0} scfm | ${n.props.power || 0} kW`;
-    else if (n.type === 'load') metric = `${n.props.flowRate || 0} scfm | ${n.props.dutyCycle ?? 100}%`;
-    else if (n.type === 'receiver') metric = `${n.props.volume || 0} gal | ${n.props.workingPressure || 0} psi`;
-    else if (n.type === 'dryer') metric = `${n.props.flowRate || 0} scfm | ${n.props.power || 0} kW`;
-    else if (n.type === 'leak') metric = `${n.props.flowRate || 0} scfm`;
-    else if (n.type === 'lineloss') metric = `${n.props.ratedDp || 0} psi dP`;
-    if (metric) ctxLocal.fillText(metric, dn.dx+12, dn.dy+70);
-    ctxLocal.restore();
-  });
-  return { dataUrl:canvasOut.toDataURL('image/png'), width, height };
-}
-
-function addDiagramSheet(wb) {
-  const ws = wb.addWorksheet('System_Diagram');
-  ws.addRow(['System Diagram']);
-  ws.addRow(['Project Name', PROJECT.projectName || '']);
-  ws.addRow(['Customer Name', PROJECT.customerName || '']);
-  const image = buildCanvasDiagramImage(nodes, connections);
-  if (image) {
-    const scale = Math.min(1, 940 / image.width);
-    const imageId = wb.addImage({ base64:image.dataUrl, extension:'png' });
-    ws.addImage(imageId, { tl:{ col:0, row:4 }, ext:{ width:image.width*scale, height:image.height*scale } });
-  } else {
-    ws.addRow(['No components on canvas.']);
-  }
-  setHeader(ws);
-  autoWidth(ws, 40);
-}
-
 function addInputsSheet(wb, name, rows) {
   const ws = wb.addWorksheet(name);
   ws.addRow(['Case','Component ID','Name','Type','Schedule ID','Flow Rate','Pressure','Duty Cycle','Power kW','Control Type','Unload Power %','Staging Priority','Operating Pressure','Rated Inlet Psia','Rated Inlet Temp F','Pressure Drop','Dryer Type','Purge Fraction %','Drain Type','Measured']);
@@ -4424,9 +4174,9 @@ function addSchedulesSheet(wb) {
   SIM.schedules.forEach(s => {
     DAY_KEYS.forEach(day => {
       (s.days[day] || []).forEach(b => {
-        const [sh] = b.start.split(':').map(Number);
-        const [eh] = b.stop.split(':').map(Number);
-        ws.addRow([s.id, s.name, day, sh, eh, b.factor || 0]);
+        const [sh, sm] = b.start.split(':').map(Number);
+        const [eh, em] = b.stop.split(':').map(Number);
+        ws.addRow([s.id, s.name, day, sh + sm/60, eh + em/60, b.factor || 0]);
       });
     });
   });
@@ -4500,7 +4250,7 @@ function addCalcSheet(wb, sheetName, nodeList, eqMap, inputSheetName, webHours, 
     loads.forEach(n => {
       const r = inputRow[n.id];
       const sf = scheduleFactorFormula(eqMap?.[n.id], dayCell, hourCell, lastScheduleRow);
-      const formula = `${inputSheetName}!F${r}*${inputSheetName}!H${r}/100*(${sf})`;
+      const formula = `IF((${sf})>0,${inputSheetName}!F${r}*${inputSheetName}!H${r}/100,0)`;
       row.getCell(col).value = { formula, result: 0 };
       demandCols.push(col++);
     });
@@ -4550,7 +4300,7 @@ function addCalcSheet(wb, sheetName, nodeList, eqMap, inputSheetName, webHours, 
     dryers.forEach(() => { dryerKwCols.push(dryerFirstCol); dryerFirstCol += 2; });
     row.getCell(supplyCol).value = { formula: compFlowCols.length ? `SUM(${compFlowCols.map(c => `${xlCol(c)}${rowNum}`).join(',')})` : '0', result: webHours?.[i]?.supplyScfm || 0 };
     row.getCell(systemKwCol).value = { formula: `SUM(${[...compPowerCols, ...dryerKwCols].map(c => `${xlCol(c)}${rowNum}`).join(',') || '0'})`, result: webHours?.[i]?.systemKw || 0 };
-    row.getCell(webKwCol).value = webHours?.[i]?.systemKw || 0;
+    row.getCell(webKwCol).value = { formula: `${xlCol(systemKwCol)}${rowNum}`, result: webHours?.[i]?.systemKw || 0 };
     row.getCell(diffCol).value = { formula: `IF(${xlCol(webKwCol)}${rowNum}=0,ABS(${xlCol(systemKwCol)}${rowNum}-${xlCol(webKwCol)}${rowNum}),ABS(${xlCol(systemKwCol)}${rowNum}-${xlCol(webKwCol)}${rowNum})/${xlCol(webKwCol)}${rowNum})`, result: 0 };
     row.getCell(qcCol).value = { formula: `IF(${xlCol(diffCol)}${rowNum}<=1%,"OK","ERROR")`, result: 'OK' };
   }
@@ -4607,7 +4357,6 @@ async function exportFormulaWorkbook() {
     alert('Excel export library did not load. Check your internet connection or vendor ExcelJS for offline use.');
     return;
   }
-  updateProjectInfo();
   if (!SIM.postNodes) duplicatePreCase();
   if (!SIM.resultsPreHours || !SIM.resultsPostHours) await runSim8760();
 
@@ -4621,8 +4370,6 @@ async function exportFormulaWorkbook() {
   const project = wb.addWorksheet('Project');
   project.addRows([
     ['CAS Analyzer Formula Workbook'],
-    ['Project Name', PROJECT.projectName || ''],
-    ['Customer Name', PROJECT.customerName || ''],
     ['Export Date', new Date()],
     ['Calculation Basis', '8760'],
     ['Excel Target', 'Microsoft 365 / modern Excel, no macros'],
@@ -4645,15 +4392,13 @@ async function exportFormulaWorkbook() {
   const preCalc = addCalcSheet(wb, 'Calc_Pre', nodes, SIM.equipment, 'Inputs_Pre', SIM.resultsPreHours, lastScheduleRow, ambient);
   const postCalc = addCalcSheet(wb, 'Calc_Post', SIM.postNodes || nodes, SIM.postEquipment || SIM.equipment, 'Inputs_Post', SIM.resultsPostHours || SIM.resultsPreHours, lastScheduleRow, ambient);
   addResultsSheet(wb, aggHours(SIM.resultsPreHours), aggHours(SIM.resultsPostHours || SIM.resultsPreHours), preCalc, postCalc);
-  addDiagramSheet(wb);
   addWarningsSheet(wb);
 
   const buffer = await wb.xlsx.writeBuffer();
   const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  const projectSlug = (PROJECT.projectName || 'cas_formula_8760').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'cas_formula_8760';
-  a.download = `${projectSlug}_${new Date().toISOString().slice(0,10)}.xlsx`;
+  a.download = `cas_formula_8760_${new Date().toISOString().slice(0,10)}.xlsx`;
   a.click();
   URL.revokeObjectURL(a.href);
 }
@@ -4751,7 +4496,6 @@ function renderMoisturePanel(compressors, ambient) {
 function closeReport() { document.getElementById('reportOverlay').classList.remove('open'); }
 
 function generateReport(type) {
-  updateProjectInfo();
   const rate  = parseFloat(document.getElementById('elec-rate')?.value||0.10);
   const hours = parseFloat(document.getElementById('hours-year')?.value||6000);
   const amb   = getAmbient();
@@ -4775,7 +4519,6 @@ function generateReport(type) {
     <div style="background:#0d1117;color:#00d4aa;padding:16px 20px;border-radius:6px;margin-bottom:24px">
       <div style="font-size:22px;font-weight:700;font-family:monospace">CAS·Analyzer</div>
       <div style="font-size:13px;color:#8b949e;margin-top:4px">Compressed Air System Analysis Report</div>
-      <div style="font-size:12px;color:#e6edf3;margin-top:8px">Project: ${PROJECT.projectName || 'Untitled'} &nbsp; | &nbsp; Customer: ${PROJECT.customerName || 'Not specified'}</div>
       <div style="font-size:11px;color:#6e7681;margin-top:2px">Generated: ${today}</div>
     </div>`;
 
