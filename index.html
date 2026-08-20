@@ -2798,15 +2798,27 @@ function detectOverlapInDay(blocks, indexToIgnore = -1) {
   return errors;
 }
 
+function dayHasScheduleOverlap(schedule, day) {
+  return detectOverlapInDay(schedule.days[day] || []).length > 0;
+}
+
+function scheduleHasOverlap(schedule) {
+  return DAY_KEYS.some(day => dayHasScheduleOverlap(schedule, day));
+}
+
 function build24HourBar(block, width = 240) {
-  // Create inline 24-hour visualization bar
-  const {start, stop} = getBlockHourRange(block);
-  const pixPerHour = width / 24;
-  const left = start * pixPerHour;
-  const barWidth = Math.max(1, (stop - start) * pixPerHour);
-  const opacity = (block.factor || 100) / 100;
-  return `<div style="position:relative;width:${width}px;height:8px;background:var(--surface3);border-radius:2px;overflow:hidden;display:inline-block;margin-left:4px;vertical-align:middle">
-    <div style="position:absolute;left:${left}px;width:${barWidth}px;height:100%;background:var(--accent);opacity:${opacity};border-radius:2px"></div>
+  // Create a combined 24-hour visualization bar for one block or a full day of blocks
+  const blocks = Array.isArray(block) ? block : [block];
+  const segments = blocks.map(b => {
+    const {start, stop} = getBlockHourRange(b);
+    const left = Math.max(0, Math.min(100, (start / 24) * 100));
+    const segmentWidth = Math.max(1, Math.min(100 - left, ((stop - start) / 24) * 100));
+    const opacity = Math.max(0.15, Math.min(1, (b.factor || 100) / 100));
+    return `<div style="position:absolute;left:${left}%;width:${segmentWidth}%;height:100%;background:var(--accent);opacity:${opacity};border-radius:3px"></div>`;
+  }).join('');
+  return `<div style="width:${width}px;max-width:100%;margin:6px 0 8px 0">
+    <div style="position:relative;width:100%;height:12px;background:var(--surface3);border-radius:3px;overflow:hidden;border:1px solid var(--border)">${segments}</div>
+    <div style="display:flex;justify-content:space-between;font-size:8px;color:var(--text3);margin-top:2px"><span>0</span><span>6</span><span>12</span><span>18</span><span>24</span></div>
   </div>`;
 }
 
@@ -3530,12 +3542,19 @@ function duplicatePreCase() {
 // ── Schedule list UI ──────────────────────────────────────────────
 function renderScheduleList() {
   const el = document.getElementById('scheduleList');
-  el.innerHTML = SIM.schedules.map(s => `
-    <div onclick="selectSchedule('${s.id}')" style="padding:7px 12px;cursor:pointer;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:6px;background:${SIM.editingSchedId===s.id?'var(--surface3)':'transparent'}">
-      <span style="flex:1;font-size:12px;font-weight:${SIM.editingSchedId===s.id?'600':'400'};color:var(--text)">${s.name}</span>
+  el.innerHTML = SIM.schedules.map(s => {
+    const hasOverlap = scheduleHasOverlap(s);
+    const isSelected = SIM.editingSchedId === s.id;
+    const bg = hasOverlap ? 'rgba(239,68,68,0.18)' : (isSelected ? 'var(--surface3)' : 'transparent');
+    const border = hasOverlap ? '1px solid rgba(239,68,68,0.55)' : '1px solid var(--border)';
+    return `
+    <div onclick="selectSchedule('${s.id}')" style="padding:7px 12px;cursor:pointer;border-bottom:${border};display:flex;align-items:center;gap:6px;background:${bg}">
+      <span style="flex:1;font-size:12px;font-weight:${isSelected?'600':'400'};color:${hasOverlap?'var(--danger)':'var(--text)'}">${s.name}</span>
+      ${hasOverlap?'<span title="Schedule has overlapping blocks" style="font-size:10px;color:var(--danger);font-weight:700">Overlap</span>':''}
       <button onclick="event.stopPropagation();renameSchedule('${s.id}')" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:11px;padding:0 3px" title="Rename">✎</button>
       ${SIM.schedules.length>1?`<button onclick="event.stopPropagation();deleteSchedule('${s.id}')" style="background:none;border:none;color:var(--danger);cursor:pointer;font-size:11px;padding:0 3px" title="Delete">✕</button>`:''}
-    </div>`).join('');
+    </div>`;
+  }).join('');
 }
 
 function addSchedule() {
@@ -3578,8 +3597,8 @@ function renderDayBlockEditor() {
 
   const dayTabs = DAY_KEYS.map((k,i) => `
     <span onclick="selectEditDay('${k}')" style="padding:3px 6px;border-radius:4px;cursor:pointer;font-size:10px;font-weight:500;
-      background:${SIM.editingDay===k?'var(--accent)':'var(--surface3)'};
-      color:${SIM.editingDay===k?'#000':'var(--text2)'};margin-right:2px;margin-bottom:3px;display:inline-block">
+      background:${dayHasScheduleOverlap(sched,k)?'var(--danger)':(SIM.editingDay===k?'var(--accent)':'var(--surface3)')};
+      color:${dayHasScheduleOverlap(sched,k)?'#fff':(SIM.editingDay===k?'#000':'var(--text2)')};margin-right:2px;margin-bottom:3px;display:inline-block">
       ${DAY_NAMES[i].slice(0,3)}
     </span>`).join('');
 
@@ -3592,7 +3611,6 @@ function renderDayBlockEditor() {
   const blockRows = blocks.map((b,i) => {
     const start = typeof b.start === 'string' ? parseInt(b.start.split(':')[0]) : b.start;
     const stop = typeof b.stop === 'string' ? parseInt(b.stop.split(':')[0]) : b.stop;
-    const bar = build24HourBar(b);
     const isInvalid = stop <= start;
     return `
     <div style="display:flex;align-items:center;gap:4px;margin-bottom:6px;padding:4px;background:${isInvalid?'rgba(255,0,0,0.1)':'var(--surface2)'};border-radius:4px;border:${isInvalid?'1px solid var(--danger)':'none'}">
@@ -3606,10 +3624,11 @@ function renderDayBlockEditor() {
         <input type="number" value="${b.factor}" min="0" max="100" style="width:45px;padding:3px 4px;background:var(--surface3);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:11px;text-align:right"
           onchange="updateBlock('${sched.id}','${SIM.editingDay}',${i},'factor',this.value)">
         <span style="font-size:9px;color:var(--text3)">%</span>
-        ${bar}
       </div>
       <button onclick="removeBlock('${sched.id}','${SIM.editingDay}',${i})" style="background:none;border:none;color:var(--danger);cursor:pointer;font-size:12px;padding:0 2px;flex-shrink:0">✕</button>
     </div>`}).join('');
+
+  const dayBar = blocks.length ? build24HourBar(blocks, 320) : '';
 
   // Copy to days UI
   const copyTargets = DAY_KEYS.filter(k=>k!==SIM.editingDay).map(k=>`
@@ -3623,6 +3642,7 @@ function renderDayBlockEditor() {
     ${blockRows}
     <button onclick="addBlock('${sched.id}','${SIM.editingDay}')"
       style="font-size:11px;padding:3px 8px;background:var(--surface3);border:1px solid var(--border);border-radius:4px;color:var(--text);cursor:pointer;margin-bottom:8px">+ Add Block</button>
+    ${dayBar}
     <div style="border-top:1px solid var(--border);padding-top:6px;margin-top:2px;font-size:9px;color:var(--text3)">
       <div style="margin-bottom:4px"><strong>24-hour format:</strong> Start (0-23), Stop (1-24). Example: 8-18 = 10 AM to 6 PM. Use 0-24 for all day.</div>
       <div style="margin-bottom:4px"><strong>Copy to other days:</strong></div>
@@ -3636,12 +3656,14 @@ function selectEditDay(day) { SIM.editingDay = day; renderDayBlockEditor(); }
 function addBlock(schedId, day) {
   const s = getScheduleById(schedId); if (!s) return;
   s.days[day].push({start:8, stop:18, factor:100});
+  renderScheduleList();
   renderDayBlockEditor();
 }
 
 function removeBlock(schedId, day, idx) {
   const s = getScheduleById(schedId); if (!s) return;
   s.days[day].splice(idx,1);
+  renderScheduleList();
   renderDayBlockEditor();
 }
 
@@ -3667,6 +3689,7 @@ function updateBlock(schedId, day, idx, field, val) {
   }
   
   invalidateSimResults();
+  renderScheduleList();
   renderDayBlockEditor();
 }
 
@@ -3678,6 +3701,7 @@ function copyDayBlocks(schedId, fromDay) {
     if (cb && cb.checked) { s.days[k] = JSON.parse(JSON.stringify(src)); cb.checked=false; }
   });
   invalidateSimResults();
+  renderScheduleList();
   renderDayBlockEditor();
 }
 
