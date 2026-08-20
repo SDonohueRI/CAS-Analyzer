@@ -4546,7 +4546,7 @@ function addCalcSheet(wb, sheetName, nodeList, eqMap, inputSheetName, webHours, 
     });
     const supplyCol = col++, systemKwCol = col++, webKwCol = col++, diffCol = col++, qcCol = col++;
     const dryerKwCols = [];
-    let dryerFirstCol = 6 + loads.length + leaks.length + 1;
+    let dryerFirstCol = 6 + loads.length + leaks.length;
     dryers.forEach(() => { dryerKwCols.push(dryerFirstCol + 1); dryerFirstCol += 2; });
     row.getCell(supplyCol).value = { formula: compFlowCols.length ? `SUM(${compFlowCols.map(c => `${xlCol(c)}${rowNum}`).join(',')})` : '0', result: webHours?.[i]?.supplyScfm || 0 };
     row.getCell(systemKwCol).value = { formula: `SUM(${[...compPowerCols, ...dryerKwCols].map(c => `${xlCol(c)}${rowNum}`).join(',') || '0'})`, result: webHours?.[i]?.systemKw || 0 };
