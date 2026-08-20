@@ -244,6 +244,7 @@
     <button class="btn" onclick="open8760()">Detailed Mode</button>
     <button class="btn" onclick="saveProject()">Save Project</button>
     <button class="btn" onclick="document.getElementById('projectFileInput').click()">Load Project</button>
+    <button class="btn" onclick="reportError()">Report Error</button>
     <input id="projectFileInput" type="file" accept="application/json,.json" style="display:none" onchange="loadProjectFile(event)">
     <button class="btn" onclick="clearAll()">Clear</button>
     <button class="btn" onclick="loadExample()">Load Example</button>
@@ -2512,6 +2513,24 @@ function projectFilename() {
   return `${base}_${PROJECT_FILE_LABEL}_${new Date().toISOString().slice(0,10)}.json`;
 }
 
+function downloadBlob(blob, filename) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+function buildProjectJsonFile() {
+  const text = JSON.stringify(buildProjectData(), null, 2);
+  return {
+    filename: projectFilename(),
+    mimeType: 'application/json',
+    text,
+    blob: new Blob([text], { type:'application/json' })
+  };
+}
+
 function buildProjectData() {
   updateProjectInfo();
   return {
@@ -2550,13 +2569,8 @@ function buildProjectData() {
 }
 
 function saveProject() {
-  const data = buildProjectData();
-  const blob = new Blob([JSON.stringify(data, null, 2)], { type:'application/json' });
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = projectFilename();
-  a.click();
-  URL.revokeObjectURL(a.href);
+  const file = buildProjectJsonFile();
+  downloadBlob(file.blob, file.filename);
 }
 
 function applyProjectData(data) {
@@ -2772,6 +2786,93 @@ function initSchedules() {
 
 function getScheduleById(id) { return SIM.schedules.find(s => s.id === id); }
 
+// ── Schedule validation and visualization helpers ──
+function getBlockHourRange(block) {
+  // Parse start/stop from old format (HH:MM) or new format (number)
+  const start = typeof block.start === 'string' ? parseInt(block.start.split(':')[0]) : block.start;
+  const stop = typeof block.stop === 'string' ? parseInt(block.stop.split(':')[0]) : block.stop;
+  return {start, stop};
+}
+
+function detectOverlapInDay(blocks, indexToIgnore = -1) {
+  // Returns array of error messages for overlapping blocks
+  const errors = [];
+  blocks.forEach((b, i) => {
+    if (i === indexToIgnore) return;
+    const range1 = getBlockHourRange(b);
+    blocks.forEach((b2, j) => {
+      if (j <= i || j === indexToIgnore) return;
+      const range2 = getBlockHourRange(b2);
+      // Check if ranges overlap (start < other's stop AND stop > other's start)
+      if (range1.start < range2.stop && range1.stop > range2.start) {
+        errors.push(`Block ${i+1} (${range1.start}-${range1.stop}) overlaps with block ${j+1} (${range2.start}-${range2.stop})`);
+      }
+    });
+  });
+  return errors;
+}
+
+function dayHasScheduleOverlap(schedule, day) {
+  return detectOverlapInDay(schedule.days[day] || []).length > 0;
+}
+
+function scheduleHasOverlap(schedule) {
+  return DAY_KEYS.some(day => dayHasScheduleOverlap(schedule, day));
+}
+
+function build24HourBar(block, width = 240) {
+  // Create a combined 24-hour visualization bar for one block or a full day of blocks
+  const blocks = Array.isArray(block) ? block : [block];
+  const segments = blocks.map(b => {
+    const {start, stop} = getBlockHourRange(b);
+    const left = Math.max(0, Math.min(100, (start / 24) * 100));
+    const segmentWidth = Math.max(1, Math.min(100 - left, ((stop - start) / 24) * 100));
+    const opacity = Math.max(0.15, Math.min(1, (b.factor || 100) / 100));
+    return `<div style="position:absolute;left:${left}%;width:${segmentWidth}%;height:100%;background:var(--accent);opacity:${opacity};border-radius:3px"></div>`;
+  }).join('');
+  return `<div style="width:${width}px;max-width:100%;margin:6px 0 8px 0">
+    <div style="position:relative;width:100%;height:12px;background:var(--surface3);border-radius:3px;overflow:hidden;border:1px solid var(--border)">${segments}</div>
+    <div style="display:flex;justify-content:space-between;font-size:8px;color:var(--text3);margin-top:2px"><span>0</span><span>6</span><span>12</span><span>18</span><span>24</span></div>
+  </div>`;
+}
+
+// ── Schedule validation helpers ──
+function validateSchedules(nodeList, eqMap) {
+  // Returns array of warning messages about schedule issues
+  const warnings = [];
+  
+  // Check for compressor schedules with non-binary factors
+  const compressors = nodeList.filter(n => n.type === 'compressor');
+  compressors.forEach(comp => {
+    const schedId = eqMap?.[comp.id];
+    if (!schedId) return;
+    const sched = getScheduleById(schedId);
+    if (!sched) return;
+    
+    // Check all blocks in this schedule for non-binary factors
+    DAY_KEYS.forEach(day => {
+      (sched.days[day] || []).forEach(block => {
+        const factor = block.factor || 0;
+        if (factor !== 0 && factor !== 100) {
+          warnings.push(`Compressor '${comp.props.name || comp.id}' has schedule '${sched.name}' with ${factor}% factor on ${day}. Compressors are binary (on/off), so any factor > 0 means fully available during that hour.`);
+        }
+      });
+    });
+  });
+  
+  // Check for overlapping blocks in any schedule
+  SIM.schedules.forEach(sched => {
+    DAY_KEYS.forEach(day => {
+      const errors = detectOverlapInDay(sched.days[day] || []);
+      errors.forEach(err => {
+        warnings.push(`Schedule '${sched.name}': ${err}`);
+      });
+    });
+  });
+  
+  return warnings;
+}
+
 // Given a date and hour (0-23), find load factor for a node
 function getHourFactor(nodeId, date, hour, holidays, equipMap, schedList) {
   const eqMap  = equipMap || SIM.equipment;
@@ -2789,8 +2890,9 @@ function getHourFactor(nodeId, date, hour, holidays, equipMap, schedList) {
   const blocks  = sched.days[dayKey] || [];
 
   for (const blk of blocks) {
-    const [sh] = blk.start.split(':').map(Number);
-    const [eh] = blk.stop.split(':').map(Number);
+    // Handle both old format (HH:MM strings) and new format (hours as numbers)
+    const sh = typeof blk.start === 'string' ? parseInt(blk.start.split(':')[0]) : blk.start;
+    const eh = typeof blk.stop === 'string' ? parseInt(blk.stop.split(':')[0]) : blk.stop;
     if (hour >= sh && hour < eh) return (blk.factor||0)/100;
   }
   return 0;
@@ -3454,12 +3556,19 @@ function duplicatePreCase() {
 // ── Schedule list UI ──────────────────────────────────────────────
 function renderScheduleList() {
   const el = document.getElementById('scheduleList');
-  el.innerHTML = SIM.schedules.map(s => `
-    <div onclick="selectSchedule('${s.id}')" style="padding:7px 12px;cursor:pointer;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:6px;background:${SIM.editingSchedId===s.id?'var(--surface3)':'transparent'}">
-      <span style="flex:1;font-size:12px;font-weight:${SIM.editingSchedId===s.id?'600':'400'};color:var(--text)">${s.name}</span>
+  el.innerHTML = SIM.schedules.map(s => {
+    const hasOverlap = scheduleHasOverlap(s);
+    const isSelected = SIM.editingSchedId === s.id;
+    const bg = hasOverlap ? 'rgba(239,68,68,0.18)' : (isSelected ? 'var(--surface3)' : 'transparent');
+    const border = hasOverlap ? '1px solid rgba(239,68,68,0.55)' : '1px solid var(--border)';
+    return `
+    <div onclick="selectSchedule('${s.id}')" style="padding:7px 12px;cursor:pointer;border-bottom:${border};display:flex;align-items:center;gap:6px;background:${bg}">
+      <span style="flex:1;font-size:12px;font-weight:${isSelected?'600':'400'};color:${hasOverlap?'var(--danger)':'var(--text)'}">${s.name}</span>
+      ${hasOverlap?'<span title="Schedule has overlapping blocks" style="font-size:10px;color:var(--danger);font-weight:700">Overlap</span>':''}
       <button onclick="event.stopPropagation();renameSchedule('${s.id}')" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:11px;padding:0 3px" title="Rename">✎</button>
       ${SIM.schedules.length>1?`<button onclick="event.stopPropagation();deleteSchedule('${s.id}')" style="background:none;border:none;color:var(--danger);cursor:pointer;font-size:11px;padding:0 3px" title="Delete">✕</button>`:''}
-    </div>`).join('');
+    </div>`;
+  }).join('');
 }
 
 function addSchedule() {
@@ -3502,24 +3611,38 @@ function renderDayBlockEditor() {
 
   const dayTabs = DAY_KEYS.map((k,i) => `
     <span onclick="selectEditDay('${k}')" style="padding:3px 6px;border-radius:4px;cursor:pointer;font-size:10px;font-weight:500;
-      background:${SIM.editingDay===k?'var(--accent)':'var(--surface3)'};
-      color:${SIM.editingDay===k?'#000':'var(--text2)'};margin-right:2px;margin-bottom:3px;display:inline-block">
+      background:${dayHasScheduleOverlap(sched,k)?'var(--danger)':(SIM.editingDay===k?'var(--accent)':'var(--surface3)')};
+      color:${dayHasScheduleOverlap(sched,k)?'#fff':(SIM.editingDay===k?'#000':'var(--text2)')};margin-right:2px;margin-bottom:3px;display:inline-block">
       ${DAY_NAMES[i].slice(0,3)}
     </span>`).join('');
 
   const blocks = sched.days[SIM.editingDay] || [];
-  const blockRows = blocks.map((b,i) => `
-    <div style="display:flex;align-items:center;gap:4px;margin-bottom:4px;">
-      <input type="time" value="${b.start}" style="width:72px;padding:3px 4px;background:var(--surface3);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:11px"
-        onchange="updateBlock('${sched.id}','${SIM.editingDay}',${i},'start',this.value)">
-      <span style="color:var(--text3);font-size:10px">to</span>
-      <input type="time" value="${b.stop}" style="width:72px;padding:3px 4px;background:var(--surface3);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:11px"
-        onchange="updateBlock('${sched.id}','${SIM.editingDay}',${i},'stop',this.value)">
-      <input type="number" value="${b.factor}" min="0" max="100" style="width:48px;padding:3px 4px;background:var(--surface3);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:11px;text-align:right"
-        onchange="updateBlock('${sched.id}','${SIM.editingDay}',${i},'factor',this.value)">
-      <span style="font-size:10px;color:var(--text3)">%</span>
-      <button onclick="removeBlock('${sched.id}','${SIM.editingDay}',${i})" style="background:none;border:none;color:var(--danger);cursor:pointer;font-size:12px;padding:0 2px">✕</button>
-    </div>`).join('');
+  
+  // Check for overlaps in this day
+  const overlapErrors = detectOverlapInDay(blocks);
+  const overlapWarning = overlapErrors.length ? `<div style="background:var(--danger);color:white;padding:6px;border-radius:4px;margin-bottom:6px;font-size:10px"><strong>⚠ Schedule conflicts:</strong><br>${overlapErrors.join('<br>')}</div>` : '';
+  
+  const blockRows = blocks.map((b,i) => {
+    const start = typeof b.start === 'string' ? parseInt(b.start.split(':')[0]) : b.start;
+    const stop = typeof b.stop === 'string' ? parseInt(b.stop.split(':')[0]) : b.stop;
+    const isInvalid = stop <= start;
+    return `
+    <div style="display:flex;align-items:center;gap:4px;margin-bottom:6px;padding:4px;background:${isInvalid?'rgba(255,0,0,0.1)':'var(--surface2)'};border-radius:4px;border:${isInvalid?'1px solid var(--danger)':'none'}">
+      <div style="display:flex;align-items:center;gap:3px;flex:1">
+        <span style="font-size:9px;color:var(--text3);width:20px">Start:</span>
+        <input type="number" value="${start}" min="0" max="23" style="width:45px;padding:3px 4px;background:var(--surface3);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:11px;text-align:center"
+          onchange="updateBlock('${sched.id}','${SIM.editingDay}',${i},'start',this.value)">
+        <span style="font-size:9px;color:var(--text3)">Stop:</span>
+        <input type="number" value="${stop}" min="1" max="24" style="width:45px;padding:3px 4px;background:var(--surface3);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:11px;text-align:center"
+          onchange="updateBlock('${sched.id}','${SIM.editingDay}',${i},'stop',this.value)">
+        <input type="number" value="${b.factor}" min="0" max="100" style="width:45px;padding:3px 4px;background:var(--surface3);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:11px;text-align:right"
+          onchange="updateBlock('${sched.id}','${SIM.editingDay}',${i},'factor',this.value)">
+        <span style="font-size:9px;color:var(--text3)">%</span>
+      </div>
+      <button onclick="removeBlock('${sched.id}','${SIM.editingDay}',${i})" style="background:none;border:none;color:var(--danger);cursor:pointer;font-size:12px;padding:0 2px;flex-shrink:0">✕</button>
+    </div>`}).join('');
+
+  const dayBar = blocks.length ? build24HourBar(blocks, 320) : '';
 
   // Copy to days UI
   const copyTargets = DAY_KEYS.filter(k=>k!==SIM.editingDay).map(k=>`
@@ -3529,35 +3652,59 @@ function renderDayBlockEditor() {
 
   el.innerHTML = `
     <div style="margin-bottom:6px;line-height:1.8">${dayTabs}</div>
+    ${overlapWarning}
     ${blockRows}
     <button onclick="addBlock('${sched.id}','${SIM.editingDay}')"
       style="font-size:11px;padding:3px 8px;background:var(--surface3);border:1px solid var(--border);border-radius:4px;color:var(--text);cursor:pointer;margin-bottom:8px">+ Add Block</button>
-    <div style="border-top:1px solid var(--border);padding-top:6px;margin-top:2px">
-      <div style="font-size:10px;color:var(--text3);margin-bottom:4px">Copy this day's blocks to:</div>
+    ${dayBar}
+    <div style="border-top:1px solid var(--border);padding-top:6px;margin-top:2px;font-size:9px;color:var(--text3)">
+      <div style="margin-bottom:4px"><strong>24-hour format:</strong> Start (0-23), Stop (1-24). Example: 8-18 = 10 AM to 6 PM. Use 0-24 for all day.</div>
+      <div style="margin-bottom:4px"><strong>Copy to other days:</strong></div>
       <div>${copyTargets}</div>
       <button onclick="copyDayBlocks('${sched.id}','${SIM.editingDay}')"
         style="font-size:10px;padding:2px 7px;background:var(--surface3);border:1px solid var(--border);border-radius:4px;color:var(--text);cursor:pointer;margin-top:4px">Copy</button>
     </div>`;
 }
-
 function selectEditDay(day) { SIM.editingDay = day; renderDayBlockEditor(); }
 
 function addBlock(schedId, day) {
   const s = getScheduleById(schedId); if (!s) return;
-  s.days[day].push({start:'08:00', stop:'17:00', factor:100});
+  s.days[day].push({start:8, stop:18, factor:100});
+  renderScheduleList();
   renderDayBlockEditor();
 }
 
 function removeBlock(schedId, day, idx) {
   const s = getScheduleById(schedId); if (!s) return;
   s.days[day].splice(idx,1);
+  renderScheduleList();
   renderDayBlockEditor();
 }
 
 function updateBlock(schedId, day, idx, field, val) {
   const s = getScheduleById(schedId); if (!s) return;
-  s.days[day][idx][field] = field==='factor' ? parseFloat(val)||0 : val;
+  const blocks = s.days[day];
+  
+  if (field === 'factor') {
+    blocks[idx][field] = parseFloat(val) || 0;
+  } else if (field === 'start' || field === 'stop') {
+    const numVal = parseInt(val) || 0;
+    // Clamp to valid range
+    const max = field === 'start' ? 23 : 24;
+    blocks[idx][field] = Math.max(0, Math.min(numVal, max));
+    
+    // Validate after update
+    const errors = detectOverlapInDay(blocks, -1);
+    if (errors.length) {
+      console.warn('Schedule overlap:', errors);
+    }
+  } else {
+    blocks[idx][field] = val;
+  }
+  
   invalidateSimResults();
+  renderScheduleList();
+  renderDayBlockEditor();
 }
 
 function copyDayBlocks(schedId, fromDay) {
@@ -3568,6 +3715,7 @@ function copyDayBlocks(schedId, fromDay) {
     if (cb && cb.checked) { s.days[k] = JSON.parse(JSON.stringify(src)); cb.checked=false; }
   });
   invalidateSimResults();
+  renderScheduleList();
   renderDayBlockEditor();
 }
 
@@ -4260,7 +4408,10 @@ function autoWidth(ws, maxWidth=28) {
 
 function scheduleFactorFormula(scheduleId, dayCell, hourCell, lastScheduleRow) {
   if (!scheduleId || lastScheduleRow < 2) return '1';
-  return `IFERROR(MIN(1,SUMPRODUCT((Schedules!$A$2:$A$${lastScheduleRow}="${scheduleId}")*(Schedules!$C$2:$C$${lastScheduleRow}=${dayCell})*(INT(Schedules!$D$2:$D$${lastScheduleRow})<=${hourCell})*(INT(Schedules!$E$2:$E$${lastScheduleRow})>${hourCell})*(Schedules!$F$2:$F$${lastScheduleRow})/100)),0)`;
+  const startRange = `INT(Schedules!$D$2:$D$${lastScheduleRow})`;
+  const stopRange = `INT(Schedules!$E$2:$E$${lastScheduleRow})`;
+  const inHourRange = `(((${stopRange}>${startRange})*(${startRange}<=${hourCell})*(${stopRange}>${hourCell}))+(((${stopRange}<${startRange})*--(((${startRange}<=${hourCell})+(${stopRange}>${hourCell}))>0))))`;
+  return `IFERROR(MIN(1,SUMPRODUCT((Schedules!$A$2:$A$${lastScheduleRow}="${scheduleId}")*(Schedules!$C$2:$C$${lastScheduleRow}=${dayCell})*${inHourRange}*(Schedules!$F$2:$F$${lastScheduleRow})/100)),0)`;
 }
 
 function buildInputRows(caseName, nodeList, eqMap) {
@@ -4281,7 +4432,7 @@ function buildInputRows(caseName, nodeList, eqMap) {
     ratedInletPres: n.props.ratedInletPres ?? '',
     ratedInletTemp: n.props.ratedInletTemp ?? '',
     pressureDrop: n.props.pressureDrop ?? '',
-    dryerType: n.props.dryerType ?? '',
+    dryerType: n.type === 'dryer' ? (n.props.dryerType || 'refrigerated') : '',
     purgeFraction: n.props.purgeFraction ?? '',
     drainType: n.props.drainType ?? '',
     measured: n.props.measured ?? ''
@@ -4424,8 +4575,7 @@ function addSchedulesSheet(wb) {
   SIM.schedules.forEach(s => {
     DAY_KEYS.forEach(day => {
       (s.days[day] || []).forEach(b => {
-        const [sh] = b.start.split(':').map(Number);
-        const [eh] = b.stop.split(':').map(Number);
+        const {start: sh, stop: eh} = getBlockHourRange(b);
         ws.addRow([s.id, s.name, day, sh, eh, b.factor || 0]);
       });
     });
@@ -4537,7 +4687,7 @@ function addCalcSheet(wb, sheetName, nodeList, eqMap, inputSheetName, webHours, 
       row.getCell(capCol).value = { formula: `IF(${xlCol(onCol)}${rowNum}=1,${ratedCap},0)`, result: 0 };
       row.getCell(loadFracCol).value = { formula: `IF(${xlCol(onCol)}${rowNum}=1,IF(${xlCol(capCol)}${rowNum}>0,MIN(1,${xlCol(remBeforeCol)}${rowNum}/${xlCol(capCol)}${rowNum}),0),0)`, result: 0 };
       row.getCell(flowCol).value = { formula: `${xlCol(capCol)}${rowNum}*${xlCol(loadFracCol)}${rowNum}`, result: 0 };
-      row.getCell(powerCol).value = { formula: `IF(${xlCol(onCol)}${rowNum}=1,${inputSheetName}!I${r}*${isoScale}*${pf},0)`, result: 0 };
+      row.getCell(powerCol).value = { formula: `IF(${xlCol(onCol)}${rowNum}=1,IF(${lfCell}<=0,IF(${inputSheetName}!J${r}="lu",${inputSheetName}!I${r}*${inputSheetName}!K${r}/100,0),${inputSheetName}!I${r}*${isoScale}*${pf}),0)`, result: 0 };
       row.getCell(remAfterCol).value = { formula: `MAX(0,${xlCol(remBeforeCol)}${rowNum}-${xlCol(flowCol)}${rowNum})`, result: 0 };
       previousRemainingCol = remAfterCol;
       compOnCols.push(onCol);
@@ -4546,8 +4696,8 @@ function addCalcSheet(wb, sheetName, nodeList, eqMap, inputSheetName, webHours, 
     });
     const supplyCol = col++, systemKwCol = col++, webKwCol = col++, diffCol = col++, qcCol = col++;
     const dryerKwCols = [];
-    let dryerFirstCol = 6 + loads.length + leaks.length + 1;
-    dryers.forEach(() => { dryerKwCols.push(dryerFirstCol); dryerFirstCol += 2; });
+    let dryerFirstCol = 6 + loads.length + leaks.length;
+    dryers.forEach(() => { dryerKwCols.push(dryerFirstCol + 1); dryerFirstCol += 2; });
     row.getCell(supplyCol).value = { formula: compFlowCols.length ? `SUM(${compFlowCols.map(c => `${xlCol(c)}${rowNum}`).join(',')})` : '0', result: webHours?.[i]?.supplyScfm || 0 };
     row.getCell(systemKwCol).value = { formula: `SUM(${[...compPowerCols, ...dryerKwCols].map(c => `${xlCol(c)}${rowNum}`).join(',') || '0'})`, result: webHours?.[i]?.systemKw || 0 };
     row.getCell(webKwCol).value = webHours?.[i]?.systemKw || 0;
@@ -4602,10 +4752,10 @@ function addWarningsSheet(wb) {
   autoWidth(ws, 80);
 }
 
-async function exportFormulaWorkbook() {
+async function buildFormulaWorkbookFile() {
   if (!window.ExcelJS) {
     alert('Excel export library did not load. Check your internet connection or vendor ExcelJS for offline use.');
-    return;
+    return null;
   }
   updateProjectInfo();
   if (!SIM.postNodes) duplicatePreCase();
@@ -4649,13 +4799,75 @@ async function exportFormulaWorkbook() {
   addWarningsSheet(wb);
 
   const buffer = await wb.xlsx.writeBuffer();
-  const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
   const projectSlug = (PROJECT.projectName || 'cas_formula_8760').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'cas_formula_8760';
-  a.download = `${projectSlug}_${new Date().toISOString().slice(0,10)}.xlsx`;
-  a.click();
-  URL.revokeObjectURL(a.href);
+  return {
+    filename: `${projectSlug}_${new Date().toISOString().slice(0,10)}.xlsx`,
+    mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    buffer,
+    blob: new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+  };
+}
+
+async function exportFormulaWorkbook() {
+  const file = await buildFormulaWorkbookFile();
+  if (!file) return;
+  downloadBlob(file.blob, file.filename);
+}
+
+function bytesToBase64(bytes) {
+  let binary = '';
+  const chunkSize = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+  }
+  return btoa(binary);
+}
+
+function foldBase64(base64) {
+  return base64.match(/.{1,76}/g)?.join('\r\n') || '';
+}
+
+function encodeAttachment(file) {
+  const bytes = file.buffer ? new Uint8Array(file.buffer) : new TextEncoder().encode(file.text || '');
+  return foldBase64(bytesToBase64(bytes));
+}
+
+async function reportError() {
+  const projectFile = buildProjectJsonFile();
+  const workbookFile = await buildFormulaWorkbookFile();
+  if (!workbookFile) return;
+
+  const boundary = `cas-error-${Date.now()}`;
+  const body = [
+    'CAS Analyzer error report attached.',
+    '',
+    `Project: ${PROJECT.projectName || '(not specified)'}`,
+    `Customer: ${PROJECT.customerName || '(not specified)'}`,
+    `Generated: ${new Date().toISOString()}`
+  ].join('\r\n');
+  const attachments = [projectFile, workbookFile].map(file => [
+    `--${boundary}`,
+    `Content-Type: ${file.mimeType}; name="${file.filename}"`,
+    'Content-Transfer-Encoding: base64',
+    `Content-Disposition: attachment; filename="${file.filename}"`,
+    '',
+    encodeAttachment(file)
+  ].join('\r\n')).join('\r\n');
+  const eml = [
+    'Subject: ERROR Report',
+    'MIME-Version: 1.0',
+    `Content-Type: multipart/mixed; boundary="${boundary}"`,
+    '',
+    `--${boundary}`,
+    'Content-Type: text/plain; charset="UTF-8"',
+    'Content-Transfer-Encoding: 8bit',
+    '',
+    body,
+    attachments,
+    `--${boundary}--`,
+    ''
+  ].join('\r\n');
+  downloadBlob(new Blob([eml], { type: 'message/rfc822' }), `error_report_${new Date().toISOString().slice(0,10)}.eml`);
 }
 
 // ── CSV download ──────────────────────────────────────────────────
@@ -4970,6 +5182,9 @@ updateSummary();
         <input type="checkbox" id="showPreGhost" checked onchange="renderDetailedCanvas()"> Pre Reference
       </label>
       <button class="btn primary" onclick="runSim8760()">&#9654; Run Simulation</button>
+      <button class="btn" onclick="saveProject()">Save Project</button>
+      <button class="btn" onclick="document.getElementById('projectFileInput').click()">Load Project</button>
+      <button class="btn" onclick="reportError()">Report Error</button>
       <button class="btn" id="btnExportExcel" onclick="exportFormulaWorkbook()">Export to Excel</button>
       <button class="btn" id="btnDlPre"  onclick="downloadCSV('pre')"  style="display:none">&#8659; Pre CSV</button>
       <button class="btn" id="btnDlPost" onclick="downloadCSV('post')" style="display:none">&#8659; Post CSV</button>
