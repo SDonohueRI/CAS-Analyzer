@@ -4550,7 +4550,7 @@ function addCalcSheet(wb, sheetName, nodeList, eqMap, inputSheetName, webHours, 
     dryers.forEach(() => { dryerKwCols.push(dryerFirstCol); dryerFirstCol += 2; });
     row.getCell(supplyCol).value = { formula: compFlowCols.length ? `SUM(${compFlowCols.map(c => `${xlCol(c)}${rowNum}`).join(',')})` : '0', result: webHours?.[i]?.supplyScfm || 0 };
     row.getCell(systemKwCol).value = { formula: `SUM(${[...compPowerCols, ...dryerKwCols].map(c => `${xlCol(c)}${rowNum}`).join(',') || '0'})`, result: webHours?.[i]?.systemKw || 0 };
-    row.getCell(webKwCol).value = { formula: `${xlCol(systemKwCol)}${rowNum}`, result: webHours?.[i]?.systemKw || 0 };
+    row.getCell(webKwCol).value = webHours?.[i]?.systemKw || 0;
     row.getCell(diffCol).value = { formula: `IF(${xlCol(webKwCol)}${rowNum}=0,ABS(${xlCol(systemKwCol)}${rowNum}-${xlCol(webKwCol)}${rowNum}),ABS(${xlCol(systemKwCol)}${rowNum}-${xlCol(webKwCol)}${rowNum})/${xlCol(webKwCol)}${rowNum})`, result: 0 };
     row.getCell(qcCol).value = { formula: `IF(${xlCol(diffCol)}${rowNum}<=1%,"OK","ERROR")`, result: 'OK' };
   }
