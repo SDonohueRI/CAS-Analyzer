@@ -5106,6 +5106,8 @@ updateSummary();
         <input type="checkbox" id="showPreGhost" checked onchange="renderDetailedCanvas()"> Pre Reference
       </label>
       <button class="btn primary" onclick="runSim8760()">&#9654; Run Simulation</button>
+      <button class="btn" onclick="saveProject()">Save Project</button>
+      <button class="btn" onclick="document.getElementById('projectFileInput').click()">Load Project</button>
       <button class="btn" id="btnExportExcel" onclick="exportFormulaWorkbook()">Export to Excel</button>
       <button class="btn" id="btnDlPre"  onclick="downloadCSV('pre')"  style="display:none">&#8659; Pre CSV</button>
       <button class="btn" id="btnDlPost" onclick="downloadCSV('post')" style="display:none">&#8659; Post CSV</button>
