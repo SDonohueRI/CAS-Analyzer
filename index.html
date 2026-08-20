@@ -4537,7 +4537,7 @@ function addCalcSheet(wb, sheetName, nodeList, eqMap, inputSheetName, webHours, 
       row.getCell(capCol).value = { formula: `IF(${xlCol(onCol)}${rowNum}=1,${ratedCap},0)`, result: 0 };
       row.getCell(loadFracCol).value = { formula: `IF(${xlCol(onCol)}${rowNum}=1,IF(${xlCol(capCol)}${rowNum}>0,MIN(1,${xlCol(remBeforeCol)}${rowNum}/${xlCol(capCol)}${rowNum}),0),0)`, result: 0 };
       row.getCell(flowCol).value = { formula: `${xlCol(capCol)}${rowNum}*${xlCol(loadFracCol)}${rowNum}`, result: 0 };
-      row.getCell(powerCol).value = { formula: `IF(${xlCol(onCol)}${rowNum}=1,${inputSheetName}!I${r}*${isoScale}*${pf},0)`, result: 0 };
+      row.getCell(powerCol).value = { formula: `IF(${xlCol(onCol)}${rowNum}=1,IF(${lfCell}<=0,IF(${inputSheetName}!J${r}="lu",${inputSheetName}!I${r}*${inputSheetName}!K${r}/100,0),${inputSheetName}!I${r}*${isoScale}*${pf}),0)`, result: 0 };
       row.getCell(remAfterCol).value = { formula: `MAX(0,${xlCol(remBeforeCol)}${rowNum}-${xlCol(flowCol)}${rowNum})`, result: 0 };
       previousRemainingCol = remAfterCol;
       compOnCols.push(onCol);
