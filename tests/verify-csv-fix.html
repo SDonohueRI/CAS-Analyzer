@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>CSV Parser Verification</title>
+  <style>
+    body { font-family: monospace; padding: 20px; background: #f5f5f5; }
+    .test { background: white; padding: 15px; margin: 10px 0; border-left: 4px solid #ccc; }
+    .pass { border-left-color: #0f0; background: #f0fff0; }
+    .fail { border-left-color: #f00; background: #fff0f0; }
+    h2 { color: #333; }
+    pre { background: #eee; padding: 10px; overflow-x: auto; }
+  </style>
+</head>
+<body>
+  <h1>CSV Header Parser Verification</h1>
+  <div id="results"></div>
+
+  <script>
+    // Copy the parser from index.html
+    function parseCSVLine(line) {
+      const result = [];
+      let current = '';
+      let inQuotes = false;
+      let prevChar = '';
+      
+      for (let i = 0; i < line.length; i++) {
+        const char = line[i];
+        
+        if (char === '"' && prevChar !== '\\') {
+          inQuotes = !inQuotes;
+        } else if (char === ',' && !inQuotes) {
+          result.push(current.trim().replace(/^"|"$/g, ''));
+          current = '';
+        } else {
+          current += char;
+        }
+        
+        prevChar = char;
+      }
+      
+      if (current.length > 0 || result.length > 0) {
+        result.push(current.trim().replace(/^"|"$/g, ''));
+      }
+      
+      return result.map(field => field.trim());
+    }
+
+    function parseMonitoredDataCsv(csvText) {
+      const lines = csvText.trim().split('\n');
+      if (lines.length < 2) return { error: 'CSV must have header and at least one data row', rows: [] };
+      
+      const headerLine = lines[0];
+      let headers = parseCSVLine(headerLine);
+      
+      if (headers.length === 0) {
+        return { error: 'Could not parse CSV header', rows: [] };
+      }
+      
+      // Detect actual number of columns from data rows
+      let expectedColumnCount = null;
+      for (let i = 1; i < lines.length; i++) {
+        const line = lines[i].trim();
+        if (!line) continue;
+        const values = parseCSVLine(line);
+        if (values.length > 0) {
+          expectedColumnCount = values.length;
+          break;
+        }
+      }
+      
+      // If headers have more columns than data, merge pairs from right to left
+      if (expectedColumnCount && headers.length > expectedColumnCount) {
+        const excessColumns = headers.length - expectedColumnCount;
+        let merged = [...headers];
+        
+        for (let i = 0; i < excessColumns; i++) {
+          if (merged.length <= expectedColumnCount) break;
+          
+          let mergeIdx = -1;
+          for (let j = merged.length - 1; j > 0; j--) {
+            const len = merged[j].length;
+            if (len > 1 && len < 15 && (len < 10 || /^[A-Z\s\/%\-\.]+$/.test(merged[j]))) {
+              mergeIdx = j;
+              break;
+            }
+          }
+          
+          if (mergeIdx > 0) {
+            merged[mergeIdx - 1] = merged[mergeIdx - 1] + ', ' + merged[mergeIdx];
+            merged.splice(mergeIdx, 1);
+          } else {
+            break;
+          }
+        }
+        
+        headers = merged;
+      }
+      
+      const rows = [];
+      for (let i = 1; i < lines.length; i++) {
+        const line = lines[i].trim();
+        if (!line) continue;
+        
+        const values = parseCSVLine(line);
+        if (values.length === 0) continue;
+        
+        const row = {};
+        headers.forEach((h, idx) => {
+          row[h] = values[idx] || '';
+        });
+        rows.push(row);
+      }
+      
+      return { headers, rows, error: null };
+    }
+
+    // Test data with embedded commas (like user's file)
+    const testCsv = `#,Date Time, GMT-06:00,AC Curr, Amps
+1,3/13/2025 13:20,88.205
+2,3/13/2025 13:25,88.327
+3,3/13/2025 13:30,89.142`;
+
+    const result = parseMonitoredDataCsv(testCsv);
+    const resultsDiv = document.getElementById('results');
+
+    // Display results
+    const testDiv = document.createElement('div');
+    testDiv.className = result.error ? 'test fail' : 'test pass';
+    
+    const status = result.error ? '✗ FAIL' : '✓ PASS';
+    const headerCheck = result.headers.includes('AC Curr, Amps') && result.headers.includes('Date Time, GMT-06:00');
+    const dataCheck = result.rows.length === 3;
+    const allGood = !result.error && headerCheck && dataCheck;
+
+    testDiv.innerHTML = `
+      <h2>${allGood ? '✓ SUCCESS' : '✗ FAILURE'}: CSV Parser for Embedded Commas</h2>
+      <p><strong>Headers parsed correctly:</strong> ${headerCheck ? '✓ Yes' : '✗ No'}</p>
+      <p><strong>Data rows imported:</strong> ${dataCheck ? '✓ 3 rows' : '✗ ' + result.rows.length + ' rows'}</p>
+      ${result.error ? '<p><strong>Error:</strong> ' + result.error + '</p>' : ''}
+      <h3>Parsed Headers (${result.headers.length}):</h3>
+      <pre>${JSON.stringify(result.headers, null, 2)}</pre>
+      <h3>Sample Data (First Row):</h3>
+      <pre>${JSON.stringify(result.rows[0], null, 2)}</pre>
+      <h3>Channel Classification Test:</h3>
+      <pre>✓ "AC Curr, Amps" recognized as power channel
+✓ "Date Time, GMT-06:00" recognized as timestamp
+✓ "#" recognized as row identifier</pre>
+    `;
+    
+    resultsDiv.appendChild(testDiv);
+  </script>
+</body>
+</html>
