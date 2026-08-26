@@ -23,18 +23,98 @@
 
   <script>
     // Extract and copy the relevant functions from index.html
+    function parseCSVLine(line) {
+      const result = [];
+      let current = '';
+      let inQuotes = false;
+      let prevChar = '';
+      
+      for (let i = 0; i < line.length; i++) {
+        const char = line[i];
+        
+        if (char === '"' && prevChar !== '\\') {
+          inQuotes = !inQuotes;
+        } else if (char === ',' && !inQuotes) {
+          result.push(current.trim().replace(/^"|"$/g, ''));
+          current = '';
+        } else {
+          current += char;
+        }
+        
+        prevChar = char;
+      }
+      
+      if (current.length > 0 || result.length > 0) {
+        result.push(current.trim().replace(/^"|"$/g, ''));
+      }
+      
+      return result.map(field => field.trim());
+    }
+
     function parseMonitoredDataCsv(csvText) {
       const lines = csvText.trim().split('\n');
       if (lines.length < 2) return { error: 'CSV must have header and at least one data row', rows: [] };
       
       const headerLine = lines[0];
-      const headers = headerLine.split(',').map(h => h.trim());
-      const rows = [];
+      let headers = parseCSVLine(headerLine);
       
+      if (headers.length === 0) {
+        return { error: 'Could not parse CSV header', rows: [] };
+      }
+      
+      // Detect actual number of columns from data rows (handles unquoted headers with embedded commas)
+      let expectedColumnCount = null;
       for (let i = 1; i < lines.length; i++) {
         const line = lines[i].trim();
         if (!line) continue;
-        const values = line.split(',').map(v => v.trim());
+        const values = parseCSVLine(line);
+        if (values.length > 0) {
+          expectedColumnCount = values.length;
+          break;
+        }
+      }
+      
+      // If headers have more columns than data, merge pairs from right to left
+      // This handles cases like "AC Curr, Amps" which gets split into two fields
+      if (expectedColumnCount && headers.length > expectedColumnCount) {
+        const excessColumns = headers.length - expectedColumnCount;
+        let merged = [...headers];
+        
+        // Work from right to left, merging adjacent pairs
+        for (let i = 0; i < excessColumns; i++) {
+          if (merged.length <= expectedColumnCount) break;
+          
+          // Find the rightmost pair where the right element looks like a descriptor/unit
+          let mergeIdx = -1;
+          for (let j = merged.length - 1; j > 0; j--) {
+            const len = merged[j].length;
+            // Look for headers that look like descriptors: short but not too short, or all-caps units
+            if (len > 1 && len < 15 && (len < 10 || /^[A-Z\s\/%\-\.]+$/.test(merged[j]))) {
+              mergeIdx = j;
+              break;
+            }
+          }
+          
+          if (mergeIdx > 0) {
+            // Merge with previous header
+            merged[mergeIdx - 1] = merged[mergeIdx - 1] + ', ' + merged[mergeIdx];
+            merged.splice(mergeIdx, 1);
+          } else {
+            break;
+          }
+        }
+        
+        headers = merged;
+      }
+      
+      const rows = [];
+      for (let i = 1; i < lines.length; i++) {
+        const line = lines[i].trim();
+        if (!line) continue;
+        
+        const values = parseCSVLine(line);
+        if (values.length === 0) continue;
+        
         const row = {};
         headers.forEach((h, idx) => {
           row[h] = values[idx] || '';
@@ -57,7 +137,8 @@
       }
       // Check flow BEFORE pressure
       if (lower.includes('scfm') || lower.includes('flow') || lower.includes('cfm')) return 'flow';
-      if (lower.includes('kw') || lower.includes('power')) return 'power';
+      // Check power including AC Curr/Amps
+      if (lower.includes('kw') || lower.includes('power') || lower.includes('ac curr') || lower.includes('curr') || lower.includes('amps') || lower.includes('amperage')) return 'power';
       if (lower.includes('press') || lower.includes('psi')) return 'pressure';
       if (lower.includes('temp')) return 'temperature';
       if (lower.includes('time') || lower.includes('date') || lower.includes('timestamp')) return 'timestamp';
@@ -194,6 +275,28 @@
       };
     });
 
+    test('CSV Parsing: Headers with Embedded Commas', () => {
+      const csv = `Date Time, GMT-06:00,AC Curr, Amps\n3/13/2025 13:20,88.205\n3/13/2025 13:25,88.327`;
+      const result = parseMonitoredDataCsv(csv);
+      const passed = result.rows.length === 2 && result.headers.includes('AC Curr, Amps');
+      return {
+        passed,
+        message: `Correctly parsed headers with embedded commas (${result.headers.length} columns)`,
+        details: `Headers: [${result.headers.map(h => '"' + h + '"').join(', ')}]\nFirst row: ${JSON.stringify(result.rows[0])}`
+      };
+    });
+
+    test('CSV Parsing: Quoted Fields', () => {
+      const csv = `col1,"col2, with comma",col3\nval1,"val2, with comma",val3`;
+      const result = parseMonitoredDataCsv(csv);
+      const passed = result.rows.length === 1 && result.rows[0]['col2, with comma'] === 'val2, with comma';
+      return {
+        passed,
+        message: `Correctly parsed quoted fields with embedded commas`,
+        details: JSON.stringify(result.rows[0], null, 2)
+      };
+    });
+
     test('CSV Parsing: Empty Lines', () => {
       const csv = `timestamp,kw\n2026-08-01T10:00:00,80\n\n2026-08-01T10:05:00,85`;
       const result = parseMonitoredDataCsv(csv);
@@ -205,13 +308,27 @@
       };
     });
 
+    test('CSV Parsing: Logger Format (# Column + Embedded Commas)', () => {
+      const csv = `#,Date Time, GMT-06:00,AC Curr, Amps\n1,3/13/2025 13:20,88.205\n2,3/13/2025 13:25,88.327`;
+      const result = parseMonitoredDataCsv(csv);
+      const hasDateCol = result.headers.includes('Date Time, GMT-06:00');
+      const hasAmpCol = result.headers.includes('AC Curr, Amps');
+      const passed = result.rows.length === 2 && hasDateCol && hasAmpCol;
+      return {
+        passed,
+        message: `Correctly parsed logger format with # column and embedded commas`,
+        details: `Headers: [${result.headers.map(h => '"' + h + '"').join(', ')}]\nData rows: ${result.rows.length}`
+      };
+    });
+
     test('Channel Classification', () => {
       const tests = [
         { name: 'COMP_1_KW', expected: 'power' },
         { name: 'HEADER_PRESS', expected: 'pressure' },
         { name: 'COMPRESSOR_SCFM', expected: 'flow' },
         { name: 'CUM_KWH', expected: 'cumulative_energy' },
-        { name: 'TIMESTAMP', expected: 'timestamp' }
+        { name: 'TIMESTAMP', expected: 'timestamp' },
+        { name: 'AC Curr, Amps', expected: 'power' }
       ];
       
       const results = tests.map(t => ({
