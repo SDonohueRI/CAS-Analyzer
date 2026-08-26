@@ -3101,6 +3101,288 @@ function assessCalibrationStatus(metrics, peakError, energyError) {
   }
 }
 
+// Monitored data import and calibration workflow
+function handleMonitoredDataImport(event) {
+  const file = event.target.files?.[0];
+  event.target.value = '';
+  if (!file) return;
+  
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const csvText = reader.result;
+      const parsed = parseMonitoredDataCsv(csvText);
+      
+      if (parsed.error) {
+        alert('CSV Error: ' + parsed.error);
+        return;
+      }
+      
+      if (parsed.rows.length === 0) {
+        alert('No data rows found in CSV');
+        return;
+      }
+      
+      // Create a new dataset record
+      const datasetId = 'dataset_' + Date.now();
+      const dataset = {
+        id: datasetId,
+        sourceType: 'external_logger',
+        fileName: file.name,
+        periodStart: null,
+        periodEnd: null,
+        intervalMinutes: 15,
+        confidence: 'medium',
+        channels: [],
+        qa: { rowsImported: parsed.rows.length },
+        rawRows: parsed.rows,
+        headers: parsed.headers
+      };
+      
+      // Show channel mapping dialog
+      showChannelMappingDialog(dataset);
+      
+    } catch (err) {
+      alert('Error parsing CSV: ' + err.message);
+    }
+  };
+  reader.readAsText(file);
+}
+
+function showChannelMappingDialog(dataset) {
+  // Auto-classify headers
+  const mappings = dataset.headers.map(col => ({
+    sourceColumn: col,
+    mappedTo: classifyChannel(col, []),
+    channelType: classifyChannel(col, []),
+    confirmed: false
+  }));
+  
+  const dialogHtml = `
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:16px;max-width:600px;max-height:80vh;overflow-y:auto;">
+      <h3 style="margin:0 0 12px 0;color:var(--accent);font-family:monospace">Map Monitored Data Channels</h3>
+      <p style="font-size:11px;color:var(--text2);margin-bottom:12px">${dataset.rowsImported} data rows from "${dataset.fileName}"</p>
+      
+      <div style="margin-bottom:12px;">
+        <label style="display:block;font-size:11px;color:var(--text3);margin-bottom:4px;text-transform:uppercase;letter-spacing:.8px">Data Period</label>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <input type="date" id="mvPeriodStart" style="flex:1;padding:4px 6px;background:var(--surface2);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:11px">
+          <span style="color:var(--text2)">to</span>
+          <input type="date" id="mvPeriodEnd" style="flex:1;padding:4px 6px;background:var(--surface2);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:11px">
+        </div>
+      </div>
+      
+      <div style="margin-bottom:12px;">
+        <label style="display:block;font-size:11px;color:var(--text3);margin-bottom:4px;text-transform:uppercase;letter-spacing:.8px">Interval</label>
+        <select id="mvInterval" style="width:100%;padding:4px 6px;background:var(--surface2);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:11px">
+          <option value="1">1-minute data</option>
+          <option value="5">5-minute data</option>
+          <option value="15" selected>15-minute data</option>
+          <option value="30">30-minute data</option>
+          <option value="60">Hourly data</option>
+        </select>
+      </div>
+      
+      <div style="margin-bottom:12px;">
+        <label style="display:block;font-size:11px;color:var(--text3);margin-bottom:6px;text-transform:uppercase;letter-spacing:.8px">Channel Mappings</label>
+        <div id="mvMappingsList" style="border:1px solid var(--border);border-radius:6px;overflow:hidden;"></div>
+      </div>
+      
+      <div style="display:flex;gap:8px;justify-content:flex-end;">
+        <button class="btn" onclick="closeMappingDialog()">Cancel</button>
+        <button class="btn primary" onclick="confirmChannelMapping()">Import & Resample</button>
+      </div>
+    </div>
+  `;
+  
+  // Store the current mapping state
+  window._mvCurrentDataset = dataset;
+  window._mvCurrentMappings = mappings;
+  
+  // Show in overlay
+  const overlay = document.createElement('div');
+  overlay.id = 'mvMappingOverlay';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;z-index:2000;';
+  overlay.innerHTML = dialogHtml;
+  document.body.appendChild(overlay);
+  
+  // Render mappings
+  const list = document.getElementById('mvMappingsList');
+  mappings.forEach((m, idx) => {
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:8px 10px;border-bottom:1px solid var(--border);font-size:11px;';
+    if (idx === mappings.length - 1) row.style.borderBottom = 'none';
+    
+    row.innerHTML = `
+      <span style="color:var(--text2);flex:0 0 120px;word-break:break-all">${m.sourceColumn}</span>
+      <span style="color:var(--text3)">→</span>
+      <select style="flex:1;background:var(--surface3);border:1px solid var(--border);color:var(--text);border-radius:3px;padding:3px 4px;font-size:10px" onchange="updateMapping(${idx}, this.value)">
+        <option value="timestamp" ${m.mappedTo === 'timestamp' ? 'selected' : ''}>Timestamp</option>
+        <option value="power" ${m.mappedTo === 'power' ? 'selected' : ''}>Compressor kW</option>
+        <option value="pressure" ${m.mappedTo === 'pressure' ? 'selected' : ''}>Header Pressure</option>
+        <option value="flow" ${m.mappedTo === 'flow' ? 'selected' : ''}>Flow (SCFM)</option>
+        <option value="status" ${m.mappedTo === 'status' ? 'selected' : ''}>Status/On-Off</option>
+        <option value="temperature" ${m.mappedTo === 'temperature' ? 'selected' : ''}>Temperature</option>
+        <option value="cumulative_energy" ${m.mappedTo === 'cumulative_energy' ? 'selected' : ''}>Cumulative kWh</option>
+        <option value="unknown" ${m.mappedTo === 'unknown' ? 'selected' : ''}>Skip / Unknown</option>
+      </select>
+    `;
+    list.appendChild(row);
+  });
+}
+
+function updateMapping(index, value) {
+  if (window._mvCurrentMappings) {
+    window._mvCurrentMappings[index].mappedTo = value;
+    window._mvCurrentMappings[index].channelType = value;
+  }
+}
+
+function confirmChannelMapping() {
+  const dataset = window._mvCurrentDataset;
+  const mappings = window._mvCurrentMappings;
+  const interval = document.getElementById('mvInterval')?.value || 15;
+  const start = document.getElementById('mvPeriodStart')?.value;
+  const end = document.getElementById('mvPeriodEnd')?.value;
+  
+  if (!start || !end) {
+    alert('Please select data period start and end dates');
+    return;
+  }
+  
+  // Filter mappings to skip unknown
+  const activeMappings = mappings.filter(m => m.mappedTo !== 'unknown');
+  
+  // Resample the data
+  const resampled = resampleTo15Minutes({ rows: dataset.rawRows }, activeMappings);
+  
+  if (resampled.error) {
+    alert('Resampling error: ' + resampled.error);
+    return;
+  }
+  
+  // Store in MONITORED_DATA
+  dataset.channels = activeMappings;
+  dataset.intervalMinutes = parseInt(interval);
+  dataset.periodStart = start;
+  dataset.periodEnd = end;
+  dataset.data15min = resampled.interval15;
+  dataset.qa = resampled.qa;
+  dataset.confidence = 'medium';
+  
+  MONITORED_DATA.datasets.push(dataset);
+  MONITORED_DATA.confidenceLevel = 'meter-informed';
+  
+  // Update UI
+  document.getElementById('btnRunCalibration').style.display = 'inline-block';
+  document.getElementById('mvDataStatus').textContent = `Loaded: ${dataset.fileName}`;
+  document.getElementById('monitoredDataPanel').style.display = 'block';
+  
+  // Show import summary
+  const info = `<strong>${activeMappings.length} channels</strong> from ${resampled.interval15.length} intervals (${dataset.periodStart} to ${dataset.periodEnd})`;
+  document.getElementById('mvDataInfo').innerHTML = info;
+  
+  closeMappingDialog();
+}
+
+function closeMappingDialog() {
+  const overlay = document.getElementById('mvMappingOverlay');
+  if (overlay) overlay.remove();
+}
+
+// Baseline calibration: compare pre case against monitored data
+function runBaselineCalibration() {
+  if (MONITORED_DATA.datasets.length === 0) {
+    alert('No monitored data loaded');
+    return;
+  }
+  
+  if (!SIM.resultsPreHours || SIM.resultsPreHours.length === 0) {
+    alert('Run Simulation first to generate Pre Case hourly results');
+    return;
+  }
+  
+  const dataset = MONITORED_DATA.datasets[0];
+  const hourlyMeasured = aggregateTo1Hour(dataset.data15min);
+  
+  // Extract hourly kW from pre case model
+  const modeledKw = SIM.resultsPreHours.map(row => row.kW || 0);
+  const measuredKw = hourlyMeasured.map(row => row.compressor_kw || null).filter(v => v !== null);
+  
+  // Calculate metrics
+  const metrics = calculateValidationMetrics(measuredKw, modeledKw.slice(0, measuredKw.length));
+  const peakError = calculatePeakKwError(measuredKw, modeledKw.slice(0, measuredKw.length));
+  const energyError = compareAnnualEnergy(measuredKw, modeledKw.slice(0, measuredKw.length));
+  const status = assessCalibrationStatus(metrics, peakError, energyError);
+  
+  // Store results
+  MONITORED_DATA.baselineCalibration = {
+    measuredKwh: energyError.measuredKwh,
+    modeledKwh: energyError.modeledKwh,
+    errorPct: energyError.errorPct,
+    errorKwh: energyError.errorKwh,
+    peakKwErrorPct: peakError,
+    cvrmsePct: metrics.cvrmse,
+    nmbePct: metrics.nmbe,
+    maePct: metrics.mae,
+    status: status.status,
+    validationIssues: status.issues,
+    dataPoints: metrics.n
+  };
+  
+  if (status.status === 'PASS') {
+    MONITORED_DATA.confidenceLevel = 'baseline-calibrated';
+  } else if (status.status === 'REVIEW') {
+    MONITORED_DATA.confidenceLevel = 'meter-informed';
+  }
+  
+  // Display results
+  displayCalibrationResults();
+}
+
+function displayCalibrationResults() {
+  const cal = MONITORED_DATA.baselineCalibration;
+  if (!cal) return;
+  
+  const resultsPanel = document.getElementById('mvCalibrationResults');
+  const metricsDiv = document.getElementById('mvMetricsDisplay');
+  const statusBadge = document.getElementById('mvStatusBadge');
+  const interpretation = document.getElementById('mvInterpretation');
+  
+  resultsPanel.style.display = 'block';
+  
+  metricsDiv.innerHTML = `
+    <div><strong>Annual kWh:</strong> ${cal.measuredKwh.toFixed(0)} (measured) vs ${cal.modeledKwh.toFixed(0)} (modeled)</div>
+    <div><strong>Energy Error:</strong> ${cal.errorPct > 0 ? '+' : ''}${cal.errorPct.toFixed(1)}% (${cal.errorKwh > 0 ? '+' : ''}${cal.errorKwh.toFixed(0)} kWh)</div>
+    <div><strong>Peak kW Error:</strong> ${cal.peakKwErrorPct.toFixed(1)}%</div>
+    <div><strong>CVRMSE:</strong> ${cal.cvrmsePct.toFixed(1)}%</div>
+    <div><strong>NMBE:</strong> ${cal.nmbePct > 0 ? '+' : ''}${cal.nmbePct.toFixed(1)}%</div>
+    <div style="font-size:10px;color:var(--text3);margin-top:4px">${cal.dataPoints} hourly intervals compared</div>
+  `;
+  
+  const statusColors = {
+    'PASS': { bg: '#3fb950', text: '#fff' },
+    'REVIEW': { fg: '#f0a93a', bg: 'rgba(240,169,58,.2)' },
+    'FAIL': { bg: '#f85149', text: '#fff' }
+  };
+  
+  const colors = statusColors[cal.status] || statusColors['REVIEW'];
+  statusBadge.textContent = cal.status;
+  statusBadge.style.background = colors.bg;
+  statusBadge.style.color = colors.text || '#000';
+  
+  let msg = '';
+  if (cal.status === 'PASS') {
+    msg = `✓ Baseline model calibrated within acceptable tolerances (CVRMSE ≤15%, NMBE ±5%, Peak ≤10%, Energy ≤10%).`;
+  } else if (cal.status === 'REVIEW') {
+    msg = `⚠ Model has ${cal.validationIssues.length} calibration issue${cal.validationIssues.length !== 1 ? 's' : ''}: ${cal.validationIssues.join(', ')}. Review assumptions and metered values.`;
+  } else {
+    msg = `✗ Model failed baseline calibration (${cal.validationIssues.length} issues). Adjust inputs before validating savings.`;
+  }
+  
+  interpretation.innerHTML = msg;
+}
+
 // ═══════════════════════════════════════════════════════════════
 // 8760 SIMULATION MODULE
 // ═══════════════════════════════════════════════════════════════
@@ -5595,7 +5877,15 @@ updateSummary();
     </div>
     <div style="width:1px;height:24px;background:var(--border)"></div>
     <button class="btn" id="btnDupPre" onclick="duplicatePreCase()" title="Copy Pre Case to Post Case">&#10064; Duplicate Pre&#8594;Post</button>
-    <div style="margin-left:auto;display:flex;gap:8px;">
+    <div style="margin-left:auto;display:flex;gap:8px;align-items:center;">
+      <div style="display:flex;align-items:center;gap:6px;padding:0 8px;border-left:1px solid var(--border);border-right:1px solid var(--border);">
+        <label style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text2);cursor:pointer;" title="Import DDC trend, logger export, or utility data">
+          &#128192; <input type="file" id="mvDataFileInput" accept=".csv,.xlsx,.txt" style="display:none" onchange="handleMonitoredDataImport(event)">
+          <span id="mvDataStatus" style="color:var(--text3)">Import Data</span>
+        </label>
+        <button class="btn" onclick="document.getElementById('mvDataFileInput').click()" style="padding:3px 8px;font-size:10px" title="Import monitored data CSV">Upload</button>
+        <button class="btn" id="btnRunCalibration" onclick="runBaselineCalibration()" style="padding:3px 8px;font-size:10px;display:none" title="Compare Pre Case model against monitored data">Calibrate</button>
+      </div>
       <label style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--text2);padding:0 6px" title="Show the Pre Case as a faded reference behind the editable Post Case">
         <input type="checkbox" id="showPreGhost" checked onchange="renderDetailedCanvas()"> Pre Reference
       </label>
@@ -5717,6 +6007,18 @@ updateSummary();
           <canvas id="chartFlow"    height="140" style="width:100%;margin-bottom:8px;"></canvas>
 
           </div>
+        </div>
+      </div>
+      <div id="monitoredDataPanel" style="display:none;padding:12px 14px;border-top:1px solid var(--border);overflow-y:auto;">
+        <div class="panel-title">Monitored Data Validation</div>
+        <div id="mvDataInfo" style="font-size:11px;color:var(--text3);margin-bottom:8px;">—</div>
+        <div id="mvCalibrationResults" style="display:none;">
+          <div style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:10px;margin-bottom:8px;">
+            <div style="font-size:10px;font-weight:600;color:var(--accent);margin-bottom:6px;">BASELINE CALIBRATION</div>
+            <div id="mvMetricsDisplay" style="font-size:11px;color:var(--text2);line-height:1.8;"></div>
+            <div id="mvStatusBadge" style="margin-top:8px;padding:4px 8px;border-radius:4px;font-weight:600;font-size:11px;text-align:center;color:#000;"></div>
+          </div>
+          <div style="font-size:10px;color:var(--text3);line-height:1.6;padding:6px 8px;background:var(--surface3);border-radius:4px;" id="mvInterpretation">—</div>
         </div>
       </div>
     </div>
