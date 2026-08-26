@@ -4411,24 +4411,89 @@ function runBaselineCalibration() {
   }
   
   const measuredSystem = buildMeasuredSystemPowerSeries(MONITORED_DATA.datasets);
-  
-  // Extract hourly kW from pre case model
-  const modeledKw = SIM.resultsPreHours.map(row => row.kW || 0);
   const measuredKw = measuredSystem.values;
 
   if (measuredKw.length === 0) {
     alert('No measured kW/power channels were found in the imported monitored data. Map each compressor or system power channel, or use amps-to-kW conversion during import, then import again.');
     return;
   }
+
+  // Get date range from monitored data
+  let minDate = null, maxDate = null;
+  MONITORED_DATA.datasets.forEach(dataset => {
+    if (dataset.periodStart) {
+      const d = new Date(dataset.periodStart);
+      if (!minDate || d < minDate) minDate = d;
+    }
+    if (dataset.periodEnd) {
+      const d = new Date(dataset.periodEnd);
+      if (!maxDate || d > maxDate) maxDate = d;
+    }
+  });
+
+  // Filter model results to only match monitored data date range
+  let modeledHours = SIM.resultsPreHours;
+  if (minDate && maxDate) {
+    const minDateStr = `${minDate.getFullYear()}-${String(minDate.getMonth()+1).padStart(2,'0')}-${String(minDate.getDate()).padStart(2,'0')}`;
+    const maxDateStr = `${maxDate.getFullYear()}-${String(maxDate.getMonth()+1).padStart(2,'0')}-${String(maxDate.getDate()).padStart(2,'0')}`;
+    modeledHours = SIM.resultsPreHours.filter(hr => {
+      const hrDateStr = hr.dateStr || '';
+      return hrDateStr >= minDateStr && hrDateStr <= maxDateStr;
+    });
+    if (modeledHours.length === 0) {
+      alert(`No model results found for monitored data period (${minDateStr} to ${maxDateStr}). Check that the Simulation Year matches your monitored data dates.`);
+      return;
+    }
+  }
+
+  // Extract hourly kW from pre case model (filtered to monitored data date range)
+  const modeledKw = modeledHours.map(row => row.kW || 0);
+  
+  // Build a map of model results by date+hour for alignment with measured data
+  const modelsByDateHour = new Map();
+  modeledHours.forEach(hr => {
+    // Create key as YYYY-MM-DD HH:00:00 for matching
+    const key = `${hr.dateStr} ${String(hr.hourOfDay).padStart(2,'0')}:00:00`;
+    modelsByDateHour.set(key, hr.kW || 0);
+  });
+  
+  // Align measured data to model data by timestamp
+  // measuredSystem.hourly contains {timestamp, measuredKw, sourceCount}
+  let alignedMeasured = [];
+  let alignedModeled = [];
+  if (measuredSystem.hourly && measuredSystem.hourly.length > 0) {
+    measuredSystem.hourly.forEach(measRow => {
+      const ts = measRow.timestamp;
+      // Parse timestamp - handle ISO format with or without timezone
+      const match = ts.match(/(\d{4})-(\d{2})-(\d{2})T(\d{2}):/);
+      if (match) {
+        const [, year, month, day, hour] = match;
+        const key = `${year}-${month}-${day} ${hour}:00:00`;
+        const modelKw = modelsByDateHour.get(key) ?? 0;
+        alignedMeasured.push(measRow.measuredKw);
+        alignedModeled.push(modelKw);
+      }
+    });
+  }
+  
+  // Fallback: if timestamp alignment didn't work, use simple slice
+  if (alignedMeasured.length === 0) {
+    alignedMeasured = measuredKw;
+    alignedModeled = modeledKw.slice(0, measuredKw.length);
+    if (alignedModeled.length === 0) {
+      alert('Could not align monitored data with model results. Verify that both are using the same date range.');
+      return;
+    }
+  }
   
   // Calculate metrics
-  const metrics = calculateValidationMetrics(measuredKw, modeledKw.slice(0, measuredKw.length));
+  const metrics = calculateValidationMetrics(alignedMeasured, alignedModeled);
   if (metrics.error) {
     alert('Calibration error: ' + metrics.error);
     return;
   }
-  const peakError = calculatePeakKwError(measuredKw, modeledKw.slice(0, measuredKw.length));
-  const energyError = compareAnnualEnergy(measuredKw, modeledKw.slice(0, measuredKw.length));
+  const peakError = calculatePeakKwError(alignedMeasured, alignedModeled);
+  const energyError = compareAnnualEnergy(alignedMeasured, alignedModeled);
   const status = assessCalibrationStatus(metrics, peakError, energyError);
   
   // Store results
