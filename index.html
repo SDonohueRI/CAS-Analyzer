@@ -720,6 +720,32 @@ let colourMode='flow'; // 'flow' | 'pressure'
 // connPressure[connId] = psi at that point in the system
 
 // ═══════════════════════════════════════════
+// MONITORED DATA STATE (M&V Validation)
+// ═══════════════════════════════════════════
+const MONITORED_DATA = {
+  datasets: [],           // [{id, sourceType, fileName, periodStart, periodEnd, intervalMinutes, confidence, channels, qa, data15min, hourlyData}]
+  confidenceLevel: 'modeled', // 'modeled'|'meter-informed'|'baseline-calibrated'|'field-validated'|'not-validated'
+  baselineCalibration: null,  // {measuredKwh, modeledKwh, errorPct, peakKwErrorPct, cvrmsePct, nmbePct, status}
+  savingsValidation: null,    // {preMeasuredKwh, preModeledKwh, postMeasuredKwh, postModeledKwh, savingsValidated}
+  calibrationNotes: ''
+};
+
+// Monitored data configuration and limits
+const MONITORED_DATA_CONFIG = {
+  maxUploadSizeMb: 100,
+  warnUploadSizeMb: 25,
+  maxRows: 1000000,
+  warnRows: 250000,
+  maxChannels: 50,
+  warnChannels: 25,
+  defaultTargetIntervalMinutes: 15,
+  minDataCompletenessPct: 75,
+  warnDataCompletenessPct: 90,
+  maxGapFillIntervals: 2,
+  maxGapFillMinutes: 15
+};
+
+// ═══════════════════════════════════════════
 // CANVAS 2D SETUP
 // ═══════════════════════════════════════════
 const canvas = document.getElementById('connCanvas');
@@ -2019,10 +2045,12 @@ function computeDrainAirLoss(node, linePressurePsig) {
 // In path analysis: regulator sets downstream pressure to setPressure
 // regardless of upstream (as long as upstream > setPressure + upstreamMargin)
 function regulatorDp(regNode, upstreamPressure) {
-  const setP   = regNode.props.setPressure   || 90;
-  const margin = regNode.props.upstreamMargin || 10;
+  const setP   = Number(regNode.props.setPressure ?? 90);
+  const margin = Number(regNode.props.upstreamMargin ?? 10);
+  const rawName = (regNode.props.name ?? 'Regulator').toString().trim();
+  const regName = rawName || 'Regulator';
   if (upstreamPressure < setP + margin) {
-    return { dP: 0, alert: `Regulator "${regNode.props.name}" approaching droop — upstream ${upstreamPressure.toFixed(1)} psi < set ${setP} + margin ${margin}` };
+    return { dP: 0, alert: `${regName}: low regulator inlet pressure warning. Upstream ${upstreamPressure.toFixed(1)} psi is below required ${(setP + margin).toFixed(1)} psi (setpoint ${setP} + margin ${margin}). Downstream pressure may fall below setpoint.` };
   }
   return { dP: upstreamPressure - setP, alert: null };
 }
@@ -2564,6 +2592,13 @@ function buildProjectData() {
       postEquipment: JSON.parse(JSON.stringify(SIM.postEquipment)),
       currentCase: SIM.currentCase,
       changeGroups: JSON.parse(JSON.stringify(SIM.changeGroups))
+    },
+    monitoredData: {
+      datasets: JSON.parse(JSON.stringify(MONITORED_DATA.datasets)),
+      confidenceLevel: MONITORED_DATA.confidenceLevel,
+      baselineCalibration: MONITORED_DATA.baselineCalibration ? JSON.parse(JSON.stringify(MONITORED_DATA.baselineCalibration)) : null,
+      savingsValidation: MONITORED_DATA.savingsValidation ? JSON.parse(JSON.stringify(MONITORED_DATA.savingsValidation)) : null,
+      calibrationNotes: MONITORED_DATA.calibrationNotes
     }
   };
 }
@@ -2600,6 +2635,12 @@ function applyProjectData(data) {
   SIM.changeGroups = JSON.parse(JSON.stringify(data.sim?.changeGroups || []));
   SIM.resultsPreHours = null;
   SIM.resultsPostHours = null;
+  // Restore monitored data
+  MONITORED_DATA.datasets = JSON.parse(JSON.stringify(data.monitoredData?.datasets || []));
+  MONITORED_DATA.confidenceLevel = data.monitoredData?.confidenceLevel || 'modeled';
+  MONITORED_DATA.baselineCalibration = data.monitoredData?.baselineCalibration || null;
+  MONITORED_DATA.savingsValidation = data.monitoredData?.savingsValidation || null;
+  MONITORED_DATA.calibrationNotes = data.monitoredData?.calibrationNotes || '';
   renderProjectInfo();
   syncMainCanvasFromState();
   selectNode(null);
@@ -2682,6 +2723,383 @@ function loadExample(){
   },10);
 }
 
+
+// ═══════════════════════════════════════════════════════════════
+// MONITORED DATA M&V FUNCTIONS
+// ═══════════════════════════════════════════════════════════════
+
+// CSV parsing
+function parseMonitoredDataCsv(csvText) {
+  const lines = csvText.trim().split('\n');
+  if (lines.length < 2) return { error: 'CSV must have header and at least one data row', rows: [] };
+  
+  const headerLine = lines[0];
+  const headers = headerLine.split(',').map(h => h.trim());
+  const rows = [];
+  
+  for (let i = 1; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (!line) continue;
+    const values = line.split(',').map(v => v.trim());
+    const row = {};
+    headers.forEach((h, idx) => {
+      row[h] = values[idx] || '';
+    });
+    rows.push(row);
+  }
+  
+  return { headers, rows, error: null };
+}
+
+// Channel type detection and classification
+function classifyChannel(columnName, sampleValues) {
+  const lower = columnName.toLowerCase();
+  
+  // Detect cumulative counter (kWh, scf, hours)
+  if (lower.includes('kwh') || lower.includes('energy') || lower.includes('cumulative')) {
+    const numVals = sampleValues.filter(v => !isNaN(v) && v !== '').map(Number);
+    if (numVals.length > 1) {
+      const isIncreasing = numVals.every((v, i, arr) => i === 0 || v >= arr[i-1]);
+      if (isIncreasing) return 'cumulative_energy';
+    }
+    return 'cumulative';
+  }
+  if (lower.includes('scf') && lower.includes('cumulative')) return 'cumulative_flow';
+  if (lower.includes('hour') && lower.includes('cumulative')) return 'cumulative_runtime';
+  
+  // Detect status/state signals
+  if (lower.includes('status') || lower.includes('state') || lower.includes('on/off') || lower.includes('loaded')) {
+    return 'status';
+  }
+  
+  // Detect kW or power
+  if (lower.includes('kw') || lower.includes('power')) return 'power';
+  
+  // Detect pressure
+  if (lower.includes('press') || lower.includes('psi')) return 'pressure';
+  
+  // Detect flow
+  if (lower.includes('scfm') || lower.includes('flow') || lower.includes('cfm')) return 'flow';
+  
+  // Detect temperature
+  if (lower.includes('temp') || lower.includes('temperature')) return 'temperature';
+  
+  // Detect timestamp
+  if (lower.includes('time') || lower.includes('date') || lower.includes('timestamp')) return 'timestamp';
+  
+  return 'unknown';
+}
+
+// Time-weighted averaging for numeric channels
+function timeWeightedAverage(dataPoints, intervalMinutes) {
+  if (dataPoints.length === 0) return { value: null, completeness: 0 };
+  if (dataPoints.length === 1) return { value: parseFloat(dataPoints[0].value), completeness: 100 };
+  
+  const intervalSeconds = intervalMinutes * 60;
+  let weightedSum = 0, totalWeight = 0, validCount = 0;
+  
+  for (let i = 0; i < dataPoints.length; i++) {
+    const val = parseFloat(dataPoints[i].value);
+    if (isNaN(val)) continue;
+    validCount++;
+    
+    // Time weight: from this point to next point (or end of interval)
+    let duration;
+    if (i < dataPoints.length - 1) {
+      const thisTime = new Date(dataPoints[i].timestamp).getTime();
+      const nextTime = new Date(dataPoints[i + 1].timestamp).getTime();
+      duration = Math.min(nextTime - thisTime, intervalSeconds);
+    } else {
+      // Last point to end of interval
+      duration = intervalSeconds / 2;
+    }
+    
+    weightedSum += val * duration;
+    totalWeight += duration;
+  }
+  
+  const completeness = (validCount / dataPoints.length) * 100;
+  const avg = totalWeight > 0 ? weightedSum / totalWeight : null;
+  
+  return { value: avg, completeness, sampleCount: validCount };
+}
+
+// Resample raw data to 15-minute intervals
+function resampleTo15Minutes(csvData, channelMappings) {
+  // Returns: {interval15: [{timestamp, ...mapped channels}], qa: {rowsImported, completenessPct, ...}}
+  const rows = csvData.rows;
+  if (rows.length === 0) return { interval15: [], qa: { rowsImported: 0, completenessPct: 0 } };
+  
+  const timestampCol = channelMappings.find(m => m.mappedTo === 'timestamp');
+  if (!timestampCol) return { error: 'No timestamp column mapped', interval15: [] };
+  
+  // Parse timestamps and group by 15-minute bins
+  const bins = new Map(); // ISO string of bin start → {timestamp, channels}
+  
+  rows.forEach(row => {
+    const timestampStr = row[timestampCol.sourceColumn];
+    if (!timestampStr) return;
+    
+    let timestamp;
+    try {
+      timestamp = new Date(timestampStr);
+      if (isNaN(timestamp)) return;
+    } catch {
+      return;
+    }
+    
+    // Round to nearest 15-minute boundary (e.g., 10:07 → 10:00)
+    const minutes = timestamp.getMinutes();
+    const roundedMinutes = Math.floor(minutes / 15) * 15;
+    const binStart = new Date(timestamp);
+    binStart.setMinutes(roundedMinutes);
+    binStart.setSeconds(0);
+    binStart.setMilliseconds(0);
+    
+    const binKey = binStart.toISOString();
+    if (!bins.has(binKey)) {
+      bins.set(binKey, { timestamp: binStart, points: {} });
+    }
+    
+    // Add data points for each channel
+    channelMappings.forEach(mapping => {
+      if (mapping.mappedTo === 'timestamp') return;
+      if (!bins.get(binKey).points[mapping.mappedTo]) {
+        bins.get(binKey).points[mapping.mappedTo] = [];
+      }
+      const value = row[mapping.sourceColumn];
+      if (value !== '') {
+        bins.get(binKey).points[mapping.mappedTo].push({ timestamp, value });
+      }
+    });
+  });
+  
+  // Aggregate each bin based on channel type
+  const interval15 = [];
+  let totalBinsProcessed = 0, binsWithCompleteness = 0, completenessSum = 0;
+  
+  Array.from(bins.entries())
+    .sort((a, b) => new Date(a[0]) - new Date(b[0]))
+    .forEach(([binKey, bin]) => {
+      const result = { timestamp: bin.timestamp.toISOString() };
+      totalBinsProcessed++;
+      let binCompleteness = 100;
+      
+      channelMappings.forEach(mapping => {
+        if (mapping.mappedTo === 'timestamp') return;
+        
+        const points = bin.points[mapping.mappedTo] || [];
+        const channelType = mapping.channelType || 'unknown';
+        
+        if (points.length === 0) {
+          result[mapping.mappedTo] = null;
+          binCompleteness = Math.min(binCompleteness, 0);
+          return;
+        }
+        
+        let aggregated;
+        if (channelType === 'power' || channelType === 'pressure' || channelType === 'flow' || channelType === 'temperature') {
+          // Time-weighted average
+          aggregated = timeWeightedAverage(points, 15);
+          result[mapping.mappedTo] = aggregated.value;
+          result[mapping.mappedTo + '_completeness'] = aggregated.completeness;
+        } else if (channelType === 'status') {
+          // Runtime percentage
+          const statuses = points.map(p => p.value);
+          const onCount = statuses.filter(s => s === '1' || s === 1 || s?.toString().toLowerCase() === 'on').length;
+          result[mapping.mappedTo + '_runtimePct'] = (onCount / statuses.length) * 100;
+          result[mapping.mappedTo + '_completeness'] = 100;
+        } else if (channelType === 'cumulative_energy' || channelType === 'cumulative_flow' || channelType === 'cumulative_runtime') {
+          // Delta between first and last
+          const vals = points.map(p => parseFloat(p.value)).filter(v => !isNaN(v));
+          if (vals.length > 1) {
+            const delta = vals[vals.length - 1] - vals[0];
+            result[mapping.mappedTo + '_interval'] = Math.max(0, delta); // Prevent negatives
+          } else if (vals.length === 1) {
+            result[mapping.mappedTo + '_interval'] = vals[0];
+          }
+          result[mapping.mappedTo + '_completeness'] = 100;
+        }
+      });
+      
+      result.dataCompleteness = binCompleteness;
+      completenessSum += binCompleteness;
+      binsWithCompleteness++;
+      interval15.push(result);
+    });
+  
+  const avgCompleteness = binsWithCompleteness > 0 ? completenessSum / binsWithCompleteness : 0;
+  
+  return {
+    interval15,
+    qa: {
+      rowsImported: rows.length,
+      binsCreated: interval15.length,
+      completenessPct: avgCompleteness,
+      firstTimestamp: interval15.length > 0 ? interval15[0].timestamp : null,
+      lastTimestamp: interval15.length > 0 ? interval15[interval15.length - 1].timestamp : null
+    }
+  };
+}
+
+// Aggregate 15-minute data to hourly for CAS 8760 comparison
+function aggregateTo1Hour(data15min) {
+  // Returns hourly array [{timestamp, ...aggregated channels}]
+  const hourlyBins = new Map();
+  
+  data15min.forEach(row => {
+    const timestamp = new Date(row.timestamp);
+    const hourStart = new Date(timestamp);
+    hourStart.setMinutes(0);
+    hourStart.setSeconds(0);
+    hourStart.setMilliseconds(0);
+    
+    const hourKey = hourStart.toISOString();
+    if (!hourlyBins.has(hourKey)) {
+      hourlyBins.set(hourKey, { timestamp: hourStart, points: [] });
+    }
+    hourlyBins.get(hourKey).points.push(row);
+  });
+  
+  const hourly = [];
+  Array.from(hourlyBins.entries())
+    .sort((a, b) => new Date(a[0]) - new Date(b[0]))
+    .forEach(([hourKey, bin]) => {
+      const result = { timestamp: bin.timestamp.toISOString() };
+      
+      // Average numeric fields
+      const numericFields = Object.keys(bin.points[0] || {})
+        .filter(k => !k.endsWith('_runtimePct') && !k.endsWith('_completeness') && k !== 'timestamp' && k !== 'dataCompleteness');
+      
+      numericFields.forEach(field => {
+        const values = bin.points.map(p => p[field]).filter(v => v !== null && v !== undefined && !isNaN(v));
+        if (values.length > 0) {
+          result[field] = values.reduce((a, b) => a + b, 0) / values.length;
+        }
+      });
+      
+      result.hourlyDataPoints = bin.points.length;
+      hourly.push(result);
+    });
+  
+  return hourly;
+}
+
+// Validation metrics calculation
+// CVRMSE: Coefficient of Variation of Root Mean Square Error (ASHRAE Guideline 14)
+// NMBE: Normalized Mean Bias Error
+// MAE: Mean Absolute Error
+function calculateValidationMetrics(measuredArray, modeledArray, baselineAverage = null) {
+  if (measuredArray.length === modeledArray.length === 0) {
+    return { error: 'No data to compare', cvrmse: null, nmbe: null, mae: null, mape: null };
+  }
+  
+  const minLen = Math.min(measuredArray.length, modeledArray.length);
+  if (minLen === 0) {
+    return { error: 'Mismatched array lengths', cvrmse: null, nmbe: null, mae: null, mape: null };
+  }
+  
+  let sumSquaredError = 0, sumBiasError = 0, sumAbsError = 0, sumPercentError = 0;
+  let validCount = 0;
+  
+  for (let i = 0; i < minLen; i++) {
+    const m = measuredArray[i];
+    const s = modeledArray[i];
+    if (m === null || m === undefined || s === null || s === undefined || isNaN(m) || isNaN(s)) continue;
+    
+    const error = s - m;
+    validCount++;
+    
+    sumSquaredError += error * error;
+    sumBiasError += error;
+    sumAbsError += Math.abs(error);
+    
+    if (m !== 0) {
+      sumPercentError += Math.abs(error / m);
+    }
+  }
+  
+  if (validCount === 0) {
+    return { error: 'No valid measurement pairs', cvrmse: null, nmbe: null, mae: null, mape: null };
+  }
+  
+  const rmse = Math.sqrt(sumSquaredError / validCount);
+  const meanBiasError = sumBiasError / validCount;
+  const meanAbsError = sumAbsError / validCount;
+  const meanPercentError = sumPercentError / validCount;
+  
+  const baseline = baselineAverage || (measuredArray.reduce((a, b) => (a || 0) + (b || 0), 0) / validCount);
+  const cvrmse = baseline !== 0 ? (rmse / baseline) * 100 : null;
+  const nmbe = baseline !== 0 ? (meanBiasError / baseline) * 100 : null;
+  const mape = meanPercentError * 100;
+  
+  return {
+    cvrmse: Math.round(cvrmse * 10) / 10,           // One decimal
+    nmbe: Math.round(nmbe * 10) / 10,
+    mae: Math.round(meanAbsError * 10) / 10,
+    mape: Math.round(mape * 10) / 10,
+    rmse: Math.round(rmse * 10) / 10,
+    n: validCount,
+    baseline: Math.round(baseline * 10) / 10
+  };
+}
+
+// Calculate peak kW error
+function calculatePeakKwError(measuredHourly, modeledHourly) {
+  const measuredPeak = Math.max(...measuredHourly.filter(v => v !== null && !isNaN(v)));
+  const modeledPeak = Math.max(...modeledHourly.filter(v => v !== null && !isNaN(v)));
+  
+  if (measuredPeak === 0) return null;
+  const error = Math.abs(modeledPeak - measuredPeak) / measuredPeak * 100;
+  return Math.round(error * 10) / 10;
+}
+
+// Annual/total energy comparison
+function compareAnnualEnergy(measuredHourly, modeledHourly, intervalHours = 1) {
+  const measuredKwh = measuredHourly
+    .filter(v => v !== null && !isNaN(v))
+    .reduce((sum, v) => sum + v, 0) * intervalHours;
+  
+  const modeledKwh = modeledHourly
+    .filter(v => v !== null && !isNaN(v))
+    .reduce((sum, v) => sum + v, 0) * intervalHours;
+  
+  const errorPct = measuredKwh !== 0 ? Math.abs(modeledKwh - measuredKwh) / measuredKwh * 100 : 0;
+  const errorKwh = modeledKwh - measuredKwh;
+  
+  return {
+    measuredKwh: Math.round(measuredKwh * 10) / 10,
+    modeledKwh: Math.round(modeledKwh * 10) / 10,
+    errorKwh: Math.round(errorKwh * 10) / 10,
+    errorPct: Math.round(errorPct * 10) / 10
+  };
+}
+
+// Calibration pass/fail decision
+function assessCalibrationStatus(metrics, peakError, energyError) {
+  const issues = [];
+  
+  if (metrics.cvrmse && metrics.cvrmse > 15) {
+    issues.push(`CVRMSE ${metrics.cvrmse}% exceeds 15% threshold`);
+  }
+  if (metrics.nmbe && Math.abs(metrics.nmbe) > 5) {
+    issues.push(`NMBE ${metrics.nmbe}% outside ±5% threshold`);
+  }
+  if (peakError && peakError > 10) {
+    issues.push(`Peak kW error ${peakError}% exceeds 10%`);
+  }
+  if (energyError && energyError.errorPct > 10) {
+    issues.push(`Annual energy error ${energyError.errorPct}% exceeds 10%`);
+  }
+  
+  if (issues.length === 0) {
+    return { status: 'PASS', issues: [] };
+  } else if (issues.length <= 2) {
+    return { status: 'REVIEW', issues };
+  } else {
+    return { status: 'FAIL', issues };
+  }
+}
 
 // ═══════════════════════════════════════════════════════════════
 // 8760 SIMULATION MODULE
