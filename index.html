@@ -2767,19 +2767,19 @@ function classifyChannel(columnName, sampleValues) {
   if (lower.includes('scf') && lower.includes('cumulative')) return 'cumulative_flow';
   if (lower.includes('hour') && lower.includes('cumulative')) return 'cumulative_runtime';
   
-  // Detect status/state signals
-  if (lower.includes('status') || lower.includes('state') || lower.includes('on/off') || lower.includes('loaded')) {
+  // Detect status/state signals (before generic "state" word)
+  if (lower.includes('status') || lower.includes('on/off') || lower.includes('loaded') || lower.includes('unloaded')) {
     return 'status';
   }
+  
+  // Detect flow BEFORE pressure (scfm contains neither 'press' nor 'psi' but could have 'scf')
+  if (lower.includes('scfm') || lower.includes('flow') || lower.includes('cfm')) return 'flow';
   
   // Detect kW or power
   if (lower.includes('kw') || lower.includes('power')) return 'power';
   
   // Detect pressure
   if (lower.includes('press') || lower.includes('psi')) return 'pressure';
-  
-  // Detect flow
-  if (lower.includes('scfm') || lower.includes('flow') || lower.includes('cfm')) return 'flow';
   
   // Detect temperature
   if (lower.includes('temp') || lower.includes('temperature')) return 'temperature';

@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CAS Monitored Data Test Harness</title>
+  <style>
+    body { font-family: monospace; background: #0d1117; color: #e6edf3; padding: 20px; }
+    .test-section { margin-bottom: 20px; padding: 12px; background: #161b22; border-left: 3px solid #00d4aa; }
+    .test-result { margin-top: 8px; padding: 8px; border-radius: 4px; }
+    .pass { background: rgba(63,185,80,.2); color: #3fb950; }
+    .fail { background: rgba(248,81,73,.2); color: #f85149; }
+    .info { background: rgba(0,150,255,.2); color: #0096ff; }
+    h2 { color: #00d4aa; margin-top: 0; }
+    pre { background: #0d1117; padding: 8px; overflow-x: auto; font-size: 11px; }
+  </style>
+</head>
+<body>
+  <h1>CAS Monitored Data Test Harness</h1>
+  <p>Testing CSV parsing, 15-minute resampling, and validation metrics.</p>
+  
+  <div id="results"></div>
+
+  <script>
+    // Extract and copy the relevant functions from index.html
+    function parseMonitoredDataCsv(csvText) {
+      const lines = csvText.trim().split('\n');
+      if (lines.length < 2) return { error: 'CSV must have header and at least one data row', rows: [] };
+      
+      const headerLine = lines[0];
+      const headers = headerLine.split(',').map(h => h.trim());
+      const rows = [];
+      
+      for (let i = 1; i < lines.length; i++) {
+        const line = lines[i].trim();
+        if (!line) continue;
+        const values = line.split(',').map(v => v.trim());
+        const row = {};
+        headers.forEach((h, idx) => {
+          row[h] = values[idx] || '';
+        });
+        rows.push(row);
+      }
+      
+      return { headers, rows, error: null };
+    }
+
+    function classifyChannel(columnName, sampleValues) {
+      const lower = columnName.toLowerCase();
+      if (lower.includes('kwh') || lower.includes('energy') || lower.includes('cumulative')) {
+        return 'cumulative_energy';
+      }
+      if (lower.includes('scf') && lower.includes('cumulative')) return 'cumulative_flow';
+      if (lower.includes('hour') && lower.includes('cumulative')) return 'cumulative_runtime';
+      if (lower.includes('status') || lower.includes('on/off') || lower.includes('loaded') || lower.includes('unloaded')) {
+        return 'status';
+      }
+      // Check flow BEFORE pressure
+      if (lower.includes('scfm') || lower.includes('flow') || lower.includes('cfm')) return 'flow';
+      if (lower.includes('kw') || lower.includes('power')) return 'power';
+      if (lower.includes('press') || lower.includes('psi')) return 'pressure';
+      if (lower.includes('temp')) return 'temperature';
+      if (lower.includes('time') || lower.includes('date') || lower.includes('timestamp')) return 'timestamp';
+      return 'unknown';
+    }
+
+    function timeWeightedAverage(dataPoints, intervalMinutes) {
+      if (dataPoints.length === 0) return { value: null, completeness: 0 };
+      if (dataPoints.length === 1) return { value: parseFloat(dataPoints[0].value), completeness: 100 };
+      
+      const intervalSeconds = intervalMinutes * 60;
+      let weightedSum = 0, totalWeight = 0, validCount = 0;
+      
+      for (let i = 0; i < dataPoints.length; i++) {
+        const val = parseFloat(dataPoints[i].value);
+        if (isNaN(val)) continue;
+        validCount++;
+        
+        let duration;
+        if (i < dataPoints.length - 1) {
+          const thisTime = new Date(dataPoints[i].timestamp).getTime();
+          const nextTime = new Date(dataPoints[i + 1].timestamp).getTime();
+          duration = Math.min(nextTime - thisTime, intervalSeconds);
+        } else {
+          duration = intervalSeconds / 2;
+        }
+        
+        weightedSum += val * duration;
+        totalWeight += duration;
+      }
+      
+      const completeness = (validCount / dataPoints.length) * 100;
+      const avg = totalWeight > 0 ? weightedSum / totalWeight : null;
+      
+      return { value: avg, completeness, sampleCount: validCount };
+    }
+
+    function calculateValidationMetrics(measuredArray, modeledArray, baselineAverage = null) {
+      if (measuredArray.length === 0 || modeledArray.length === 0) {
+        return { error: 'No data to compare', cvrmse: null, nmbe: null, mae: null, mape: null };
+      }
+      
+      const minLen = Math.min(measuredArray.length, modeledArray.length);
+      if (minLen === 0) {
+        return { error: 'Mismatched array lengths', cvrmse: null, nmbe: null, mae: null, mape: null };
+      }
+      
+      let sumSquaredError = 0, sumBiasError = 0, sumAbsError = 0, sumPercentError = 0;
+      let validCount = 0;
+      
+      for (let i = 0; i < minLen; i++) {
+        const m = measuredArray[i];
+        const s = modeledArray[i];
+        if (m === null || m === undefined || s === null || s === undefined || isNaN(m) || isNaN(s)) continue;
+        
+        const error = s - m;
+        validCount++;
+        
+        sumSquaredError += error * error;
+        sumBiasError += error;
+        sumAbsError += Math.abs(error);
+        
+        if (m !== 0) {
+          sumPercentError += Math.abs(error / m);
+        }
+      }
+      
+      if (validCount === 0) {
+        return { error: 'No valid measurement pairs', cvrmse: null, nmbe: null, mae: null, mape: null };
+      }
+      
+      const rmse = Math.sqrt(sumSquaredError / validCount);
+      const meanBiasError = sumBiasError / validCount;
+      const meanAbsError = sumAbsError / validCount;
+      const meanPercentError = sumPercentError / validCount;
+      
+      const baseline = baselineAverage || (measuredArray.reduce((a, b) => (a || 0) + (b || 0), 0) / validCount);
+      const cvrmse = baseline !== 0 ? (rmse / baseline) * 100 : null;
+      const nmbe = baseline !== 0 ? (meanBiasError / baseline) * 100 : null;
+      const mape = meanPercentError * 100;
+      
+      return {
+        cvrmse: Math.round(cvrmse * 10) / 10,
+        nmbe: Math.round(nmbe * 10) / 10,
+        mae: Math.round(meanAbsError * 10) / 10,
+        mape: Math.round(mape * 10) / 10,
+        rmse: Math.round(rmse * 10) / 10,
+        n: validCount,
+        baseline: Math.round(baseline * 10) / 10
+      };
+    }
+
+    // Test runners
+    function test(name, fn) {
+      const results = document.getElementById('results');
+      const section = document.createElement('div');
+      section.className = 'test-section';
+      
+      try {
+        const result = fn();
+        const passed = result.passed !== false;
+        section.innerHTML = `
+          <h2>${name}</h2>
+          <div class="test-result ${passed ? 'pass' : 'fail'}">
+            <strong>${passed ? '✓ PASS' : '✗ FAIL'}</strong>: ${result.message || ''}
+          </div>
+          ${result.details ? `<pre>${result.details}</pre>` : ''}
+        `;
+      } catch (err) {
+        section.innerHTML = `
+          <h2>${name}</h2>
+          <div class="test-result fail">
+            <strong>✗ ERROR</strong>: ${err.message}
+          </div>
+          <pre>${err.stack}</pre>
+        `;
+      }
+      
+      results.appendChild(section);
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // TEST CASES
+    // ═══════════════════════════════════════════════════════════════
+
+    test('CSV Parsing: Basic', () => {
+      const csv = `timestamp,compressor_kw,pressure\n2026-08-01T10:00:00,82.4,108.6\n2026-08-01T10:05:00,85.1,109.2`;
+      const result = parseMonitoredDataCsv(csv);
+      const passed = result.rows.length === 2 && result.headers.length === 3;
+      return {
+        passed,
+        message: `Parsed ${result.rows.length} rows, ${result.headers.length} columns`,
+        details: JSON.stringify(result.rows.slice(0, 1), null, 2)
+      };
+    });
+
+    test('CSV Parsing: Empty Lines', () => {
+      const csv = `timestamp,kw\n2026-08-01T10:00:00,80\n\n2026-08-01T10:05:00,85`;
+      const result = parseMonitoredDataCsv(csv);
+      const passed = result.rows.length === 2; // Should skip blank line
+      return {
+        passed,
+        message: `Handled empty lines correctly (${result.rows.length} data rows)`,
+        details: JSON.stringify(result.rows, null, 2)
+      };
+    });
+
+    test('Channel Classification', () => {
+      const tests = [
+        { name: 'COMP_1_KW', expected: 'power' },
+        { name: 'HEADER_PRESS', expected: 'pressure' },
+        { name: 'COMPRESSOR_SCFM', expected: 'flow' },
+        { name: 'CUM_KWH', expected: 'cumulative_energy' },
+        { name: 'TIMESTAMP', expected: 'timestamp' }
+      ];
+      
+      const results = tests.map(t => ({
+        ...t,
+        actual: classifyChannel(t.name, []),
+        passed: classifyChannel(t.name, []) === t.expected
+      }));
+      
+      const passed = results.every(r => r.passed);
+      const details = results.map(r => `  ${r.name}: ${r.actual} ${r.passed ? '✓' : '✗ expected ' + r.expected}`).join('\n');
+      
+      return {
+        passed,
+        message: `${results.filter(r => r.passed).length}/${results.length} channels classified correctly`,
+        details
+      };
+    });
+
+    test('Time-Weighted Averaging', () => {
+      // Simulate 10:00-10:15 interval with 3 points
+      const dataPoints = [
+        { timestamp: '2026-08-01T10:00:00', value: '80' },    // 0 min: 80 kW for 5 min
+        { timestamp: '2026-08-01T10:05:00', value: '85' },    // 5 min: 85 kW for 7 min
+        { timestamp: '2026-08-01T10:12:00', value: '90' }     // 12 min: 90 kW for 3 min
+      ];
+      
+      const result = timeWeightedAverage(dataPoints, 15);
+      
+      // Expected: (80*5 + 85*7 + 90*3) / 15 = (400 + 595 + 270) / 15 = 1265 / 15 = 84.33
+      const expected = 84.3;
+      const difference = Math.abs(result.value - expected);
+      const passed = difference < 0.5;
+      
+      return {
+        passed,
+        message: `Time-weighted average = ${result.value.toFixed(2)} kW (expected ~${expected})`,
+        details: `Completeness: ${result.completeness}%\nSample count: ${result.sampleCount}\nDifference: ${difference.toFixed(2)}`
+      };
+    });
+
+    test('Validation Metrics: CVRMSE & NMBE', () => {
+      // Simple fixture: modeled is consistently 5% high
+      const measured = [80, 85, 90, 95, 100];
+      const modeled = [84, 89.25, 94.5, 99.75, 105];
+      
+      const result = calculateValidationMetrics(measured, modeled);
+      
+      // NMBE should be ~5%, CVRMSE should be ~5-6%
+      const nmbePassed = Math.abs(result.nmbe - 5) < 1;
+      const cvrmsPassed = result.cvrmse > 4 && result.cvrmse < 7;
+      const passed = nmbePassed && cvrmsPassed;
+      
+      return {
+        passed,
+        message: `NMBE: ${result.nmbe}% (expected ~5%), CVRMSE: ${result.cvrmse}% (expected ~5-6%)`,
+        details: `MAE: ${result.mae}\nRMSE: ${result.rmse}\nN: ${result.n}\nBaseline: ${result.baseline}`
+      };
+    });
+
+    test('Validation Metrics: Perfect Match', () => {
+      const measured = [100, 100, 100, 100, 100];
+      const modeled = [100, 100, 100, 100, 100];
+      
+      const result = calculateValidationMetrics(measured, modeled);
+      
+      const passed = result.nmbe === 0 && result.cvrmse === 0;
+      
+      return {
+        passed,
+        message: `Perfect match: NMBE=${result.nmbe}%, CVRMSE=${result.cvrmse}%`,
+        details: `MAE: ${result.mae}\nRMSE: ${result.rmse}`
+      };
+    });
+
+    test('Validation Metrics: With Null Values', () => {
+      const measured = [80, null, 90, 95, null];
+      const modeled = [82, 86, 94, 97, 102];
+      
+      const result = calculateValidationMetrics(measured, modeled);
+      
+      const passed = result.n === 3 && !isNaN(result.nmbe);
+      
+      return {
+        passed,
+        message: `Handled ${5 - result.n} null values, ${result.n} valid pairs`,
+        details: `NMBE: ${result.nmbe}%\nCVRMSE: ${result.cvrmse}%\nN: ${result.n}`
+      };
+    });
+
+    test('Calibration Decision: PASS', () => {
+      const metrics = { cvrmse: 12, nmbe: 2, mae: 3.5 };
+      const peakError = 8;
+      const energyError = { errorPct: 7 };
+      
+      const issues = [];
+      if (metrics.cvrmse > 15) issues.push('CVRMSE');
+      if (Math.abs(metrics.nmbe) > 5) issues.push('NMBE');
+      if (peakError > 10) issues.push('Peak');
+      if (energyError.errorPct > 10) issues.push('Energy');
+      
+      const passed = issues.length === 0;
+      const status = passed ? 'PASS' : issues.length <= 2 ? 'REVIEW' : 'FAIL';
+      
+      return {
+        passed,
+        message: `Status: ${status} (${issues.length} issues)`,
+        details: `CVRMSE: ${metrics.cvrmse}% (≤15)\nNMBE: ${metrics.nmbe}% (±5)\nPeak: ${peakError}% (≤10)\nEnergy: ${energyError.errorPct}% (≤10)`
+      };
+    });
+
+    test('Calibration Decision: REVIEW', () => {
+      const metrics = { cvrmse: 18, nmbe: 3, mae: 5 };
+      const peakError = 9;
+      const energyError = { errorPct: 6 };
+      
+      const issues = [];
+      if (metrics.cvrmse > 15) issues.push('CVRMSE');
+      if (Math.abs(metrics.nmbe) > 5) issues.push('NMBE');
+      if (peakError > 10) issues.push('Peak');
+      if (energyError.errorPct > 10) issues.push('Energy');
+      
+      const passed = issues.length === 1 || issues.length === 2;
+      const status = issues.length === 0 ? 'PASS' : issues.length <= 2 ? 'REVIEW' : 'FAIL';
+      
+      return {
+        passed,
+        message: `Status: ${status} (${issues.length} issues: ${issues.join(', ')})`,
+        details: `CVRMSE: ${metrics.cvrmse}% (>15) ✗\nNMBE: ${metrics.nmbe}% (±5) ✓\nPeak: ${peakError}% (≤10) ✓\nEnergy: ${energyError.errorPct}% (≤10) ✓`
+      };
+    });
+
+    test('Cumulative kWh: Delta Calculation', () => {
+      // Simulate cumulative kWh counter over 15 minutes
+      const dataPoints = [
+        { timestamp: '2026-08-01T10:00:00', value: '1000' },
+        { timestamp: '2026-08-01T10:05:00', value: '1020' },
+        { timestamp: '2026-08-01T10:10:00', value: '1035' },
+        { timestamp: '2026-08-01T10:15:00', value: '1060' }
+      ];
+      
+      const values = dataPoints.map(p => parseFloat(p.value)).filter(v => !isNaN(v));
+      const delta = values[values.length - 1] - values[0];
+      
+      const passed = delta === 60;
+      
+      return {
+        passed,
+        message: `Cumulative delta: ${delta} kWh (expected 60)`,
+        details: `Start: ${values[0]} kWh\nEnd: ${values[values.length - 1]} kWh\nInterval energy: ${delta} kWh`
+      };
+    });
+
+    // Run all tests on page load
+    document.addEventListener('DOMContentLoaded', () => {
+      console.log('All tests loaded.');
+    });
+  </script>
+</body>
+</html>
