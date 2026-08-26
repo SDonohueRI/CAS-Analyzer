@@ -51,11 +51,287 @@
       return result.map(field => field.trim());
     }
 
+    function normalizeTimeZoneText(value) {
+      const text = String(value ?? '').trim();
+      if (!text) return '';
+      const gmtMatch = text.match(/\b(?:GMT|UTC)\s*([+-]\d{1,2}:?\d{2})\b/i);
+      const bareMatch = text.match(/\b([+-]\d{1,2}:?\d{2})\b/);
+      const offset = gmtMatch?.[1] || bareMatch?.[1];
+      if (!offset) return text;
+      const normalized = offset.includes(':') ? offset : `${offset.slice(0, -2)}:${offset.slice(-2)}`;
+      return `GMT${normalized}`;
+    }
+
+    function extractTimeZoneFromHeaders(headers) {
+      for (const header of headers || []) {
+        const zone = normalizeTimeZoneText(header);
+        if (zone && zone !== String(header ?? '').trim()) return zone;
+        if (/\b(?:GMT|UTC)\b/i.test(zone)) return zone;
+      }
+      return '';
+    }
+
+    function timestampHasTimeZone(value) {
+      return /(?:Z\b|\b(?:GMT|UTC)\b|[+-]\d{2}:?\d{2}\b)/i.test(String(value ?? ''));
+    }
+
+    function isLikelyDataValue(value) {
+      const text = String(value ?? '').trim();
+      if (!text) return false;
+      if (!isNaN(Number(text))) return true;
+      return !isNaN(new Date(text).getTime());
+    }
+
+    function scoreHeaderCandidate(fields, nextFields, lineIndex) {
+      const nonEmptyFields = fields.filter(field => String(field ?? '').trim() !== '');
+      if (nonEmptyFields.length < 2) return -100;
+      
+      const joined = fields.join(' ').toLowerCase();
+      let score = nonEmptyFields.length;
+      if (/\b(date|time|timestamp|gmt|utc|kw|kwh|amp|curr|power|psi|press|scfm|flow|status|temp)\b/.test(joined)) score += 8;
+      if (fields.some(field => String(field).trim() === '#')) score += 3;
+      if (/plot\s*title|report\s*title|export\s*title/i.test(joined)) score -= 25;
+      
+      const dataLikeHeaderFields = fields.filter(isLikelyDataValue).length;
+      score -= dataLikeHeaderFields * 2;
+      
+      if (nextFields?.length) {
+        const nonEmptyNextFields = nextFields.filter(field => String(field ?? '').trim() !== '');
+        const dataLikeNextFields = nextFields.filter(isLikelyDataValue).length;
+        if (nextFields.length === fields.length) score += 5;
+        if (nonEmptyNextFields.length >= 2) score += 2;
+        if (dataLikeNextFields >= Math.max(1, Math.floor(nonEmptyNextFields.length / 2))) score += 6;
+      }
+      
+      if (lineIndex > 0) score += 1;
+      return score;
+    }
+
+    function findMonitoredDataHeaderLine(lines) {
+      let best = { index: 0, score: -Infinity };
+      const candidateLimit = Math.min(lines.length - 1, 25);
+      
+      for (let i = 0; i < candidateLimit; i++) {
+        const line = lines[i].trim();
+        if (!line) continue;
+        const fields = parseCSVLine(line);
+        let nextFields = [];
+        for (let j = i + 1; j < lines.length; j++) {
+          const nextLine = lines[j].trim();
+          if (!nextLine) continue;
+          nextFields = parseCSVLine(nextLine);
+          break;
+        }
+        const score = scoreHeaderCandidate(fields, nextFields, i);
+        if (score > best.score) best = { index: i, score };
+      }
+      
+      return best.index;
+    }
+
+    function parseTimestampFromRow(row, timestampConfig, fallbackColumn) {
+      const config = timestampConfig || {};
+      let timestampText = '';
+      const sourceHeaders = [];
+      
+      if (config.mode === 'date_time_columns') {
+        const dateValue = row[config.dateColumn] ?? '';
+        const timeValue = row[config.timeColumn] ?? '';
+        timestampText = `${dateValue} ${timeValue}`.trim();
+        sourceHeaders.push(config.dateColumn, config.timeColumn);
+      } else {
+        const timestampColumn = config.timestampColumn || fallbackColumn;
+        timestampText = String(row[timestampColumn] ?? '').trim();
+        sourceHeaders.push(timestampColumn);
+      }
+      
+      if (!timestampText) return null;
+      
+      let zoneText = '';
+      if (config.timeZoneMode === 'header') {
+        zoneText = extractTimeZoneFromHeaders(sourceHeaders);
+      } else if (config.timeZoneMode === 'column') {
+        zoneText = normalizeTimeZoneText(row[config.timeZoneColumn]);
+      } else if (config.timeZoneMode === 'manual') {
+        zoneText = normalizeTimeZoneText(config.manualTimeZone);
+      }
+      
+      const candidate = zoneText && !timestampHasTimeZone(timestampText) ? `${timestampText} ${zoneText}` : timestampText;
+      const timestamp = new Date(candidate);
+      return isNaN(timestamp) ? null : timestamp;
+    }
+
+    function formatDateForInput(date) {
+      if (!date || isNaN(date)) return '';
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const day = String(date.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    }
+
+    function inferMonitoredDataPeriod(rows, timestampConfig, fallbackColumn) {
+      let firstTimestamp = null;
+      let lastTimestamp = null;
+      let parsedCount = 0;
+      
+      (rows || []).forEach(row => {
+        const timestamp = parseTimestampFromRow(row, timestampConfig, fallbackColumn);
+        if (!timestamp) return;
+        parsedCount++;
+        if (!firstTimestamp || timestamp < firstTimestamp) firstTimestamp = timestamp;
+        if (!lastTimestamp || timestamp > lastTimestamp) lastTimestamp = timestamp;
+      });
+      
+      return {
+        firstTimestamp,
+        lastTimestamp,
+        parsedCount,
+        startDate: formatDateForInput(firstTimestamp),
+        endDate: formatDateForInput(lastTimestamp)
+      };
+    }
+
+    const MONITORED_INTERVAL_OPTIONS = [0.01667, 0.0833, 0.1667, 0.5, 1, 5, 15, 30, 60];
+
+    function closestSupportedInterval(intervalMinutes) {
+      if (!intervalMinutes || isNaN(intervalMinutes)) return 15;
+      return MONITORED_INTERVAL_OPTIONS.reduce((best, option) => {
+        return Math.abs(option - intervalMinutes) < Math.abs(best - intervalMinutes) ? option : best;
+      }, MONITORED_INTERVAL_OPTIONS[0]);
+    }
+
+    function inferObservedIntervalMinutes(rows, timestampConfig, fallbackColumn) {
+      const timestamps = [];
+      const sampleLimit = Math.min((rows || []).length, 5000);
+      for (let i = 0; i < sampleLimit; i++) {
+        const timestamp = parseTimestampFromRow(rows[i], timestampConfig, fallbackColumn);
+        if (timestamp) timestamps.push(timestamp.getTime());
+      }
+      const uniqueSorted = Array.from(new Set(timestamps)).sort((a, b) => a - b);
+      const deltas = [];
+      for (let i = 1; i < uniqueSorted.length; i++) {
+        const deltaMinutes = (uniqueSorted[i] - uniqueSorted[i - 1]) / 60000;
+        if (deltaMinutes > 0) deltas.push(deltaMinutes);
+      }
+      if (deltas.length === 0) return { observedMinutes: null, selectedMinutes: 15, confidence: 'none' };
+      deltas.sort((a, b) => a - b);
+      const median = deltas[Math.floor(deltas.length / 2)];
+      const selected = closestSupportedInterval(median);
+      return {
+        observedMinutes: median,
+        selectedMinutes: selected,
+        confidence: deltas.length >= 10 ? 'high' : 'limited',
+        samples: deltas.length
+      };
+    }
+
+    function getMeasuredPowerField(dataset, hourlyMeasured) {
+      const mappedPower = dataset?.channels?.find(channel => channel.mappedTo === 'power')?.mappedTo;
+      const candidateFields = [mappedPower, 'power', 'compressor_kw', 'kw', 'compressorKw'].filter(Boolean);
+      const firstRow = hourlyMeasured?.find(row => row && typeof row === 'object') || {};
+      return candidateFields.find(field => Object.prototype.hasOwnProperty.call(firstRow, field)) || null;
+    }
+
+    function extractMeasuredPowerSeries(dataset, hourlyMeasured) {
+      const powerField = getMeasuredPowerField(dataset, hourlyMeasured);
+      if (!powerField) return { values: [], powerField: null };
+      const values = hourlyMeasured
+        .map(row => row[powerField])
+        .filter(value => value !== null && value !== undefined && !isNaN(value));
+      return { values, powerField };
+    }
+
+    function aggregateTo1Hour(data15min) {
+      const hourlyBins = new Map();
+      data15min.forEach(row => {
+        const timestamp = new Date(row.timestamp);
+        const hourStart = new Date(timestamp);
+        hourStart.setMinutes(0, 0, 0);
+        const hourKey = hourStart.toISOString();
+        if (!hourlyBins.has(hourKey)) hourlyBins.set(hourKey, { timestamp: hourStart, points: [] });
+        hourlyBins.get(hourKey).points.push(row);
+      });
+      return Array.from(hourlyBins.entries()).sort((a, b) => new Date(a[0]) - new Date(b[0])).map(([hourKey, bin]) => {
+        const result = { timestamp: bin.timestamp.toISOString() };
+        const numericFields = Object.keys(bin.points[0] || {}).filter(k => k !== 'timestamp');
+        numericFields.forEach(field => {
+          const values = bin.points.map(p => p[field]).filter(v => v !== null && v !== undefined && !isNaN(v));
+          if (values.length > 0) result[field] = values.reduce((a, b) => a + b, 0) / values.length;
+        });
+        return result;
+      });
+    }
+
+    function buildMeasuredSystemPowerSeries(datasets) {
+      const hourlyByTimestamp = new Map();
+      const sources = [];
+      (datasets || []).forEach(dataset => {
+        const powerChannels = (dataset.channels || []).filter(channel => channel.mappedTo === 'power');
+        if (powerChannels.length === 0) return;
+        const hourlyMeasured = aggregateTo1Hour(dataset.data15min || []);
+        const measuredPower = extractMeasuredPowerSeries(dataset, hourlyMeasured);
+        if (measuredPower.values.length === 0) return;
+        sources.push({ datasetId: dataset.id, fileName: dataset.fileName, powerField: measuredPower.powerField });
+        hourlyMeasured.forEach(row => {
+          const value = row[measuredPower.powerField];
+          if (value === null || value === undefined || isNaN(value)) return;
+          if (!hourlyByTimestamp.has(row.timestamp)) hourlyByTimestamp.set(row.timestamp, { timestamp: row.timestamp, measuredKw: 0, sourceCount: 0 });
+          const hour = hourlyByTimestamp.get(row.timestamp);
+          hour.measuredKw += value;
+          hour.sourceCount++;
+        });
+      });
+      const hourly = Array.from(hourlyByTimestamp.values()).sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+      return { hourly, values: hourly.map(row => row.measuredKw), sources, sourceCount: sources.length };
+    }
+
+    function evaluateManualConversion(x, formula) {
+      const expression = String(formula || '').trim();
+      if (!expression || !/^[0-9xX+\-*/().\s]+$/.test(expression)) return null;
+      try {
+        const result = Function('x', '"use strict"; return (' + expression + ');')(x);
+        return Number.isFinite(result) ? result : null;
+      } catch {
+        return null;
+      }
+    }
+
+    function applyEngineeringConversion(rawValue, conversion) {
+      const x = parseFloat(rawValue);
+      if (isNaN(x)) return rawValue;
+      const config = conversion || { type: 'none', params: {} };
+      const params = config.params || {};
+      const voltage = parseFloat(params.voltage || 0);
+      const powerFactor = parseFloat(params.powerFactor || 1);
+      const atmosphericPsi = parseFloat(params.atmosphericPsi || 14.696);
+      
+      switch (config.type) {
+        case 'watts_to_kw': return x / 1000;
+        case 'amps_to_kw_3ph': return voltage * x * powerFactor * Math.sqrt(3) / 1000;
+        case 'amps_to_kw_1ph': return voltage * x * powerFactor / 1000;
+        case 'hp_to_kw': return x * 0.7457;
+        case 'psia_to_psig': return x - atmosphericPsi;
+        case 'pa_to_psig': return x / 6894.757293;
+        case 'kpa_to_psig': return x / 6.894757293;
+        case 'bar_to_psig': return x * 14.5037738;
+        case 'm3min_to_scfm': return x * 35.3146667;
+        case 'm3hr_to_scfm': return x * 0.588577778;
+        case 'lps_to_scfm': return x * 2.118880004;
+        case 'c_to_f': return x * 9 / 5 + 32;
+        case 'wh_to_kwh': return x / 1000;
+        case 'mwh_to_kwh': return x * 1000;
+        case 'manual': return evaluateManualConversion(x, params.formula);
+        default: return x;
+      }
+    }
+
     function parseMonitoredDataCsv(csvText) {
       const lines = csvText.trim().split('\n');
       if (lines.length < 2) return { error: 'CSV must have header and at least one data row', rows: [] };
       
-      const headerLine = lines[0];
+      const headerLineIndex = findMonitoredDataHeaderLine(lines);
+      const metadataLines = lines.slice(0, headerLineIndex).map(line => line.trim()).filter(Boolean);
+      const headerLine = lines[headerLineIndex];
       let headers = parseCSVLine(headerLine);
       
       if (headers.length === 0) {
@@ -64,7 +340,7 @@
       
       // Detect actual number of columns from data rows (handles unquoted headers with embedded commas)
       let expectedColumnCount = null;
-      for (let i = 1; i < lines.length; i++) {
+      for (let i = headerLineIndex + 1; i < lines.length; i++) {
         const line = lines[i].trim();
         if (!line) continue;
         const values = parseCSVLine(line);
@@ -108,7 +384,7 @@
       }
       
       const rows = [];
-      for (let i = 1; i < lines.length; i++) {
+      for (let i = headerLineIndex + 1; i < lines.length; i++) {
         const line = lines[i].trim();
         if (!line) continue;
         
@@ -122,7 +398,7 @@
         rows.push(row);
       }
       
-      return { headers, rows, error: null };
+      return { headers, rows, error: null, metadataLines, headerRowNumber: headerLineIndex + 1 };
     }
 
     function classifyChannel(columnName, sampleValues) {
@@ -141,6 +417,7 @@
       if (lower.includes('kw') || lower.includes('power') || lower.includes('ac curr') || lower.includes('curr') || lower.includes('amps') || lower.includes('amperage')) return 'power';
       if (lower.includes('press') || lower.includes('psi')) return 'pressure';
       if (lower.includes('temp')) return 'temperature';
+      if (lower.includes('humidity') || /\brh\b/.test(lower) || lower.includes('%rh')) return 'humidity';
       if (lower.includes('time') || lower.includes('date') || lower.includes('timestamp')) return 'timestamp';
       return 'unknown';
     }
@@ -321,6 +598,187 @@
       };
     });
 
+    test('CSV Parsing: Logger Title Preamble', () => {
+      const csv = `Plot Title: Test Compressor,,\n#,"Date Time, GMT-06:00","AC Curr, Amps (LGR S/N: 9769265, SEN S/N: 9769265, LBL: Compressor Amps)"\n1,3/13/2025 13:20,88.205\n2,3/13/2025 13:20,88.327`;
+      const result = parseMonitoredDataCsv(csv);
+      const ampHeader = 'AC Curr, Amps (LGR S/N: 9769265, SEN S/N: 9769265, LBL: Compressor Amps)';
+      const passed = result.headerRowNumber === 2 && result.metadataLines.length === 1 && result.headers.includes(ampHeader) && result.rows[0][ampHeader] === '88.205';
+      return {
+        passed,
+        message: `Skipped ${result.metadataLines.length} title line and used row ${result.headerRowNumber} as headers`,
+        details: `Headers: [${result.headers.map(h => '"' + h + '"').join(', ')}]\nFirst row: ${JSON.stringify(result.rows[0])}`
+      };
+    });
+
+    test('Timestamp Parsing: Header Time Zone', () => {
+      const row = { 'Date Time, GMT-06:00': '3/13/2025 13:20', 'AC Curr, Amps': '88.205' };
+      const timestamp = parseTimestampFromRow(row, {
+        mode: 'single',
+        timestampColumn: 'Date Time, GMT-06:00',
+        timeZoneMode: 'header'
+      });
+      const passed = timestamp && timestamp.toISOString() === '2025-03-13T19:20:00.000Z';
+      return {
+        passed,
+        message: `Parsed header timezone timestamp as ${timestamp?.toISOString()}`,
+        details: 'Expected local 13:20 at GMT-06:00 to become 19:20 UTC'
+      };
+    });
+
+    test('Timestamp Parsing: Date and Time Columns', () => {
+      const row = { Date: '3/13/2025', Time: '13:20', kW: '88.205' };
+      const timestamp = parseTimestampFromRow(row, {
+        mode: 'date_time_columns',
+        dateColumn: 'Date',
+        timeColumn: 'Time',
+        timeZoneMode: 'manual',
+        manualTimeZone: 'GMT-06:00'
+      });
+      const passed = timestamp && timestamp.toISOString() === '2025-03-13T19:20:00.000Z';
+      return {
+        passed,
+        message: `Parsed split date/time timestamp as ${timestamp?.toISOString()}`,
+        details: 'Date and time can be selected separately when logger exports split them'
+      };
+    });
+
+    test('Timestamp Parsing: Time Zone Column', () => {
+      const row = { Timestamp: '3/13/2025 13:20', Zone: '-0600', kW: '88.205' };
+      const timestamp = parseTimestampFromRow(row, {
+        mode: 'single',
+        timestampColumn: 'Timestamp',
+        timeZoneMode: 'column',
+        timeZoneColumn: 'Zone'
+      });
+      const passed = timestamp && timestamp.toISOString() === '2025-03-13T19:20:00.000Z';
+      return {
+        passed,
+        message: `Parsed timezone-column timestamp as ${timestamp?.toISOString()}`,
+        details: 'Timezone offsets can be read from a separate source column'
+      };
+    });
+
+    test('Import Period: Two-Day Dataset Is Valid', () => {
+      const rows = [
+        { 'Date Time, GMT-06:00': '3/13/2025 13:20', kW: '88.205' },
+        { 'Date Time, GMT-06:00': '3/14/2025 08:15', kW: '74.300' }
+      ];
+      const period = inferMonitoredDataPeriod(rows, {
+        mode: 'single',
+        timestampColumn: 'Date Time, GMT-06:00',
+        timeZoneMode: 'header'
+      });
+      const passed = period.parsedCount === 2 && period.startDate === '2025-03-13' && period.endDate === '2025-03-14';
+      return {
+        passed,
+        message: `Inferred ${period.startDate} to ${period.endDate} from ${period.parsedCount} parsed timestamps`,
+        details: 'Two days of monitored data should import and resample; it only limits calibration confidence.'
+      };
+    });
+
+    test('Import Interval: Observed Interval Defaults Dropdown', () => {
+      const rows = [
+        { 'Date Time, GMT-06:00': '3/13/2025 13:20', kW: '88.205' },
+        { 'Date Time, GMT-06:00': '3/13/2025 13:20', kW: '88.327' },
+        { 'Date Time, GMT-06:00': '3/13/2025 13:21', kW: '88.889' },
+        { 'Date Time, GMT-06:00': '3/13/2025 13:22', kW: '88.864' },
+        { 'Date Time, GMT-06:00': '3/13/2025 13:23', kW: '89.280' }
+      ];
+      const observed = inferObservedIntervalMinutes(rows, {
+        mode: 'single',
+        timestampColumn: 'Date Time, GMT-06:00',
+        timeZoneMode: 'header'
+      });
+      const passed = observed.observedMinutes === 1 && observed.selectedMinutes === 1 && observed.samples === 3;
+      return {
+        passed,
+        message: `Observed ${observed.observedMinutes}-minute interval, selected ${observed.selectedMinutes}-minute option`,
+        details: 'Duplicate timestamps are ignored when calculating interval gaps.'
+      };
+    });
+
+    test('Engineering Conversion: Amps to kW', () => {
+      const converted = applyEngineeringConversion('100', {
+        type: 'amps_to_kw_3ph',
+        params: { voltage: 480, powerFactor: 0.85 }
+      });
+      const expected = 480 * 100 * 0.85 * Math.sqrt(3) / 1000;
+      const passed = Math.abs(converted - expected) < 0.01;
+      return {
+        passed,
+        message: `100 A at 480 V, PF 0.85 = ${converted.toFixed(2)} kW`,
+        details: `Expected ${expected.toFixed(2)} kW using three-phase formula`
+      };
+    });
+
+    test('Engineering Conversion: Pressure to PSIG', () => {
+      const fromKpa = applyEngineeringConversion('689.4757293', { type: 'kpa_to_psig', params: {} });
+      const fromPsia = applyEngineeringConversion('114.696', { type: 'psia_to_psig', params: { atmosphericPsi: 14.696 } });
+      const fromBar = applyEngineeringConversion('6.894757', { type: 'bar_to_psig', params: {} });
+      const passed = Math.abs(fromKpa - 100) < 0.01 && Math.abs(fromPsia - 100) < 0.01 && Math.abs(fromBar - 100) < 0.02;
+      return {
+        passed,
+        message: `Converted kPa, PSIA, and bar to approximately 100 PSIG`,
+        details: `kPa: ${fromKpa.toFixed(2)}, PSIA: ${fromPsia.toFixed(2)}, bar: ${fromBar.toFixed(2)}`
+      };
+    });
+
+    test('Engineering Conversion: Manual Formula', () => {
+      const converted = applyEngineeringConversion('12', { type: 'manual', params: { formula: 'x * 2 + 5' } });
+      const blocked = applyEngineeringConversion('12', { type: 'manual', params: { formula: 'alert(x)' } });
+      const passed = converted === 29 && blocked === null;
+      return {
+        passed,
+        message: `Manual formula x * 2 + 5 returned ${converted}`,
+        details: `Non-arithmetic formula was ${blocked === null ? 'blocked' : 'not blocked'}`
+      };
+    });
+
+    test('Calibration Input: Uses Mapped Power Field', () => {
+      const dataset = { channels: [{ mappedTo: 'power', sourceColumn: 'AC Curr, Amps' }] };
+      const hourlyMeasured = [
+        { timestamp: '2025-03-13T19:00:00.000Z', power: 72 },
+        { timestamp: '2025-03-13T20:00:00.000Z', power: 84 }
+      ];
+      const extracted = extractMeasuredPowerSeries(dataset, hourlyMeasured);
+      const passed = extracted.powerField === 'power' && extracted.values.length === 2 && extracted.values[0] === 72 && extracted.values[1] === 84;
+      return {
+        passed,
+        message: `Calibration reads measured data from ${extracted.powerField}`,
+        details: `Values: ${extracted.values.join(', ')}`
+      };
+    });
+
+    test('Calibration Input: Sums Multiple Compressor Sources', () => {
+      const datasets = [
+        {
+          id: 'src_1',
+          fileName: 'Compressor 1.csv',
+          channels: [{ mappedTo: 'power', target: { targetType: 'node', targetNodeId: 'comp_1', targetMetric: 'kw' } }],
+          data15min: [
+            { timestamp: '2025-03-13T19:00:00.000Z', power: 50 },
+            { timestamp: '2025-03-13T19:15:00.000Z', power: 54 }
+          ]
+        },
+        {
+          id: 'src_2',
+          fileName: 'Compressor 2.csv',
+          channels: [{ mappedTo: 'power', target: { targetType: 'node', targetNodeId: 'comp_2', targetMetric: 'kw' } }],
+          data15min: [
+            { timestamp: '2025-03-13T19:00:00.000Z', power: 30 },
+            { timestamp: '2025-03-13T19:15:00.000Z', power: 34 }
+          ]
+        }
+      ];
+      const measuredSystem = buildMeasuredSystemPowerSeries(datasets);
+      const passed = measuredSystem.sourceCount === 2 && measuredSystem.values.length === 1 && measuredSystem.values[0] === 84;
+      return {
+        passed,
+        message: `Summed ${measuredSystem.sourceCount} compressor sources into ${measuredSystem.values[0]} kW`,
+        details: `Sources: ${measuredSystem.sources.map(source => source.fileName).join(', ')}`
+      };
+    });
+
     test('Channel Classification', () => {
       const tests = [
         { name: 'COMP_1_KW', expected: 'power' },
@@ -328,7 +786,8 @@
         { name: 'COMPRESSOR_SCFM', expected: 'flow' },
         { name: 'CUM_KWH', expected: 'cumulative_energy' },
         { name: 'TIMESTAMP', expected: 'timestamp' },
-        { name: 'AC Curr, Amps', expected: 'power' }
+        { name: 'AC Curr, Amps', expected: 'power' },
+        { name: 'Relative Humidity', expected: 'humidity' }
       ];
       
       const results = tests.map(t => ({
