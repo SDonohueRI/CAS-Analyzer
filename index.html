@@ -4647,42 +4647,6 @@ function showCalibrationResultsModal(cal, metricsHtml, interpretationHtml, color
   });
   document.body.appendChild(overlay);
 }
-        <div style="font-family:'IBM Plex Mono',monospace;color:var(--accent);font-weight:600;font-size:14px;">Monitored Data Validation</div>
-        <div style="margin-left:auto;padding:4px 10px;border-radius:4px;background:${colors.bg};color:${colors.text || '#000'};font-size:12px;font-weight:700;">${escapeHtml(cal.status)}</div>
-        <button class="btn" onclick="closeCalibrationResultsModal()" style="padding:4px 8px;font-size:11px">Close</button>
-      </div>
-      <div style="padding:16px 18px;display:grid;gap:14px;overflow-y:auto;flex:1;align-content:start;">
-        <div style="font-size:11px;color:var(--text3);line-height:1.6;">
-          ${sourceSummary}
-        </div>
-        <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;">
-          <div style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:12px;font-size:12px;line-height:1.9;color:var(--text2);">
-            <div style="font-size:10px;color:var(--accent);font-weight:700;margin-bottom:6px;text-transform:uppercase;letter-spacing:.8px;">Baseline Metrics</div>
-            ${metricsHtml}
-          </div>
-          <div style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:12px;font-size:12px;color:var(--text2);">
-            <div style="font-size:10px;color:var(--accent);font-weight:700;margin-bottom:6px;text-transform:uppercase;letter-spacing:.8px;">Assessment</div>
-            <div style="line-height:1.7;margin-bottom:10px;">${interpretationHtml}</div>
-            ${issuesHtml}
-          </div>
-        </div>
-        ${conversionRows ? `
-          <div style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:12px;">
-            <div style="font-size:10px;color:var(--accent);font-weight:700;margin-bottom:8px;text-transform:uppercase;letter-spacing:.8px;">Applied Import Conversions</div>
-            <table style="width:100%;border-collapse:collapse;font-size:11px;color:var(--text2);">
-              <thead><tr><th style="text-align:left;border-bottom:1px solid var(--border);padding:5px 6px;">File</th><th style="text-align:left;border-bottom:1px solid var(--border);padding:5px 6px;">Source</th><th style="text-align:left;border-bottom:1px solid var(--border);padding:5px 6px;">Target</th><th style="text-align:left;border-bottom:1px solid var(--border);padding:5px 6px;">Conversion</th></tr></thead>
-              <tbody>${conversionRows}</tbody>
-            </table>
-          </div>
-        ` : ''}
-      </div>
-    </div>
-  `;
-  overlay.addEventListener('click', (event) => {
-    if (event.target === overlay) closeCalibrationResultsModal();
-  });
-  document.body.appendChild(overlay);
-}
 
 function closeCalibrationResultsModal() {
   document.getElementById('mvCalibrationModal')?.remove();
