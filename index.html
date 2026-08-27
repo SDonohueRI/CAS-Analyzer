@@ -4419,15 +4419,22 @@ function runBaselineCalibration() {
   }
 
   // Get date range from monitored data
+  // NOTE: Parse ISO dates as LOCAL time, not UTC. "2025-03-13" should be March 13 at 00:00 local, not UTC
   let minDate = null, maxDate = null;
   MONITORED_DATA.datasets.forEach(dataset => {
     if (dataset.periodStart) {
-      const d = new Date(dataset.periodStart);
-      if (!minDate || d < minDate) minDate = d;
+      const parts = dataset.periodStart.split('-');
+      if (parts.length === 3) {
+        const d = new Date(parseInt(parts[0]), parseInt(parts[1])-1, parseInt(parts[2]));
+        if (!minDate || d < minDate) minDate = d;
+      }
     }
     if (dataset.periodEnd) {
-      const d = new Date(dataset.periodEnd);
-      if (!maxDate || d > maxDate) maxDate = d;
+      const parts = dataset.periodEnd.split('-');
+      if (parts.length === 3) {
+        const d = new Date(parseInt(parts[0]), parseInt(parts[1])-1, parseInt(parts[2]));
+        if (!maxDate || d > maxDate) maxDate = d;
+      }
     }
   });
 
