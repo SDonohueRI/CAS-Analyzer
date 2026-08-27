@@ -4471,15 +4471,16 @@ function runBaselineCalibration() {
   if (measuredSystem.hourly && measuredSystem.hourly.length > 0) {
     measuredSystem.hourly.forEach(measRow => {
       const ts = measRow.timestamp;
-      // Parse timestamp - handle ISO format with or without timezone
-      const match = ts.match(/(\d{4})-(\d{2})-(\d{2})T(\d{2}):/);
-      if (match) {
-        const [, year, month, day, hour] = match;
-        const key = `${year}-${month}-${day} ${hour}:00:00`;
-        const modelKw = modelsByDateHour.get(key) ?? 0;
-        alignedMeasured.push(measRow.measuredKw);
-        alignedModeled.push(modelKw);
-      }
+      // Parse ISO timestamp and convert to LOCAL time (model uses local dates)
+      const measDate = new Date(ts);
+      const year = measDate.getFullYear();
+      const month = String(measDate.getMonth() + 1).padStart(2, '0');
+      const day = String(measDate.getDate()).padStart(2, '0');
+      const hour = String(measDate.getHours()).padStart(2, '0');
+      const key = `${year}-${month}-${day} ${hour}:00:00`;
+      const modelKw = modelsByDateHour.get(key) ?? 0;
+      alignedMeasured.push(measRow.measuredKw);
+      alignedModeled.push(modelKw);
     });
   }
   
