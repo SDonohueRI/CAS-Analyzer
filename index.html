@@ -4454,14 +4454,14 @@ function runBaselineCalibration() {
   }
 
   // Extract hourly kW from pre case model (filtered to monitored data date range)
-  const modeledKw = modeledHours.map(row => row.kW || 0);
+  const modeledKw = modeledHours.map(row => row.systemKw || 0);
   
   // Build a map of model results by date+hour for alignment with measured data
   const modelsByDateHour = new Map();
   modeledHours.forEach(hr => {
     // Create key as YYYY-MM-DD HH:00:00 for matching
     const key = `${hr.dateStr} ${String(hr.hourOfDay).padStart(2,'0')}:00:00`;
-    modelsByDateHour.set(key, hr.kW || 0);
+    modelsByDateHour.set(key, hr.systemKw || 0);
   });
   
   // Align measured data to model data by timestamp
