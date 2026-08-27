@@ -2645,6 +2645,9 @@ function applyProjectData(data) {
   syncMainCanvasFromState();
   selectNode(null);
   selectConn(null);
+  // Update monitored data UI (shows calibrate button if data exists)
+  if (MONITORED_DATA.datasets.length > 0) updateMonitoredDataImportSummary();
+  else resetMonitoredDataSummaryIfEmpty();
   if (analysisRan) runAnalysis();
   if (document.getElementById('sim8760Overlay')?.style.display === 'flex') renderDetailedMode();
 }
@@ -4592,12 +4595,58 @@ function showCalibrationResultsModal(cal, metricsHtml, interpretationHtml, color
     .map(({ dataset, channel }) => `<tr><td>${escapeHtml(dataset.fileName)}</td><td>${escapeHtml(channel.sourceColumn)}</td><td>${escapeHtml(channel.target?.targetLabel || getMonitorTargetLabel(channel.target) || channel.mappedTo)}</td><td>${escapeHtml(channel.conversion.type)}</td></tr>`)
     .join('');
   
+  // Build day-of-week comparison chart
+  const dayChartHtml = buildDayOfWeekCharts(cal);
+  
   const overlay = document.createElement('div');
   overlay.id = 'mvCalibrationModal';
   overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.65);display:flex;align-items:center;justify-content:center;z-index:2600;padding:18px;';
   overlay.innerHTML = `
-    <div style="background:var(--surface);border:1px solid var(--border2);border-radius:8px;width:min(820px,96vw);height:min(780px,92vh);min-height:min(620px,92vh);display:flex;flex-direction:column;overflow:hidden;box-shadow:0 20px 80px rgba(0,0,0,.35);">
+    <div style="background:var(--surface);border:1px solid var(--border2);border-radius:8px;width:min(900px,96vw);height:min(820px,92vh);min-height:min(650px,92vh);display:flex;flex-direction:column;overflow:hidden;box-shadow:0 20px 80px rgba(0,0,0,.35);">
       <div style="display:flex;align-items:center;gap:12px;padding:16px 18px;border-bottom:1px solid var(--border);background:var(--surface);flex-shrink:0;">
+        <div style="font-family:'IBM Plex Mono',monospace;color:var(--accent);font-weight:600;font-size:14px;">Monitored Data Validation</div>
+        <div style="margin-left:auto;padding:4px 10px;border-radius:4px;background:${colors.bg};color:${colors.text || '#000'};font-size:12px;font-weight:700;">${escapeHtml(cal.status)}</div>
+        <button class="btn" onclick="printCalibrationReport()" style="padding:4px 8px;font-size:11px;background:var(--accent);color:#000">Print Report</button>
+        <button class="btn" onclick="closeCalibrationResultsModal()" style="padding:4px 8px;font-size:11px">Close</button>
+      </div>
+      <div style="padding:16px 18px;display:grid;gap:14px;overflow-y:auto;flex:1;align-content:start;">
+        <div style="font-size:11px;color:var(--text3);line-height:1.6;">
+          ${sourceSummary}
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;">
+          <div style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:12px;font-size:12px;line-height:1.9;color:var(--text2);">
+            <div style="font-size:10px;color:var(--accent);font-weight:700;margin-bottom:6px;text-transform:uppercase;letter-spacing:.8px;">Baseline Metrics</div>
+            ${metricsHtml}
+          </div>
+          <div style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:12px;font-size:12px;color:var(--text2);">
+            <div style="font-size:10px;color:var(--accent);font-weight:700;margin-bottom:6px;text-transform:uppercase;letter-spacing:.8px;">Assessment</div>
+            <div style="line-height:1.7;margin-bottom:10px;">${interpretationHtml}</div>
+            ${issuesHtml}
+          </div>
+        </div>
+        ${dayChartHtml ? `
+          <div style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:12px;">
+            <div style="font-size:10px;color:var(--accent);font-weight:700;margin-bottom:10px;text-transform:uppercase;letter-spacing:.8px;">Measured vs Modeled by Day Type</div>
+            ${dayChartHtml}
+          </div>
+        ` : ''}
+        ${conversionRows ? `
+          <div style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:12px;">
+            <div style="font-size:10px;color:var(--accent);font-weight:700;margin-bottom:8px;text-transform:uppercase;letter-spacing:.8px;">Applied Import Conversions</div>
+            <table style="width:100%;border-collapse:collapse;font-size:11px;color:var(--text2);">
+              <thead><tr><th style="text-align:left;border-bottom:1px solid var(--border);padding:5px 6px;">File</th><th style="text-align:left;border-bottom:1px solid var(--border);padding:5px 6px;">Source</th><th style="text-align:left;border-bottom:1px solid var(--border);padding:5px 6px;">Target</th><th style="text-align:left;border-bottom:1px solid var(--border);padding:5px 6px;">Conversion</th></tr></thead>
+              <tbody>${conversionRows}</tbody>
+            </table>
+          </div>
+        ` : ''}
+      </div>
+    </div>
+  `;
+  overlay.addEventListener('click', (event) => {
+    if (event.target === overlay) closeCalibrationResultsModal();
+  });
+  document.body.appendChild(overlay);
+}
         <div style="font-family:'IBM Plex Mono',monospace;color:var(--accent);font-weight:600;font-size:14px;">Monitored Data Validation</div>
         <div style="margin-left:auto;padding:4px 10px;border-radius:4px;background:${colors.bg};color:${colors.text || '#000'};font-size:12px;font-weight:700;">${escapeHtml(cal.status)}</div>
         <button class="btn" onclick="closeCalibrationResultsModal()" style="padding:4px 8px;font-size:11px">Close</button>
@@ -4637,6 +4686,202 @@ function showCalibrationResultsModal(cal, metricsHtml, interpretationHtml, color
 
 function closeCalibrationResultsModal() {
   document.getElementById('mvCalibrationModal')?.remove();
+}
+
+// Build day-of-week comparison charts for calibration results
+function buildDayOfWeekCharts(cal) {
+  if (!SIM.resultsPreHours || SIM.resultsPreHours.length === 0 || !MONITORED_DATA.datasets[0]) return '';
+  
+  const dataset = MONITORED_DATA.datasets[0];
+  const dayTypeMap = { 'sat': 'Saturday', 'sun': 'Sunday', 'holiday': 'Holiday' };
+  
+  // Group model hours by day type
+  const modelByDayType = { sat: [], sun: [], holiday: [] };
+  SIM.resultsPreHours.forEach(hr => {
+    const date = new Date(hr.date);
+    const dow = date.getDay();
+    const isHol = hr.isHoliday;
+    if (isHol) modelByDayType.holiday.push(hr.systemKw || 0);
+    else if (dow === 6) modelByDayType.sat.push(hr.systemKw || 0);
+    else if (dow === 0) modelByDayType.sun.push(hr.systemKw || 0);
+  });
+  
+  // Group measured data by day type
+  const measByDayType = { sat: [], sun: [], holiday: [] };
+  if (dataset.data15min && dataset.data15min.length > 0) {
+    // Aggregate 15-min data to hourly by day type
+    const hourMap = {};
+    dataset.data15min.forEach(row => {
+      if (!row.timestamp) return;
+      const date = new Date(row.timestamp);
+      const dateHourKey = `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')} ${String(date.getHours()).padStart(2,'0')}`;
+      if (!hourMap[dateHourKey]) hourMap[dateHourKey] = [];
+      hourMap[dateHourKey].push(row.power || 0);
+    });
+    
+    // Convert to day-type averages
+    Object.entries(hourMap).forEach(([key, powers]) => {
+      const avg = powers.length ? powers.reduce((a,b)=>a+b,0)/powers.length : 0;
+      const date = new Date(key.split(' ')[0]);
+      const dow = date.getDay();
+      if (dow === 6) measByDayType.sat.push(avg);
+      else if (dow === 0) measByDayType.sun.push(avg);
+      else measByDayType.holiday.push(avg);
+    });
+  }
+  
+  // Build simple bar chart HTML for each day type
+  const chartRows = Object.entries(dayTypeMap).map(([dayKey, dayLabel]) => {
+    const modelAvg = modelByDayType[dayKey].length ? modelByDayType[dayKey].reduce((a,b)=>a+b,0)/modelByDayType[dayKey].length : 0;
+    const measAvg = measByDayType[dayKey].length ? measByDayType[dayKey].reduce((a,b)=>a+b,0)/measByDayType[dayKey].length : 0;
+    const maxVal = Math.max(modelAvg, measAvg, 1);
+    const modelPct = (modelAvg / maxVal) * 100;
+    const measPct = (measAvg / maxVal) * 100;
+    
+    return `
+      <div style="margin-bottom:12px;">
+        <div style="font-size:11px;font-weight:600;margin-bottom:4px;">${dayLabel}</div>
+        <div style="display:flex;gap:20px;align-items:flex-end;height:40px;">
+          <div style="flex:1;background:rgba(63,185,80,.3);border:1px solid #3fb950;border-radius:3px;height:${modelPct}%;min-height:4px;display:flex;align-items:flex-end;justify-content:center;">
+            <span style="font-size:9px;color:#3fb950;font-weight:600;padding-bottom:2px;">${modelAvg.toFixed(1)} kW</span>
+          </div>
+          <div style="flex:1;background:rgba(248,85,73,.3);border:1px solid #f85149;border-radius:3px;height:${measPct}%;min-height:4px;display:flex;align-items:flex-end;justify-content:center;">
+            <span style="font-size:9px;color:#f85149;font-weight:600;padding-bottom:2px;">${measAvg.toFixed(1)} kW</span>
+          </div>
+        </div>
+        <div style="display:flex;gap:20px;font-size:9px;color:var(--text3);margin-top:4px;">
+          <div>Model (${modelByDayType[dayKey].length} hours)</div>
+          <div>Measured (${measByDayType[dayKey].length} hours)</div>
+        </div>
+      </div>
+    `;
+  }).join('');
+  
+  return `<div style="font-size:12px;line-height:1.8;">${chartRows}</div>`;
+}
+
+// Print calibration report
+function printCalibrationReport() {
+  const cal = MONITORED_DATA.baselineCalibration;
+  if (!cal) return;
+  
+  const datasets = MONITORED_DATA.datasets || [];
+  const sourceList = datasets.map(d => `${d.fileName} (${d.periodStart} to ${d.periodEnd})`).join('<br>');
+  
+  const printWindow = window.open('', '_blank');
+  printWindow.document.write(`
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <title>CAS Analyzer - Calibration Report</title>
+      <style>
+        body { font-family: Arial, sans-serif; padding: 40px; line-height: 1.6; color: #333; }
+        h1 { color: #0066cc; border-bottom: 2px solid #0066cc; padding-bottom: 10px; }
+        h2 { color: #333; margin-top: 30px; margin-bottom: 15px; font-size: 16px; }
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; }
+        .status-badge { padding: 8px 16px; border-radius: 6px; font-weight: bold; font-size: 14px; }
+        .status-pass { background: #3fb950; color: white; }
+        .status-review { background: #f0a93a; color: #333; }
+        .status-fail { background: #f85149; color: white; }
+        .metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin: 20px 0; }
+        .metric-card { border: 1px solid #ddd; padding: 15px; border-radius: 6px; background: #f9f9f9; }
+        .metric-label { font-size: 12px; color: #666; text-transform: uppercase; font-weight: bold; margin-bottom: 8px; }
+        .metric-value { font-size: 18px; font-weight: bold; color: #0066cc; }
+        table { width: 100%; border-collapse: collapse; margin: 15px 0; }
+        th { background: #f0f0f0; padding: 10px; text-align: left; border-bottom: 2px solid #ddd; font-weight: bold; }
+        td { padding: 10px; border-bottom: 1px solid #ddd; }
+        .issues { background: #fff3cd; padding: 15px; border-radius: 6px; margin: 15px 0; }
+        .no-issues { background: #d4edda; padding: 15px; border-radius: 6px; margin: 15px 0; color: #155724; }
+        .footer { margin-top: 40px; padding-top: 20px; border-top: 1px solid #ddd; font-size: 11px; color: #666; }
+        @media print { body { padding: 20px; } }
+      </style>
+    </head>
+    <body>
+      <div class="header">
+        <h1>CAS Analyzer - Baseline Calibration Report</h1>
+        <div class="status-badge status-${cal.status.toLowerCase()}">${cal.status}</div>
+      </div>
+      
+      <h2>Monitored Data Sources</h2>
+      <p>${sourceList}</p>
+      
+      <h2>Baseline Calibration Metrics</h2>
+      <div class="metrics">
+        <div class="metric-card">
+          <div class="metric-label">Annual Energy</div>
+          <div class="metric-value">${cal.measuredKwh.toFixed(0)} kWh (M) vs ${cal.modeledKwh.toFixed(0)} kWh (Model)</div>
+          <div style="font-size: 12px; color: #666; margin-top: 8px;">Error: ${cal.errorPct > 0 ? '+' : ''}${cal.errorPct.toFixed(1)}%</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-label">Peak kW Error</div>
+          <div class="metric-value">${cal.peakKwErrorPct.toFixed(1)}%</div>
+          <div style="font-size: 12px; color: #666; margin-top: 8px;">${cal.dataPoints} hourly intervals</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-label">CVRMSE</div>
+          <div class="metric-value">${cal.cvrmsePct.toFixed(1)}%</div>
+          <div style="font-size: 12px; color: #666; margin-top: 8px;">Threshold: ≤15%</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-label">NMBE</div>
+          <div class="metric-value">${cal.nmbePct > 0 ? '+' : ''}${cal.nmbePct.toFixed(1)}%</div>
+          <div style="font-size: 12px; color: #666; margin-top: 8px;">Threshold: ±5%</div>
+        </div>
+      </div>
+      
+      <h2>Assessment</h2>
+      ${cal.validationIssues && cal.validationIssues.length > 0 ? `
+        <div class="issues">
+          <strong>Calibration Issues (${cal.validationIssues.length}):</strong>
+          <ul>${cal.validationIssues.map(issue => `<li>${issue}</li>`).join('')}</ul>
+        </div>
+      ` : `
+        <div class="no-issues">
+          ✓ No calibration tolerance issues identified. Baseline model is ready for savings validation.
+        </div>
+      `}
+      
+      <h2>Validation Criteria (ASHRAE Guideline 14)</h2>
+      <table>
+        <thead>
+          <tr><th>Metric</th><th>Threshold</th><th>Result</th><th>Status</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>CVRMSE (Coefficient of Variation of Root Mean Square Error)</td>
+            <td>≤ 15%</td>
+            <td>${cal.cvrmsePct.toFixed(1)}%</td>
+            <td>${cal.cvrmsePct <= 15 ? '✓ PASS' : '✗ FAIL'}</td>
+          </tr>
+          <tr>
+            <td>NMBE (Normalized Mean Bias Error)</td>
+            <td>±5%</td>
+            <td>${cal.nmbePct > 0 ? '+' : ''}${cal.nmbePct.toFixed(1)}%</td>
+            <td>${Math.abs(cal.nmbePct) <= 5 ? '✓ PASS' : '✗ FAIL'}</td>
+          </tr>
+          <tr>
+            <td>Peak kW Error</td>
+            <td>≤ 10%</td>
+            <td>${cal.peakKwErrorPct.toFixed(1)}%</td>
+            <td>${cal.peakKwErrorPct <= 10 ? '✓ PASS' : '✗ FAIL'}</td>
+          </tr>
+          <tr>
+            <td>Annual Energy Error</td>
+            <td>≤ 10%</td>
+            <td>${Math.abs(cal.errorPct).toFixed(1)}%</td>
+            <td>${Math.abs(cal.errorPct) <= 10 ? '✓ PASS' : '✗ FAIL'}</td>
+          </tr>
+        </tbody>
+      </table>
+      
+      <div class="footer">
+        <p>Report generated by CAS Analyzer - ${new Date().toLocaleString()}</p>
+      </div>
+    </body>
+    </html>
+  `);
+  printWindow.document.close();
+  printWindow.print();
 }
 
 // ═══════════════════════════════════════════════════════════════
