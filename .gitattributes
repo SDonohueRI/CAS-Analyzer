@@ -1,0 +1,2 @@
+# Vendored bundles must keep their original bytes so the SRI hashes in README stay valid
+dependencies/** -text

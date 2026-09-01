@@ -1,0 +1,441 @@
+{
+  "schema": "measureworks-cas-project",
+  "version": 1,
+  "appName": "CAS Analyzer",
+  "fileType": "CAS Project",
+  "fileVersion": "CAS-v1",
+  "savedAt": "2026-08-20T16:24:59.813Z",
+  "project": {
+    "projectName": "",
+    "customerName": ""
+  },
+  "nodes": [
+    {
+      "id": "n1",
+      "type": "compressor",
+      "x": 100,
+      "y": 210,
+      "props": {
+        "name": "QGD25P",
+        "flowRate": 110,
+        "pressure": 125,
+        "power": 23.1,
+        "efficiency": 92,
+        "load": 75,
+        "controlType": "lu",
+        "unloadPower": 20,
+        "stagingPriority": 1,
+        "minStableLoad": null,
+        "ratedInletPres": 14.7,
+        "ratedInletTemp": 68,
+        "operatingPressure": 125
+      },
+      "_stagedLoadFrac": 0.4618056049948696,
+      "_stagedFlow": 43,
+      "_stagedPower": 13.15416758030519,
+      "_stagedInUnload": false
+    },
+    {
+      "id": "n2",
+      "type": "compressor",
+      "x": 300,
+      "y": 540,
+      "props": {
+        "name": "Compressor 2",
+        "flowRate": 100,
+        "pressure": 125,
+        "power": 25,
+        "efficiency": 92,
+        "load": 75,
+        "controlType": "lu",
+        "unloadPower": 20,
+        "stagingPriority": 2,
+        "minStableLoad": null,
+        "ratedInletPres": 14.696,
+        "ratedInletTemp": 68,
+        "operatingPressure": 110
+      },
+      "_stagedLoadFrac": 0,
+      "_stagedFlow": 0,
+      "_stagedPower": 5,
+      "_stagedInUnload": true
+    },
+    {
+      "id": "n3",
+      "type": "filter",
+      "x": 580,
+      "y": 250,
+      "props": {
+        "name": "Filter 3",
+        "flowRate": 100,
+        "pressureDrop": 1,
+        "micronRating": 5
+      }
+    },
+    {
+      "id": "n5",
+      "type": "receiver",
+      "x": 820,
+      "y": 310,
+      "props": {
+        "name": "Receiver 5",
+        "volume": 100,
+        "maxPressure": 150,
+        "workingPressure": 130
+      }
+    },
+    {
+      "id": "n11",
+      "type": "load",
+      "x": 1360,
+      "y": 340,
+      "props": {
+        "name": "Tool Room",
+        "flowRate": 86,
+        "pressure": 90,
+        "dutyCycle": 50
+      }
+    },
+    {
+      "id": "n13",
+      "type": "dryer",
+      "x": 1090,
+      "y": 310,
+      "props": {
+        "name": "Dryer 13",
+        "flowRate": 100,
+        "pressureDrop": 2,
+        "power": 1.5,
+        "dewPoint": 38,
+        "dryerType": "refrigerated",
+        "purgeFraction": 15
+      }
+    },
+    {
+      "id": "n17",
+      "type": "dryer",
+      "x": 370,
+      "y": 230,
+      "props": {
+        "name": "Dryer 17",
+        "flowRate": 100,
+        "pressureDrop": 2,
+        "power": 1.5,
+        "dewPoint": 38,
+        "dryerType": "refrigerated",
+        "purgeFraction": 15
+      }
+    }
+  ],
+  "connections": [
+    {
+      "id": "c8",
+      "from": "n3",
+      "to": "n5",
+      "_actualFlow": 43,
+      "_capFlow": 100,
+      "_pressure": 124.4453
+    },
+    {
+      "id": "c9",
+      "from": "n2",
+      "to": "n5",
+      "_actualFlow": 0,
+      "_capFlow": 100,
+      "_pressure": 110
+    },
+    {
+      "id": "c14",
+      "from": "n5",
+      "to": "n13",
+      "_actualFlow": 43,
+      "_capFlow": 100,
+      "_pressure": 109.6302
+    },
+    {
+      "id": "c15",
+      "from": "n13",
+      "to": "n11",
+      "_actualFlow": 43,
+      "_capFlow": 100,
+      "_pressure": 109.6302
+    },
+    {
+      "id": "c18",
+      "from": "n1",
+      "to": "n17",
+      "_actualFlow": 43,
+      "_capFlow": 100,
+      "_pressure": 124.6302
+    },
+    {
+      "id": "c19",
+      "from": "n17",
+      "to": "n3",
+      "_actualFlow": 43,
+      "_capFlow": 100,
+      "_pressure": 124.4453
+    }
+  ],
+  "drainAttachments": [],
+  "nodeCounter": 20,
+  "analysisRan": true,
+  "colourMode": "flow",
+  "ambient": {
+    "pressure": "12.7",
+    "temp": "90",
+    "rh": "50",
+    "aftercoolerTemp": "175",
+    "climateZone": "3A",
+    "elecRate": "0.10",
+    "hoursYear": "6000"
+  },
+  "sim": {
+    "schedules": [
+      {
+        "id": "sched_1",
+        "name": "Compressor Schedule 1",
+        "days": {
+          "mon": [
+            {
+              "start": "06:00",
+              "stop": "18:00",
+              "factor": 100
+            }
+          ],
+          "tue": [
+            {
+              "start": "06:00",
+              "stop": "18:00",
+              "factor": 100
+            }
+          ],
+          "wed": [
+            {
+              "start": "06:00",
+              "stop": "18:00",
+              "factor": 100
+            }
+          ],
+          "thu": [
+            {
+              "start": "06:00",
+              "stop": "18:00",
+              "factor": 100
+            }
+          ],
+          "fri": [
+            {
+              "start": "06:00",
+              "stop": "18:00",
+              "factor": 100
+            }
+          ],
+          "sat": [],
+          "sun": [],
+          "holiday": []
+        }
+      },
+      {
+        "id": "sched_2",
+        "name": "Load Schedule 1",
+        "days": {
+          "mon": [
+            {
+              "start": "06:00",
+              "stop": "18:00",
+              "factor": 100
+            }
+          ],
+          "tue": [
+            {
+              "start": "06:00",
+              "stop": "18:00",
+              "factor": 100
+            }
+          ],
+          "wed": [
+            {
+              "start": "06:00",
+              "stop": "18:00",
+              "factor": 100
+            }
+          ],
+          "thu": [
+            {
+              "start": "06:00",
+              "stop": "18:00",
+              "factor": 100
+            }
+          ],
+          "fri": [
+            {
+              "start": "06:00",
+              "stop": "18:00",
+              "factor": 100
+            }
+          ],
+          "sat": [],
+          "sun": [],
+          "holiday": []
+        }
+      }
+    ],
+    "equipment": {
+      "n1": "sched_1",
+      "n2": "sched_1",
+      "n11": "sched_2"
+    },
+    "postNodes": [
+      {
+        "id": "n1",
+        "type": "compressor",
+        "x": 100,
+        "y": 210,
+        "props": {
+          "name": "QGD25P",
+          "flowRate": 110,
+          "pressure": 125,
+          "power": 23.1,
+          "efficiency": 92,
+          "load": 75,
+          "controlType": "lu",
+          "unloadPower": 20,
+          "stagingPriority": 1,
+          "minStableLoad": null,
+          "ratedInletPres": 14.7,
+          "ratedInletTemp": 68,
+          "operatingPressure": 125
+        },
+        "_stagedLoadFrac": 0.4618838476025502,
+        "_stagedFlow": 43.0072853860886,
+        "_stagedPower": 13.155613503695129,
+        "_stagedInUnload": false
+      },
+      {
+        "id": "n2",
+        "type": "compressor",
+        "x": 300,
+        "y": 540,
+        "props": {
+          "name": "Compressor 2",
+          "flowRate": 100,
+          "pressure": 125,
+          "power": 25,
+          "efficiency": 92,
+          "load": 75,
+          "controlType": "lu",
+          "unloadPower": 20,
+          "stagingPriority": 2,
+          "minStableLoad": null,
+          "ratedInletPres": 14.696,
+          "ratedInletTemp": 68,
+          "operatingPressure": 110
+        },
+        "_stagedLoadFrac": 0,
+        "_stagedFlow": 0,
+        "_stagedPower": 5,
+        "_stagedInUnload": true
+      },
+      {
+        "id": "n3",
+        "type": "filter",
+        "x": 580,
+        "y": 250,
+        "props": {
+          "name": "Filter 3",
+          "flowRate": 100,
+          "pressureDrop": 1,
+          "micronRating": 5
+        }
+      },
+      {
+        "id": "n5",
+        "type": "receiver",
+        "x": 820,
+        "y": 310,
+        "props": {
+          "name": "Receiver 5",
+          "volume": 100,
+          "maxPressure": 150,
+          "workingPressure": 130
+        }
+      },
+      {
+        "id": "n11",
+        "type": "load",
+        "x": 1360,
+        "y": 340,
+        "props": {
+          "name": "Tool Room",
+          "flowRate": 86,
+          "pressure": 90,
+          "dutyCycle": 50
+        }
+      },
+      {
+        "id": "n13",
+        "type": "dryer",
+        "x": 1090,
+        "y": 310,
+        "props": {
+          "name": "Dryer 13",
+          "flowRate": 100,
+          "pressureDrop": 2,
+          "power": 1.5,
+          "dewPoint": 38,
+          "dryerType": "refrigerated",
+          "purgeFraction": 15
+        }
+      }
+    ],
+    "postConnections": [
+      {
+        "id": "c8",
+        "from": "n3",
+        "to": "n5",
+        "_actualFlow": 43.0072853860886,
+        "_capFlow": 100,
+        "_pressure": 124.44511202111586
+      },
+      {
+        "id": "c9",
+        "from": "n2",
+        "to": "n5",
+        "_actualFlow": 0,
+        "_capFlow": 100,
+        "_pressure": 110
+      },
+      {
+        "id": "c14",
+        "from": "n5",
+        "to": "n13",
+        "_actualFlow": 43.0072853860886,
+        "_capFlow": 100,
+        "_pressure": 109.6300746807439
+      },
+      {
+        "id": "c15",
+        "from": "n13",
+        "to": "n11",
+        "_actualFlow": 43.0072853860886,
+        "_capFlow": 100,
+        "_pressure": 109.6300746807439
+      },
+      {
+        "id": "c20",
+        "from": "n1",
+        "to": "n3",
+        "_actualFlow": 0,
+        "_capFlow": 0
+      }
+    ],
+    "postEquipment": {
+      "n1": "sched_1",
+      "n2": "sched_1",
+      "n11": "sched_2"
+    },
+    "currentCase": "post",
+    "changeGroups": []
+  }
+}
