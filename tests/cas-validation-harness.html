@@ -230,6 +230,154 @@ async function runChecks() {
       approx(wb.getWorksheet('Calc_Pre').getRow(2).getCell(webKwHeader).value, preHours[0].systemKw, 1e-9, 'first-hour web kW');
       record('pass', 'Excel workbook audit structure', `Required sheets present; Calc sheets have 8,760 formula rows; Results_QC exposes web-vs-Excel QC fields.`);
     } catch (err) { record(err.message.includes('ExcelJS is not loaded') ? 'skip' : 'fail', 'Excel workbook audit structure', err.message); }
+
+    try {
+      if (!win.ExcelJS) throw new Error('ExcelJS is not loaded; skipping monitored data tests.');
+      const wb2 = new win.ExcelJS.Workbook();
+      const preRows2 = win.buildInputRows('Pre', nodesPre, equipment);
+      const postRows2 = win.buildInputRows('Post', nodesPost, equipment);
+      win.eval(`
+        nodes = ${JSON.stringify(nodesPre)};
+        connections = ${JSON.stringify(connectionsPre)};
+        drainAttachments = [];
+        SIM.schedules = ${JSON.stringify(schedules)};
+        SIM.equipment = ${JSON.stringify(equipment)};
+        SIM.postNodes = ${JSON.stringify(nodesPost)};
+        SIM.postConnections = ${JSON.stringify(connectionsPost)};
+        SIM.postEquipment = ${JSON.stringify(equipment)};
+        SIM.resultsPreHours = ${JSON.stringify((preHours || []).map(hour => ({...hour, date:null})))};
+        SIM.resultsPostHours = ${JSON.stringify((postHours || []).map(hour => ({...hour, date:null})))};
+        MONITORED_DATA.datasets = [];
+        MONITORED_DATA.confidenceLevel = 'modeled';
+        MONITORED_DATA.calibrations = { pre: null, post: null };
+        MONITORED_DATA.baselineCalibration = null;
+      `);
+      win.addInputsSheet(wb2, 'Inputs_Pre', preRows2);
+      win.addInputsSheet(wb2, 'Inputs_Post', postRows2);
+      const schedWs2 = win.addSchedulesSheet(wb2);
+      win.addAssignmentsSheet(wb2, preRows2, postRows2);
+      win.addCalendarSheet(wb2, 2025);
+      const lastScheduleRow2 = Math.max(2, schedWs2.rowCount);
+      const preCalc2 = win.addCalcSheet(wb2, 'Calc_Pre', nodesPre, equipment, 'Inputs_Pre', preHours, lastScheduleRow2, ambient);
+      const postCalc2 = win.addCalcSheet(wb2, 'Calc_Post', nodesPost, equipment, 'Inputs_Post', postHours, lastScheduleRow2, ambient);
+      win.addResultsSheet(wb2, win.aggHours(preHours), win.aggHours(postHours), preCalc2, postCalc2);
+      win.addDiagramSheet(wb2);
+      win.addMonitoredDataSheet(wb2);
+      win.addWarningsSheet(wb2);
+      const mvSheet = wb2.getWorksheet('MonitoredData');
+      if (mvSheet) throw new Error('MonitoredData sheet should not exist when no monitored data is loaded.');
+      record('pass', 'Excel export without monitored data', 'MonitoredData sheet correctly omitted when no data loaded.');
+    } catch (err) { record(err.message.includes('ExcelJS is not loaded') ? 'skip' : 'fail', 'Excel export without monitored data', err.message); }
+
+    try {
+      if (!win.ExcelJS) throw new Error('ExcelJS is not loaded; skipping monitored data sheet test.');
+      const wb3 = new win.ExcelJS.Workbook();
+      const preRows3 = win.buildInputRows('Pre', nodesPre, equipment);
+      const postRows3 = win.buildInputRows('Post', nodesPost, equipment);
+      const mockData15min = [];
+      for (let i = 0; i < 96; i++) {
+        mockData15min.push({
+          timestamp: new Date(2025, 0, 1, 0, i*15).toISOString(),
+          power: 80 + Math.random() * 5,
+          pressure: 108.5,
+          completeness: 1.0
+        });
+      }
+      const mockFlow15min = mockData15min.map(row => ({
+        timestamp: row.timestamp,
+        flow: 420,
+        completeness: 1.0
+      }));
+      win.eval(`
+        nodes = ${JSON.stringify(nodesPre)};
+        connections = ${JSON.stringify(connectionsPre)};
+        drainAttachments = [];
+        SIM.schedules = ${JSON.stringify(schedules)};
+        SIM.equipment = ${JSON.stringify(equipment)};
+        SIM.postNodes = ${JSON.stringify(nodesPost)};
+        SIM.postConnections = ${JSON.stringify(connectionsPost)};
+        SIM.postEquipment = ${JSON.stringify(equipment)};
+        SIM.resultsPreHours = ${JSON.stringify((preHours || []).map(hour => ({...hour, date:null})))};
+        SIM.resultsPostHours = ${JSON.stringify((postHours || []).map(hour => ({...hour, date:null})))};
+        MONITORED_DATA.datasets = [{
+            id: 'test-ds',
+            fileName: 'test_logger.csv',
+            simCase: 'pre',
+            periodStart: '2025-01-01',
+            periodEnd: '2025-01-01',
+            rowsImported: 96,
+            data15min: ${JSON.stringify(mockData15min)},
+            channels: [{mappedTo: 'timestamp'}, {mappedTo: 'power'}, {mappedTo: 'pressure'}],
+            qa: {rowsImported: 96, completenessPct: 1.0}
+          }, {
+            id: 'test-flow-ds',
+            fileName: 'test_flow.csv',
+            simCase: 'pre',
+            periodStart: '2025-01-01',
+            periodEnd: '2025-01-01',
+            rowsImported: 96,
+            data15min: ${JSON.stringify(mockFlow15min)},
+            channels: [{mappedTo: 'timestamp'}, {mappedTo: 'flow'}],
+            qa: {rowsImported: 96, completenessPct: 1.0}
+          }];
+        MONITORED_DATA.confidenceLevel = 'meter-informed';
+        MONITORED_DATA.calibrations = { pre: {
+            caseType: 'pre',
+            measuredKwh: 1920,
+            modeledKwh: 1980,
+            errorPct: -3.1,
+            errorKwh: -60,
+            peakKwErrorPct: 2.5,
+            cvrmsePct: 8.3,
+            nmbePct: -2.1,
+            dataPoints: 24,
+            status: 'PASS',
+            validationIssues: []
+        }, post: null };
+        MONITORED_DATA.baselineCalibration = MONITORED_DATA.calibrations.pre;
+          MONITORED_DATA.exportTimeZone = 'America/Chicago';
+      `);
+      win.addInputsSheet(wb3, 'Inputs_Pre', preRows3);
+      win.addInputsSheet(wb3, 'Inputs_Post', postRows3);
+      const schedWs3 = win.addSchedulesSheet(wb3);
+      win.addAssignmentsSheet(wb3, preRows3, postRows3);
+      win.addCalendarSheet(wb3, 2025);
+      const lastScheduleRow3 = Math.max(2, schedWs3.rowCount);
+      const preCalc3 = win.addCalcSheet(wb3, 'Calc_Pre', nodesPre, equipment, 'Inputs_Pre', preHours, lastScheduleRow3, ambient);
+      const postCalc3 = win.addCalcSheet(wb3, 'Calc_Post', nodesPost, equipment, 'Inputs_Post', postHours, lastScheduleRow3, ambient);
+      win.addResultsSheet(wb3, win.aggHours(preHours), win.aggHours(postHours), preCalc3, postCalc3);
+      win.addDiagramSheet(wb3);
+      win.addMonitoredDataSheet(wb3);
+      win.addWarningsSheet(wb3);
+      const mvSheet3 = wb3.getWorksheet('MonitoredData');
+      if (!mvSheet3) throw new Error('MonitoredData sheet missing when monitored data is present.');
+      const mvRow1 = mvSheet3.getRow(1).values.join('|');
+      if (!mvRow1.includes('Monitored Data Sources')) throw new Error('MonitoredData sheet missing title row.');
+      const sourceRow = mvSheet3.getRow(4);
+      if (!sourceRow.values[1] || !sourceRow.values[1].includes('test_logger')) throw new Error('MonitoredData sheet missing source filename.');
+      let hasCalibrationHeader = false;
+      mvSheet3.eachRow(row => {
+        if (row.values.includes('Pre Case Calibration Results')) hasCalibrationHeader = true;
+      });
+      if (!hasCalibrationHeader) throw new Error('MonitoredData sheet missing calibration header.');
+      let intervalHeaderRow = 0;
+      mvSheet3.eachRow((row, rowNumber) => {
+        if (row.values.includes('15-Minute Resampled Data')) intervalHeaderRow = rowNumber + 1;
+      });
+      if (!intervalHeaderRow) throw new Error('MonitoredData sheet missing 15-minute data section.');
+      const intervalHeaders = mvSheet3.getRow(intervalHeaderRow).values;
+      if (!String(intervalHeaders[1] || '').includes('Timestamp (America/Chicago)') || !intervalHeaders.includes('test_logger.csv: power (kW)') || !intervalHeaders.includes('test_flow.csv: flow (SCFM)')) throw new Error('15-minute export is missing timezone, units, or merged source parameter columns.');
+      let intervalRows = 0;
+      for (let rowNumber = intervalHeaderRow + 1; rowNumber <= mvSheet3.rowCount; rowNumber++) {
+        const timestamp = mvSheet3.getRow(rowNumber).getCell(1).value;
+        if (!timestamp) break;
+        intervalRows++;
+      }
+      if (intervalRows !== mockData15min.length) throw new Error(`Expected ${mockData15min.length} 15-minute rows, found ${intervalRows}.`);
+      const exportedTimestamp = String(mvSheet3.getRow(intervalHeaderRow + 1).getCell(1).value || '');
+      if (!/GMT-0[56]:00$/.test(exportedTimestamp)) throw new Error(`Timestamp does not include the selected Chicago offset: ${exportedTimestamp}`);
+      record('pass', 'Excel export with monitored data', 'MonitoredData sheet merges overlapping sources and renders timestamps in the selected time zone.');
+    } catch (err) { record(err.message.includes('ExcelJS is not loaded') ? 'skip' : 'fail', 'Excel export with monitored data', err.message); }
   } catch (err) {
     record('fail', 'Harness setup', err.message);
   }

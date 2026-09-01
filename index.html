@@ -6,7 +6,12 @@
 <title>Compressed Air System Analyzer</title>
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap');
+  /* Map the IBM Plex family names to installed fonts so no webfont request is needed.
+     local('IBM Plex ...') is listed first so a real install still wins. */
+  @font-face{font-family:'IBM Plex Sans';font-style:normal;font-weight:100 500;src:local('IBM Plex Sans'),local('Segoe UI'),local('SF Pro Text'),local('Helvetica Neue'),local('Arial');}
+  @font-face{font-family:'IBM Plex Sans';font-style:normal;font-weight:600 900;src:local('IBM Plex Sans SemiBold'),local('Segoe UI Semibold'),local('Helvetica Neue Bold'),local('Arial Bold');}
+  @font-face{font-family:'IBM Plex Mono';font-style:normal;font-weight:100 500;src:local('IBM Plex Mono'),local('Consolas'),local('SFMono-Regular'),local('Menlo'),local('DejaVu Sans Mono');}
+  @font-face{font-family:'IBM Plex Mono';font-style:normal;font-weight:600 900;src:local('IBM Plex Mono SemiBold'),local('Consolas Bold'),local('Menlo Bold'),local('DejaVu Sans Mono Bold');}
   :root {
     --bg:#0d1117;--surface:#161b22;--surface2:#1c2330;--surface3:#21262d;
     --border:#30363d;--border2:#444c56;--text:#e6edf3;--text2:#8b949e;--text3:#6e7681;
@@ -723,11 +728,13 @@ let colourMode='flow'; // 'flow' | 'pressure'
 // MONITORED DATA STATE (M&V Validation)
 // ═══════════════════════════════════════════
 const MONITORED_DATA = {
-  datasets: [],           // [{id, sourceType, fileName, periodStart, periodEnd, intervalMinutes, confidence, channels, qa, data15min, hourlyData}]
+  datasets: [],           // [{id, sourceType, fileName, simCase, periodStart, periodEnd, intervalMinutes, confidence, channels, qa, data15min, hourlyData}]
   confidenceLevel: 'modeled', // 'modeled'|'meter-informed'|'baseline-calibrated'|'field-validated'|'not-validated'
-  baselineCalibration: null,  // {measuredKwh, modeledKwh, errorPct, peakKwErrorPct, cvrmsePct, nmbePct, status}
+  calibrations: { pre: null, post: null }, // per-case calibration results
+  baselineCalibration: null,  // alias of calibrations.pre for backward compatibility
   savingsValidation: null,    // {preMeasuredKwh, preModeledKwh, postMeasuredKwh, postModeledKwh, savingsValidated}
-  calibrationNotes: ''
+  calibrationNotes: '',
+  exportTimeZone: ''          // IANA zone override; blank uses the browser zone
 };
 
 // Monitored data configuration and limits
@@ -2594,11 +2601,13 @@ function buildProjectData() {
       changeGroups: JSON.parse(JSON.stringify(SIM.changeGroups))
     },
     monitoredData: {
-      datasets: JSON.parse(JSON.stringify(MONITORED_DATA.datasets)),
+      datasets: serializeMonitoredDatasets(),
       confidenceLevel: MONITORED_DATA.confidenceLevel,
+      calibrations: JSON.parse(JSON.stringify(MONITORED_DATA.calibrations || { pre: null, post: null })),
       baselineCalibration: MONITORED_DATA.baselineCalibration ? JSON.parse(JSON.stringify(MONITORED_DATA.baselineCalibration)) : null,
       savingsValidation: MONITORED_DATA.savingsValidation ? JSON.parse(JSON.stringify(MONITORED_DATA.savingsValidation)) : null,
-      calibrationNotes: MONITORED_DATA.calibrationNotes
+      calibrationNotes: MONITORED_DATA.calibrationNotes,
+      exportTimeZone: MONITORED_DATA.exportTimeZone
     }
   };
 }
@@ -2636,11 +2645,21 @@ function applyProjectData(data) {
   SIM.resultsPreHours = null;
   SIM.resultsPostHours = null;
   // Restore monitored data
-  MONITORED_DATA.datasets = JSON.parse(JSON.stringify(data.monitoredData?.datasets || []));
+  MONITORED_DATA.datasets = JSON.parse(JSON.stringify(data.monitoredData?.datasets || [])).map(dataset => {
+    delete dataset.rawRows; // legacy projects stored raw rows; only the 15-minute summary is used
+    dataset.simCase = normalizeSimCase(dataset.simCase);
+    return dataset;
+  });
   MONITORED_DATA.confidenceLevel = data.monitoredData?.confidenceLevel || 'modeled';
-  MONITORED_DATA.baselineCalibration = data.monitoredData?.baselineCalibration || null;
+  const savedCalibrations = data.monitoredData?.calibrations;
+  MONITORED_DATA.calibrations = {
+    pre: savedCalibrations?.pre || data.monitoredData?.baselineCalibration || null,
+    post: savedCalibrations?.post || null
+  };
+  MONITORED_DATA.baselineCalibration = MONITORED_DATA.calibrations.pre;
   MONITORED_DATA.savingsValidation = data.monitoredData?.savingsValidation || null;
   MONITORED_DATA.calibrationNotes = data.monitoredData?.calibrationNotes || '';
+  MONITORED_DATA.exportTimeZone = data.monitoredData?.exportTimeZone || '';
   renderProjectInfo();
   syncMainCanvasFromState();
   selectNode(null);
@@ -2905,7 +2924,7 @@ function normalizeTimeZoneText(value) {
   const text = String(value ?? '').trim();
   if (!text) return '';
   const gmtMatch = text.match(/\b(?:GMT|UTC)\s*([+-]\d{1,2}:?\d{2})\b/i);
-  const bareMatch = text.match(/\b([+-]\d{1,2}:?\d{2})\b/);
+  const bareMatch = text.match(/(?<![\dA-Za-z])([+-]\d{1,2}:?\d{2})(?!\d)/);
   const offset = gmtMatch?.[1] || bareMatch?.[1];
   if (!offset) return text;
   const normalized = offset.includes(':') ? offset : `${offset.slice(0, -2)}:${offset.slice(-2)}`;
@@ -2923,6 +2942,86 @@ function extractTimeZoneFromHeaders(headers) {
 
 function timestampHasTimeZone(value) {
   return /(?:Z\b|\b(?:GMT|UTC)\b|[+-]\d{2}:?\d{2}\b)/i.test(String(value ?? ''));
+}
+
+function stripTimeZoneFromTimestampText(value) {
+  return String(value ?? '')
+    .replace(/\s*(?:\b(?:GMT|UTC)\b\s*)?[+-]\d{1,2}:?\d{2}\s*$/i, '')
+    .replace(/\s*\b(?:GMT|UTC)\b\s*$/i, '')
+    .replace(/Z$/, '')
+    .trim();
+}
+
+function formatUtcOffsetLabel(totalMinutes) {
+  const sign = totalMinutes < 0 ? '-' : '+';
+  const abs = Math.abs(totalMinutes);
+  return `GMT${sign}${String(Math.floor(abs / 60)).padStart(2, '0')}:${String(abs % 60).padStart(2, '0')}`;
+}
+
+function getLocalUtcOffsetLabel(date) {
+  const reference = date && !isNaN(date) ? date : new Date();
+  return formatUtcOffsetLabel(-reference.getTimezoneOffset());
+}
+
+function isValidUtcOffsetLabel(value) {
+  return /^GMT[+-]\d{2}:\d{2}$/.test(String(value || ''));
+}
+
+// Reports the offset the parser will actually apply, and where it came from
+function getResolvedTimeZoneInfo(dataset, timestampConfig) {
+  const config = timestampConfig || {};
+  const rows = dataset?.rawRows || [];
+  const sourceColumns = config.mode === 'date_time_columns'
+    ? [config.dateColumn, config.timeColumn].filter(Boolean)
+    : [config.timestampColumn].filter(Boolean);
+
+  let sampleText = '';
+  let sampleRow = null;
+  for (const row of rows.slice(0, 500)) {
+    const text = config.mode === 'date_time_columns'
+      ? `${row[config.dateColumn] ?? ''} ${row[config.timeColumn] ?? ''}`.trim()
+      : String(row[config.timestampColumn] ?? '').trim();
+    if (text) { sampleText = text; sampleRow = row; break; }
+  }
+
+  let detected = '';
+  let source = '';
+  if (timestampHasTimeZone(sampleText)) {
+    detected = normalizeTimeZoneText(sampleText);
+    source = 'offset embedded in the timestamp value';
+  }
+  if (!detected) {
+    if (config.timeZoneMode === 'header') {
+      detected = extractTimeZoneFromHeaders(sourceColumns);
+      if (detected) source = `column header "${sourceColumns.find(col => normalizeTimeZoneText(col) === detected) || sourceColumns[0]}"`;
+    } else if (config.timeZoneMode === 'column') {
+      detected = normalizeTimeZoneText(sampleRow?.[config.timeZoneColumn]);
+      if (detected) source = `time zone column "${config.timeZoneColumn}"`;
+    } else if (config.timeZoneMode === 'manual') {
+      detected = normalizeTimeZoneText(config.manualTimeZone);
+      if (detected) source = 'manual time zone entry';
+    }
+  }
+  if (detected && !isValidUtcOffsetLabel(detected)) {
+    detected = '';
+    source = '';
+  }
+
+  const sampleDate = sampleText ? new Date(stripTimeZoneFromTimestampText(sampleText)) : null;
+  const browserOffset = getLocalUtcOffsetLabel(sampleDate && !isNaN(sampleDate) ? sampleDate : null);
+  const override = normalizeTimeZoneText(config.offsetOverride);
+  const validOverride = isValidUtcOffsetLabel(override) ? override : '';
+
+  return {
+    detectedOffset: detected,
+    detectedSource: source,
+    browserOffset,
+    override: validOverride,
+    effectiveOffset: validOverride || detected || browserOffset,
+    isOverridden: !!validOverride && validOverride !== detected,
+    usedFallback: !validOverride && !detected,
+    sampleText
+  };
 }
 
 function getTimestampSourceColumns(timestampConfig, fallbackColumn) {
@@ -2951,6 +3050,13 @@ function parseTimestampFromRow(row, timestampConfig, fallbackColumn) {
   
   if (!timestampText) return null;
   
+  // A user-entered offset wins over anything detected in the file
+  const override = normalizeTimeZoneText(config.offsetOverride);
+  if (isValidUtcOffsetLabel(override)) {
+    const overridden = new Date(`${stripTimeZoneFromTimestampText(timestampText)} ${override}`);
+    return isNaN(overridden) ? null : overridden;
+  }
+  
   let zoneText = '';
   if (config.timeZoneMode === 'header') {
     zoneText = extractTimeZoneFromHeaders(sourceHeaders);
@@ -2971,6 +3077,53 @@ function formatDateForInput(date) {
   const month = String(date.getMonth() + 1).padStart(2, '0');
   const day = String(date.getDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
+}
+
+function getBrowserTimeZone() {
+  return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+}
+
+function getMonitoredDataExportTimeZone() {
+  const requestedZone = String(MONITORED_DATA.exportTimeZone || '').trim();
+  if (!requestedZone) return getBrowserTimeZone();
+  try {
+    Intl.DateTimeFormat('en-US', { timeZone: requestedZone });
+    return requestedZone;
+  } catch (err) {
+    return getBrowserTimeZone();
+  }
+}
+
+function formatMonitoredDataExportTimestamp(value) {
+  const timestamp = new Date(value);
+  if (isNaN(timestamp)) return '';
+  const timeZone = getMonitoredDataExportTimeZone();
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit',
+    hourCycle: 'h23', timeZoneName: 'longOffset'
+  }).formatToParts(timestamp).reduce((values, part) => {
+    values[part.type] = part.value;
+    return values;
+  }, {});
+  return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}:${parts.second} ${parts.timeZoneName || timeZone}`;
+}
+
+function updateMonitoredDataExportTimeZone(value) {
+  const requestedZone = String(value ?? '').trim();
+  if (requestedZone) {
+    try {
+      Intl.DateTimeFormat('en-US', { timeZone: requestedZone });
+    } catch (err) {
+      alert(`"${requestedZone}" is not a recognized IANA time zone. Use a value such as America/Chicago or leave the field blank for your browser time zone.`);
+      return;
+    }
+  }
+  MONITORED_DATA.exportTimeZone = requestedZone;
+  const effectiveZone = getMonitoredDataExportTimeZone();
+  const label = document.getElementById('mvExportTimeZoneEffective');
+  if (label) label.textContent = `Exporting in ${effectiveZone}`;
 }
 
 function inferMonitoredDataPeriod(rows, timestampConfig, fallbackColumn) {
@@ -3072,6 +3225,114 @@ function getTargetMetricForChannel(channelType) {
   if (channelType === 'humidity') return 'relative_humidity_pct';
   if (channelType === 'cumulative_energy') return 'kwh';
   return channelType || 'unknown';
+}
+
+// Engineering units the analysis engine stores after import conversions
+const CHANNEL_TARGET_UNITS = {
+  power: 'kW',
+  pressure: 'psig',
+  flow: 'SCFM',
+  temperature: 'degF',
+  humidity: '%RH',
+  cumulative_energy: 'kWh',
+  status: 'on/off'
+};
+
+// Units the raw logger column is in for each supported conversion
+const CONVERSION_SOURCE_UNITS = {
+  watts_to_kw: 'W',
+  amps_to_kw_3ph: 'A',
+  amps_to_kw_1ph: 'A',
+  hp_to_kw: 'HP',
+  psia_to_psig: 'psia',
+  pa_to_psig: 'Pa',
+  kpa_to_psig: 'kPa',
+  bar_to_psig: 'bar',
+  m3min_to_scfm: 'm3/min',
+  m3hr_to_scfm: 'm3/hr',
+  lps_to_scfm: 'L/s',
+  c_to_f: 'degC',
+  fraction_to_percent: 'fraction',
+  wh_to_kwh: 'Wh',
+  mwh_to_kwh: 'MWh'
+};
+
+function getChannelTargetUnit(channelType) {
+  return CHANNEL_TARGET_UNITS[channelType] || '';
+}
+
+function getChannelSourceUnit(channel) {
+  const type = channel?.conversion?.type || 'none';
+  if (type === 'manual') return 'custom';
+  return CONVERSION_SOURCE_UNITS[type] || getChannelTargetUnit(channel?.mappedTo || channel?.channelType);
+}
+
+function getChannelUnitLabel(channel) {
+  const quantity = channel?.mappedTo || channel?.channelType || 'unknown';
+  const unit = getChannelTargetUnit(quantity);
+  return unit ? `${quantity} (${unit})` : String(quantity);
+}
+
+function getChannelConversionLabel(channel) {
+  const type = channel?.conversion?.type || 'none';
+  const sourceUnit = getChannelSourceUnit(channel) || '—';
+  const targetUnit = getChannelTargetUnit(channel?.mappedTo || channel?.channelType) || '—';
+  if (type === 'none') return `${sourceUnit} (no conversion)`;
+  return `${sourceUnit} -> ${targetUnit} (${type})`;
+}
+
+// 15-minute field names carry suffixes for derived series (_interval, _runtimePct, _completeness)
+function getMonitoredFieldUnit(dataset, field) {
+  const name = String(field || '');
+  if (name === 'dataCompleteness' || name.endsWith('_completeness') || name.endsWith('_runtimePct')) return '%';
+  const base = name.replace(/_interval$/, '');
+  const channel = (dataset?.channels || []).find(item => item.mappedTo === base);
+  return getChannelTargetUnit(channel?.mappedTo || base);
+}
+
+function getMonitoredFieldLabel(dataset, field) {
+  const unit = getMonitoredFieldUnit(dataset, field);
+  return unit ? `${field} (${unit})` : String(field || '');
+}
+
+function normalizeSimCase(value) {
+  return value === 'post' ? 'post' : 'pre';
+}
+
+function getSimCaseLabel(value) {
+  return normalizeSimCase(value) === 'post' ? 'Post Case' : 'Pre Case';
+}
+
+function getDatasetsForSimCase(caseType) {
+  const target = normalizeSimCase(caseType);
+  return MONITORED_DATA.datasets.filter(dataset => normalizeSimCase(dataset.simCase) === target);
+}
+
+function getSimCaseModelHours(caseType) {
+  return normalizeSimCase(caseType) === 'post' ? SIM.resultsPostHours : SIM.resultsPreHours;
+}
+
+function getCalibrationForCase(caseType) {
+  return MONITORED_DATA.calibrations?.[normalizeSimCase(caseType)] || null;
+}
+
+function setCalibrationForCase(caseType, result) {
+  if (!MONITORED_DATA.calibrations) MONITORED_DATA.calibrations = { pre: null, post: null };
+  MONITORED_DATA.calibrations[normalizeSimCase(caseType)] = result;
+  MONITORED_DATA.baselineCalibration = MONITORED_DATA.calibrations.pre;
+}
+
+function clearMonitoredCalibrations() {
+  MONITORED_DATA.calibrations = { pre: null, post: null };
+  MONITORED_DATA.baselineCalibration = null;
+}
+
+// Project files store only the 15-minute summary, never the raw metered rows
+function serializeMonitoredDatasets() {
+  return MONITORED_DATA.datasets.map(dataset => {
+    const { rawRows, ...rest } = dataset;
+    return JSON.parse(JSON.stringify(rest));
+  });
 }
 
 function getMonitorTargetOptions(channelType) {
@@ -3772,6 +4033,7 @@ function processNextMonitoredDataFile() {
         id: datasetId,
         sourceType: 'external_logger',
         fileName: file.name,
+        simCase: 'pre',
         periodStart: null,
         periodEnd: null,
         intervalMinutes: 15,
@@ -3797,18 +4059,26 @@ function processNextMonitoredDataFile() {
 
 function updateMonitoredDataImportSummary() {
   const btnRunCalibration = document.getElementById('btnRunCalibration');
+  const calibrationCase = document.getElementById('mvCalibrationCase');
   const dataStatus = document.getElementById('mvDataStatus');
   const dataPanel = document.getElementById('monitoredDataPanel');
   const dataInfo = document.getElementById('mvDataInfo');
   const totalSources = MONITORED_DATA.datasets.length;
   const totalIntervals = MONITORED_DATA.datasets.reduce((sum, dataset) => sum + (dataset.data15min?.length || 0), 0);
   const mappedPowerSources = MONITORED_DATA.datasets.reduce((sum, dataset) => sum + (dataset.channels || []).filter(channel => channel.mappedTo === 'power').length, 0);
+  const preSources = getDatasetsForSimCase('pre').length;
+  const postSources = getDatasetsForSimCase('post').length;
   if (totalSources === 0) return;
   if (btnRunCalibration) btnRunCalibration.style.display = 'inline-block';
+  if (calibrationCase) calibrationCase.style.display = 'inline-block';
   if (dataStatus) dataStatus.textContent = totalSources === 1 ? `Loaded: ${MONITORED_DATA.datasets[0].fileName}` : `Loaded: ${totalSources} monitored sources`;
   if (dataPanel) dataPanel.style.display = 'block';
+  const timeZoneInput = document.getElementById('mvExportTimeZone');
+  if (timeZoneInput) timeZoneInput.value = MONITORED_DATA.exportTimeZone || '';
+  const timeZoneLabel = document.getElementById('mvExportTimeZoneEffective');
+  if (timeZoneLabel) timeZoneLabel.textContent = `Exporting in ${getMonitoredDataExportTimeZone()}`;
   if (dataInfo) {
-    dataInfo.innerHTML = `<strong>${totalSources} source${totalSources === 1 ? '' : 's'}</strong>, ${mappedPowerSources} measured power channel${mappedPowerSources === 1 ? '' : 's'}, ${totalIntervals} total 15-minute intervals`;
+    dataInfo.innerHTML = `<strong>${totalSources} source${totalSources === 1 ? '' : 's'}</strong>, ${mappedPowerSources} measured power channel${mappedPowerSources === 1 ? '' : 's'}, ${totalIntervals} total 15-minute intervals<br>${preSources} mapped to Pre Case · ${postSources} mapped to Post Case`;
   }
 }
 
@@ -3818,10 +4088,12 @@ function resetMonitoredDataSummaryIfEmpty() {
     return;
   }
   const btnRunCalibration = document.getElementById('btnRunCalibration');
+  const calibrationCase = document.getElementById('mvCalibrationCase');
   const dataStatus = document.getElementById('mvDataStatus');
   const dataPanel = document.getElementById('monitoredDataPanel');
   const dataInfo = document.getElementById('mvDataInfo');
   if (btnRunCalibration) btnRunCalibration.style.display = 'none';
+  if (calibrationCase) calibrationCase.style.display = 'none';
   if (dataStatus) dataStatus.textContent = 'Import Data';
   if (dataPanel) dataPanel.style.display = 'none';
   if (dataInfo) dataInfo.innerHTML = '—';
@@ -3841,6 +4113,19 @@ function renderSourceManagerRows(dataset) {
   const compressors = nodes.filter(n => n.type === 'compressor');
   const powerChannels = channels.filter(ch => ch.mappedTo === 'power');
   const currentAssignedId = dataset.compressorId || null;
+  const simCase = normalizeSimCase(dataset.simCase);
+  
+  const caseSection = `
+    <div style="margin-bottom:12px;padding:8px;background:rgba(0,150,255,.06);border-left:3px solid var(--accent2, #0096ff);border-radius:0 4px 4px 0;">
+      <div style="font-size:10px;color:var(--text3);margin-bottom:4px;text-transform:uppercase;font-weight:600;">Calibrate Against</div>
+      <select onchange="assignDatasetSimCase('${escapeHtml(dataset.id)}', this.value)"
+        style="font-size:11px;padding:3px 6px;background:var(--surface3);border:1px solid var(--border);border-radius:4px;color:var(--text);width:100%;max-width:300px;">
+        <option value="pre" ${simCase === 'pre' ? 'selected' : ''}>Pre Case (baseline)</option>
+        <option value="post" ${simCase === 'post' ? 'selected' : ''}>Post Case (post-retrofit)</option>
+      </select>
+      <div style="font-size:9px;color:var(--text3);margin-top:3px;">Each source calibrates only the case it is mapped to</div>
+    </div>
+  `;
   
   // Render compressor assignment section if there are power channels
   const compressorSection = powerChannels.length > 0 ? `
@@ -3856,11 +4141,12 @@ function renderSourceManagerRows(dataset) {
   ` : '';
   
   return `
+    ${caseSection}
     ${compressorSection}
     <table style="width:100%;border-collapse:collapse;font-size:11px;color:var(--text2);">
       <thead><tr>
         <th style="text-align:left;border-bottom:1px solid var(--border);padding:5px 6px;">Source Column</th>
-        <th style="text-align:left;border-bottom:1px solid var(--border);padding:5px 6px;">Quantity</th>
+        <th style="text-align:left;border-bottom:1px solid var(--border);padding:5px 6px;">Quantity (units)</th>
         <th style="text-align:left;border-bottom:1px solid var(--border);padding:5px 6px;">Target</th>
         <th style="text-align:left;border-bottom:1px solid var(--border);padding:5px 6px;">Conversion</th>
       </tr></thead>
@@ -3868,9 +4154,9 @@ function renderSourceManagerRows(dataset) {
         ${channels.map(channel => `
           <tr>
             <td style="border-bottom:1px solid rgba(255,255,255,.06);padding:5px 6px;">${escapeHtml(channel.sourceColumn)}</td>
-            <td style="border-bottom:1px solid rgba(255,255,255,.06);padding:5px 6px;">${escapeHtml(channel.mappedTo)}</td>
+            <td style="border-bottom:1px solid rgba(255,255,255,.06);padding:5px 6px;">${escapeHtml(channel.mappedTo === 'timestamp' ? channel.mappedTo : getChannelUnitLabel(channel))}</td>
             <td style="border-bottom:1px solid rgba(255,255,255,.06);padding:5px 6px;">${escapeHtml(channel.target?.targetLabel || getMonitorTargetLabel(channel.target) || '—')}</td>
-            <td style="border-bottom:1px solid rgba(255,255,255,.06);padding:5px 6px;">${escapeHtml(channel.conversion?.type || 'none')}</td>
+            <td style="border-bottom:1px solid rgba(255,255,255,.06);padding:5px 6px;">${escapeHtml(channel.mappedTo === 'timestamp' ? '—' : getChannelConversionLabel(channel))}</td>
           </tr>
         `).join('')}
       </tbody>
@@ -3899,7 +4185,7 @@ function renderSourceManagerContent() {
           <div style="font-size:10px;color:var(--text3);margin-top:4px;line-height:1.6;">
             ${dataset.qa?.rowsImported?.toLocaleString?.() || dataset.rowsImported?.toLocaleString?.() || 0} rows · ${dataset.data15min?.length || 0} intervals · ${escapeHtml(dataset.periodStart || '—')} to ${escapeHtml(dataset.periodEnd || '—')} · ${getDatasetPowerChannelCount(dataset)} power channel${getDatasetPowerChannelCount(dataset) === 1 ? '' : 's'}
           </div>
-          <div style="font-size:10px;color:var(--accent);margin-top:3px;">Assignment: <strong>${escapeHtml(assignedLabel)}</strong></div>
+          <div style="font-size:10px;color:var(--accent);margin-top:3px;">Assignment: <strong>${escapeHtml(assignedLabel)}</strong> · Case: <strong>${escapeHtml(getSimCaseLabel(dataset.simCase))}</strong> · UTC offset: <strong>${escapeHtml(dataset.utcOffset || 'browser default')}</strong>${dataset.utcOffsetSource ? ` <span style="color:var(--text3)">(${escapeHtml(dataset.utcOffsetSource)})</span>` : ''}</div>
         </div>
         <button class="btn danger-btn" onclick="removeMonitoredSource('${escapeHtml(dataset.id)}')" style="padding:3px 8px;font-size:10px;">Remove</button>
       </div>
@@ -3950,10 +4236,19 @@ function removeMonitoredSource(datasetId) {
   if (!dataset) return;
   if (!confirm(`Remove monitored source "${dataset.fileName}"?`)) return;
   MONITORED_DATA.datasets = MONITORED_DATA.datasets.filter(item => item.id !== datasetId);
-  MONITORED_DATA.baselineCalibration = null;
+  clearMonitoredCalibrations();
   MONITORED_DATA.confidenceLevel = MONITORED_DATA.datasets.length ? 'meter-informed' : 'modeled';
   resetMonitoredDataSummaryIfEmpty();
   refreshMonitoredSourceManager();
+}
+
+function assignDatasetSimCase(datasetId, caseType) {
+  const dataset = MONITORED_DATA.datasets.find(item => item.id === datasetId);
+  if (!dataset) return;
+  dataset.simCase = normalizeSimCase(caseType);
+  clearMonitoredCalibrations();
+  refreshMonitoredSourceManager();
+  updateMonitoredDataImportSummary();
 }
 
 function assignDatasetToCompressor(datasetId, compressorId) {
@@ -3964,7 +4259,7 @@ function assignDatasetToCompressor(datasetId, compressorId) {
   dataset.compressorId = compressorId || null;
   
   // Clear calibration since the mapping changed
-  MONITORED_DATA.baselineCalibration = null;
+  clearMonitoredCalibrations();
   
   // Refresh the display
   refreshMonitoredSourceManager();
@@ -3994,7 +4289,8 @@ function showChannelMappingDialog(dataset) {
     timeColumn: timeDefault,
     timeZoneMode: 'header',
     timeZoneColumn: '',
-    manualTimeZone: ''
+    manualTimeZone: '',
+    offsetOverride: ''
   };
   const observedInterval = inferObservedIntervalMinutes(dataset.rawRows, initialTimestampConfig, timestampDefault);
   
@@ -4012,8 +4308,16 @@ function showChannelMappingDialog(dataset) {
           <input type="date" id="mvPeriodEnd" style="flex:1;padding:4px 6px;background:var(--surface2);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:11px">
         </div>
         <div style="font-size:10px;color:var(--text3);margin-top:4px;line-height:1.5;">
-          ℹ️ Supports 1-second to hourly data. High-frequency data will be aggregated to 15-minute summaries for comparison against 8760 hourly model results.
+          ℹ️ Supports 1-second to hourly data. High-frequency data will be aggregated to 15-minute summaries for comparison against 8760 hourly model results. Only the 15-minute summary is stored in the project file.
         </div>
+      </div>
+
+      <div style="margin-bottom:12px;">
+        <label style="display:block;font-size:11px;color:var(--text3);margin-bottom:4px;text-transform:uppercase;letter-spacing:.8px">Calibrate Against</label>
+        <select id="mvSimCase" style="width:100%;padding:4px 6px;background:var(--surface2);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:11px">
+          <option value="pre" selected>Pre Case (baseline)</option>
+          <option value="post">Post Case (post-retrofit)</option>
+        </select>
       </div>
       
       <div style="margin-bottom:12px;">
@@ -4039,28 +4343,28 @@ function showChannelMappingDialog(dataset) {
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;">
           <div>
             <div style="font-size:10px;color:var(--text3);margin-bottom:3px">Timestamp format</div>
-            <select id="mvTimestampMode" onchange="updateTimestampParsingControlsVisibility(); prefillMonitoredDataPeriod(window._mvCurrentDataset, getTimestampParsingConfigFromDialog()); prefillObservedInterval(window._mvCurrentDataset, getTimestampParsingConfigFromDialog())" style="width:100%;padding:4px 6px;background:var(--surface3);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:11px">
+            <select id="mvTimestampMode" onchange="updateTimestampParsingControlsVisibility(); onTimestampConfigChanged()" style="width:100%;padding:4px 6px;background:var(--surface3);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:11px">
               <option value="single" selected>Single date/time column</option>
               <option value="date_time_columns">Date and time in separate columns</option>
             </select>
           </div>
           <div id="mvTimestampSingleWrap">
             <div style="font-size:10px;color:var(--text3);margin-bottom:3px">Date/time column</div>
-            <select id="mvTimestampColumn" onchange="prefillMonitoredDataPeriod(window._mvCurrentDataset, getTimestampParsingConfigFromDialog()); prefillObservedInterval(window._mvCurrentDataset, getTimestampParsingConfigFromDialog())" style="width:100%;padding:4px 6px;background:var(--surface3);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:11px">${headerOptions}</select>
+            <select id="mvTimestampColumn" onchange="onTimestampConfigChanged()" style="width:100%;padding:4px 6px;background:var(--surface3);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:11px">${headerOptions}</select>
           </div>
           <div id="mvDateColumnWrap" style="display:none;">
             <div style="font-size:10px;color:var(--text3);margin-bottom:3px">Date column</div>
-            <select id="mvDateColumn" onchange="prefillMonitoredDataPeriod(window._mvCurrentDataset, getTimestampParsingConfigFromDialog()); prefillObservedInterval(window._mvCurrentDataset, getTimestampParsingConfigFromDialog())" style="width:100%;padding:4px 6px;background:var(--surface3);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:11px">${headerOptions}</select>
+            <select id="mvDateColumn" onchange="onTimestampConfigChanged()" style="width:100%;padding:4px 6px;background:var(--surface3);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:11px">${headerOptions}</select>
           </div>
           <div id="mvTimeColumnWrap" style="display:none;">
             <div style="font-size:10px;color:var(--text3);margin-bottom:3px">Time column</div>
-            <select id="mvTimeColumn" onchange="prefillMonitoredDataPeriod(window._mvCurrentDataset, getTimestampParsingConfigFromDialog()); prefillObservedInterval(window._mvCurrentDataset, getTimestampParsingConfigFromDialog())" style="width:100%;padding:4px 6px;background:var(--surface3);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:11px">${timeHeaderOptions}</select>
+            <select id="mvTimeColumn" onchange="onTimestampConfigChanged()" style="width:100%;padding:4px 6px;background:var(--surface3);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:11px">${timeHeaderOptions}</select>
           </div>
         </div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
           <div>
             <div style="font-size:10px;color:var(--text3);margin-bottom:3px">Time zone source</div>
-            <select id="mvTimeZoneMode" onchange="updateTimestampParsingControlsVisibility(); prefillMonitoredDataPeriod(window._mvCurrentDataset, getTimestampParsingConfigFromDialog()); prefillObservedInterval(window._mvCurrentDataset, getTimestampParsingConfigFromDialog())" style="width:100%;padding:4px 6px;background:var(--surface3);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:11px">
+            <select id="mvTimeZoneMode" onchange="updateTimestampParsingControlsVisibility(); onTimestampConfigChanged()" style="width:100%;padding:4px 6px;background:var(--surface3);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:11px">
               <option value="header" selected>Read from header when present</option>
               <option value="none">No explicit time zone</option>
               <option value="column">Time zone in separate column</option>
@@ -4069,11 +4373,24 @@ function showChannelMappingDialog(dataset) {
           </div>
           <div id="mvTimeZoneColumnWrap" style="display:none;">
             <div style="font-size:10px;color:var(--text3);margin-bottom:3px">Time zone column</div>
-            <select id="mvTimeZoneColumn" onchange="prefillMonitoredDataPeriod(window._mvCurrentDataset, getTimestampParsingConfigFromDialog()); prefillObservedInterval(window._mvCurrentDataset, getTimestampParsingConfigFromDialog())" style="width:100%;padding:4px 6px;background:var(--surface3);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:11px">${buildHeaderOptions(dataset.headers, '')}</select>
+            <select id="mvTimeZoneColumn" onchange="onTimestampConfigChanged()" style="width:100%;padding:4px 6px;background:var(--surface3);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:11px">${buildHeaderOptions(dataset.headers, '')}</select>
           </div>
           <div id="mvManualTimeZoneWrap" style="display:none;">
             <div style="font-size:10px;color:var(--text3);margin-bottom:3px">Manual time zone</div>
-            <input id="mvManualTimeZone" placeholder="GMT-06:00" oninput="prefillMonitoredDataPeriod(window._mvCurrentDataset, getTimestampParsingConfigFromDialog()); prefillObservedInterval(window._mvCurrentDataset, getTimestampParsingConfigFromDialog())" style="width:100%;box-sizing:border-box;padding:4px 6px;background:var(--surface3);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:11px">
+            <input id="mvManualTimeZone" placeholder="GMT-06:00" oninput="onTimestampConfigChanged()" style="width:100%;box-sizing:border-box;padding:4px 6px;background:var(--surface3);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:11px">
+          </div>
+        </div>
+        <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);">
+          <div style="display:grid;grid-template-columns:minmax(150px,1fr) auto 1fr;gap:8px;align-items:center;">
+            <div>
+              <div style="font-size:10px;color:var(--text3);margin-bottom:3px">Resolved UTC offset (editable)</div>
+              <input id="mvResolvedOffset" list="mvUtcOffsetOptions" placeholder="GMT-06:00" onchange="applyResolvedOffsetOverride(this.value)" style="width:100%;box-sizing:border-box;padding:4px 6px;background:var(--surface3);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:11px;font-family:'IBM Plex Mono',monospace">
+              <datalist id="mvUtcOffsetOptions">
+                <option value="GMT-10:00"></option><option value="GMT-09:00"></option><option value="GMT-08:00"></option><option value="GMT-07:00"></option><option value="GMT-06:00"></option><option value="GMT-05:00"></option><option value="GMT-04:00"></option><option value="GMT+00:00"></option><option value="GMT+01:00"></option><option value="GMT+02:00"></option>
+              </datalist>
+            </div>
+            <button class="btn" onclick="resetResolvedOffset()" style="padding:4px 8px;font-size:10px;align-self:end;" title="Discard the manual offset and use the value detected from the file">Use detected</button>
+            <div id="mvResolvedOffsetNote" style="font-size:10px;color:var(--text3);line-height:1.5;align-self:end;"></div>
           </div>
         </div>
       </div>
@@ -4094,6 +4411,7 @@ function showChannelMappingDialog(dataset) {
   window._mvCurrentDataset = dataset;
   window._mvCurrentMappings = mappings;
   window._mvTimestampConfig = initialTimestampConfig;
+  window._mvOffsetOverride = '';
   
   // Show in overlay
   const overlay = document.createElement('div');
@@ -4102,6 +4420,7 @@ function showChannelMappingDialog(dataset) {
   overlay.innerHTML = dialogHtml;
   document.body.appendChild(overlay);
   prefillMonitoredDataPeriod(dataset, window._mvTimestampConfig);
+  refreshResolvedOffsetDisplay();
   
   renderMappingRows();
 }
@@ -4261,8 +4580,55 @@ function getTimestampParsingConfigFromDialog() {
     timeColumn: document.getElementById('mvTimeColumn')?.value || '',
     timeZoneMode: document.getElementById('mvTimeZoneMode')?.value || 'header',
     timeZoneColumn: document.getElementById('mvTimeZoneColumn')?.value || '',
-    manualTimeZone: document.getElementById('mvManualTimeZone')?.value || ''
+    manualTimeZone: document.getElementById('mvManualTimeZone')?.value || '',
+    offsetOverride: window._mvOffsetOverride || ''
   };
+}
+
+function onTimestampConfigChanged() {
+  const config = getTimestampParsingConfigFromDialog();
+  prefillMonitoredDataPeriod(window._mvCurrentDataset, config);
+  prefillObservedInterval(window._mvCurrentDataset, config);
+  refreshResolvedOffsetDisplay();
+}
+
+function refreshResolvedOffsetDisplay() {
+  const input = document.getElementById('mvResolvedOffset');
+  const note = document.getElementById('mvResolvedOffsetNote');
+  if (!input) return null;
+  const info = getResolvedTimeZoneInfo(window._mvCurrentDataset, getTimestampParsingConfigFromDialog());
+  input.value = info.effectiveOffset;
+  if (note) {
+    if (info.isOverridden) {
+      note.innerHTML = `<span style="color:var(--warn,#f0a93a)">Manual override.</span> ${info.detectedOffset ? `File indicates ${escapeHtml(info.detectedOffset)} (${escapeHtml(info.detectedSource)}).` : 'No offset was detected in the file.'}`;
+    } else if (info.detectedOffset) {
+      note.textContent = `Detected from ${info.detectedSource}. Edit to override.`;
+    } else {
+      note.innerHTML = `<span style="color:var(--warn,#f0a93a)">No offset found in the file.</span> Timestamps are read in the browser zone (${escapeHtml(info.browserOffset)}). Edit to set the site offset.`;
+    }
+  }
+  return info;
+}
+
+function applyResolvedOffsetOverride(value) {
+  const normalized = normalizeTimeZoneText(value);
+  if (!String(value || '').trim()) {
+    window._mvOffsetOverride = '';
+    onTimestampConfigChanged();
+    return;
+  }
+  if (!isValidUtcOffsetLabel(normalized)) {
+    alert(`"${value}" is not a recognized UTC offset. Use a form such as GMT-06:00 or -0600.`);
+    refreshResolvedOffsetDisplay();
+    return;
+  }
+  window._mvOffsetOverride = normalized;
+  onTimestampConfigChanged();
+}
+
+function resetResolvedOffset() {
+  window._mvOffsetOverride = '';
+  onTimestampConfigChanged();
 }
 
 function updateMapping(index, value) {
@@ -4383,9 +4749,18 @@ function confirmChannelMapping() {
   dataset.observedIntervalMinutes = dataset.observedIntervalMinutes || inferObservedIntervalMinutes(dataset.rawRows, timestampConfig, timestampConfig.timestampColumn).observedMinutes;
   dataset.periodStart = start;
   dataset.periodEnd = end;
+  dataset.simCase = normalizeSimCase(document.getElementById('mvSimCase')?.value);
   dataset.data15min = resampled.interval15;
   dataset.qa = resampled.qa;
   dataset.confidence = 'medium';
+  const resolvedZone = getResolvedTimeZoneInfo(dataset, timestampConfig);
+  dataset.utcOffset = resolvedZone.effectiveOffset;
+  dataset.utcOffsetSource = resolvedZone.isOverridden
+    ? 'manual override'
+    : (resolvedZone.detectedSource || `browser time zone (${resolvedZone.browserOffset})`);
+  // Keep only the 15-minute summary; raw rows are discarded to keep project files small
+  dataset.rowsImported = dataset.rawRows.length;
+  delete dataset.rawRows;
   
   MONITORED_DATA.datasets.push(dataset);
   MONITORED_DATA.confidenceLevel = 'meter-informed';
@@ -4401,19 +4776,29 @@ function closeMappingDialog() {
   if (overlay) overlay.remove();
 }
 
-// Baseline calibration: compare pre case against monitored data
-function runBaselineCalibration() {
+// Calibration: compare the pre or post case model against monitored data assigned to that case
+function runBaselineCalibration(caseTypeInput) {
+  const caseType = normalizeSimCase(caseTypeInput || document.getElementById('mvCalibrationCase')?.value);
+  const caseLabel = getSimCaseLabel(caseType);
+
   if (MONITORED_DATA.datasets.length === 0) {
     alert('No monitored data loaded');
     return;
   }
-  
-  if (!SIM.resultsPreHours || SIM.resultsPreHours.length === 0) {
-    alert('Run Simulation first to generate Pre Case hourly results');
+
+  const caseDatasets = getDatasetsForSimCase(caseType);
+  if (caseDatasets.length === 0) {
+    alert(`No monitored sources are mapped to the ${caseLabel}. Open Sources and set the case for at least one dataset.`);
     return;
   }
   
-  const measuredSystem = buildMeasuredSystemPowerSeries(MONITORED_DATA.datasets);
+  const modelHours = getSimCaseModelHours(caseType);
+  if (!modelHours || modelHours.length === 0) {
+    alert(`Run Simulation first to generate ${caseLabel} hourly results`);
+    return;
+  }
+  
+  const measuredSystem = buildMeasuredSystemPowerSeries(caseDatasets);
   const measuredKw = measuredSystem.values;
 
   if (measuredKw.length === 0) {
@@ -4424,7 +4809,7 @@ function runBaselineCalibration() {
   // Get date range from monitored data
   // NOTE: Parse ISO dates as LOCAL time, not UTC. "2025-03-13" should be March 13 at 00:00 local, not UTC
   let minDate = null, maxDate = null;
-  MONITORED_DATA.datasets.forEach(dataset => {
+  caseDatasets.forEach(dataset => {
     if (dataset.periodStart) {
       const parts = dataset.periodStart.split('-');
       if (parts.length === 3) {
@@ -4442,21 +4827,21 @@ function runBaselineCalibration() {
   });
 
   // Filter model results to only match monitored data date range
-  let modeledHours = SIM.resultsPreHours;
+  let modeledHours = modelHours;
   if (minDate && maxDate) {
     const minDateStr = `${minDate.getFullYear()}-${String(minDate.getMonth()+1).padStart(2,'0')}-${String(minDate.getDate()).padStart(2,'0')}`;
     const maxDateStr = `${maxDate.getFullYear()}-${String(maxDate.getMonth()+1).padStart(2,'0')}-${String(maxDate.getDate()).padStart(2,'0')}`;
-    modeledHours = SIM.resultsPreHours.filter(hr => {
+    modeledHours = modelHours.filter(hr => {
       const hrDateStr = hr.dateStr || '';
       return hrDateStr >= minDateStr && hrDateStr <= maxDateStr;
     });
     if (modeledHours.length === 0) {
-      alert(`No model results found for monitored data period (${minDateStr} to ${maxDateStr}). Check that the Simulation Year matches your monitored data dates.`);
+      alert(`No ${caseLabel} model results found for monitored data period (${minDateStr} to ${maxDateStr}). Check that the Simulation Year matches your monitored data dates.`);
       return;
     }
   }
 
-  // Extract hourly kW from pre case model (filtered to monitored data date range)
+  // Extract hourly kW from the selected case model (filtered to monitored data date range)
   const modeledKw = modeledHours.map(row => row.systemKw || 0);
   
   // Build a map of model results by date+hour for alignment with measured data
@@ -4508,7 +4893,9 @@ function runBaselineCalibration() {
   const status = assessCalibrationStatus(metrics, peakError, energyError);
   
   // Store results
-  MONITORED_DATA.baselineCalibration = {
+  setCalibrationForCase(caseType, {
+    caseType,
+    caseLabel,
     measuredKwh: energyError.measuredKwh,
     modeledKwh: energyError.modeledKwh,
     errorPct: energyError.errorPct,
@@ -4522,21 +4909,25 @@ function runBaselineCalibration() {
     dataPoints: metrics.n,
     measuredPowerField: measuredSystem.sources.map(source => source.powerField).join(', '),
     measuredPowerSources: measuredSystem.sources,
-    measuredSourceCount: measuredSystem.sourceCount
-  };
+    measuredSourceCount: measuredSystem.sourceCount,
+    datasetIds: caseDatasets.map(dataset => dataset.id)
+  });
   
-  if (status.status === 'PASS') {
-    MONITORED_DATA.confidenceLevel = 'baseline-calibrated';
-  } else if (status.status === 'REVIEW') {
-    MONITORED_DATA.confidenceLevel = 'meter-informed';
+  if (caseType === 'pre') {
+    if (status.status === 'PASS') {
+      MONITORED_DATA.confidenceLevel = 'baseline-calibrated';
+    } else if (status.status === 'REVIEW') {
+      MONITORED_DATA.confidenceLevel = 'meter-informed';
+    }
   }
   
   // Display results
-  displayCalibrationResults();
+  displayCalibrationResults(caseType);
 }
 
-function displayCalibrationResults() {
-  const cal = MONITORED_DATA.baselineCalibration;
+function displayCalibrationResults(caseTypeInput) {
+  const caseType = normalizeSimCase(caseTypeInput);
+  const cal = getCalibrationForCase(caseType);
   if (!cal) return;
   
   const resultsPanel = document.getElementById('mvCalibrationResults');
@@ -4563,7 +4954,7 @@ function displayCalibrationResults() {
   
   let msg = '';
   if (cal.status === 'PASS') {
-    msg = `✓ Baseline model calibrated within acceptable tolerances (CVRMSE ≤15%, NMBE ±5%, Peak ≤10%, Energy ≤10%).`;
+    msg = `✓ ${getSimCaseLabel(caseType)} model calibrated within acceptable tolerances (CVRMSE ≤15%, NMBE ±5%, Peak ≤10%, Energy ≤10%).`;
   } else if (cal.status === 'REVIEW') {
     msg = `⚠ Model has ${cal.validationIssues.length} calibration issue${cal.validationIssues.length !== 1 ? 's' : ''}: ${cal.validationIssues.join(', ')}. Review assumptions and metered values.`;
   } else {
@@ -4572,18 +4963,21 @@ function displayCalibrationResults() {
   
   if (resultsPanel) resultsPanel.style.display = 'block';
   if (metricsDiv) metricsDiv.innerHTML = metricsHtml;
+  const panelTitle = document.getElementById('mvCalibrationPanelTitle');
+  if (panelTitle) panelTitle.textContent = `${getSimCaseLabel(caseType).toUpperCase()} CALIBRATION`;
   if (statusBadge) {
     statusBadge.textContent = cal.status;
     statusBadge.style.background = colors.bg;
     statusBadge.style.color = colors.text || '#000';
   }
   if (interpretation) interpretation.innerHTML = msg;
-  showCalibrationResultsModal(cal, metricsHtml, msg, colors);
+  showCalibrationResultsModal(cal, metricsHtml, msg, colors, caseType);
 }
 
-function showCalibrationResultsModal(cal, metricsHtml, interpretationHtml, colors) {
+function showCalibrationResultsModal(cal, metricsHtml, interpretationHtml, colors, caseTypeInput) {
+  const caseType = normalizeSimCase(caseTypeInput || cal?.caseType);
   document.getElementById('mvCalibrationModal')?.remove();
-  const datasets = MONITORED_DATA.datasets || [];
+  const datasets = getDatasetsForSimCase(caseType);
   const sourceSummary = datasets.length === 1
     ? `${escapeHtml(datasets[0].fileName)} · ${escapeHtml(datasets[0].periodStart)} to ${escapeHtml(datasets[0].periodEnd)} · ${datasets[0].data15min?.length || 0} fifteen-minute intervals`
     : `${datasets.length} monitored sources · ${cal.measuredSourceCount || 0} measured power source${(cal.measuredSourceCount || 0) === 1 ? '' : 's'} · ${cal.dataPoints || 0} hourly intervals compared`;
@@ -4591,25 +4985,25 @@ function showCalibrationResultsModal(cal, metricsHtml, interpretationHtml, color
     ? `<ul style="margin:8px 0 0 18px;padding:0;color:var(--text2);line-height:1.7;">${cal.validationIssues.map(issue => `<li>${escapeHtml(issue)}</li>`).join('')}</ul>`
     : '<div style="color:var(--text2);font-size:12px;line-height:1.6;">No calibration tolerance issues identified.</div>';
   const conversionRows = datasets.flatMap(dataset => (dataset.channels || []).map(channel => ({ dataset, channel })))
-    .filter(({ channel }) => channel.conversion && channel.conversion.type !== 'none')
-    .map(({ dataset, channel }) => `<tr><td>${escapeHtml(dataset.fileName)}</td><td>${escapeHtml(channel.sourceColumn)}</td><td>${escapeHtml(channel.target?.targetLabel || getMonitorTargetLabel(channel.target) || channel.mappedTo)}</td><td>${escapeHtml(channel.conversion.type)}</td></tr>`)
+    .filter(({ channel }) => channel.mappedTo !== 'timestamp')
+    .map(({ dataset, channel }) => `<tr><td>${escapeHtml(dataset.fileName)}</td><td>${escapeHtml(channel.sourceColumn)}</td><td>${escapeHtml(channel.target?.targetLabel || getMonitorTargetLabel(channel.target) || channel.mappedTo)}</td><td>${escapeHtml(getChannelUnitLabel(channel))}</td><td>${escapeHtml(getChannelConversionLabel(channel))}</td></tr>`)
     .join('');
   
   // Build day-of-week comparison chart
-  const dayChartHtml = buildDayOfWeekCharts(cal);
+  const dayChartHtml = buildDayOfWeekCharts(cal, caseType);
   
   const overlay = document.createElement('div');
   overlay.id = 'mvCalibrationModal';
   overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.65);display:flex;align-items:center;justify-content:center;z-index:2600;padding:18px;';
   overlay.innerHTML = `
-    <div style="background:var(--surface);border:1px solid var(--border2);border-radius:8px;width:min(900px,96vw);height:min(820px,92vh);min-height:min(650px,92vh);display:flex;flex-direction:column;overflow:hidden;box-shadow:0 20px 80px rgba(0,0,0,.35);">
+    <div id="mvCalibrationReportPanel" style="background:var(--surface);border:1px solid var(--border2);border-radius:8px;width:min(900px,96vw);height:min(820px,92vh);min-height:min(650px,92vh);display:flex;flex-direction:column;overflow:hidden;box-shadow:0 20px 80px rgba(0,0,0,.35);">
       <div style="display:flex;align-items:center;gap:12px;padding:16px 18px;border-bottom:1px solid var(--border);background:var(--surface);flex-shrink:0;">
-        <div style="font-family:'IBM Plex Mono',monospace;color:var(--accent);font-weight:600;font-size:14px;">Monitored Data Validation</div>
+        <div style="font-family:'IBM Plex Mono',monospace;color:var(--accent);font-weight:600;font-size:14px;">Monitored Data Validation · ${escapeHtml(getSimCaseLabel(caseType))}</div>
         <div style="margin-left:auto;padding:4px 10px;border-radius:4px;background:${colors.bg};color:${colors.text || '#000'};font-size:12px;font-weight:700;">${escapeHtml(cal.status)}</div>
         <button class="btn" onclick="printCalibrationReport()" style="padding:4px 8px;font-size:11px;background:var(--accent);color:#000">Download Report</button>
         <button class="btn" onclick="closeCalibrationResultsModal()" style="padding:4px 8px;font-size:11px">Close</button>
       </div>
-      <div style="padding:16px 18px;display:grid;gap:14px;overflow-y:auto;flex:1;align-content:start;">
+      <div id="mvCalibrationReportBody" style="padding:16px 18px;display:grid;gap:14px;overflow-y:auto;flex:1;align-content:start;">
         <div style="font-size:11px;color:var(--text3);line-height:1.6;">
           ${sourceSummary}
         </div>
@@ -4632,9 +5026,9 @@ function showCalibrationResultsModal(cal, metricsHtml, interpretationHtml, color
         ` : ''}
         ${conversionRows ? `
           <div style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:12px;">
-            <div style="font-size:10px;color:var(--accent);font-weight:700;margin-bottom:8px;text-transform:uppercase;letter-spacing:.8px;">Applied Import Conversions</div>
+            <div style="font-size:10px;color:var(--accent);font-weight:700;margin-bottom:8px;text-transform:uppercase;letter-spacing:.8px;">Channel Units & Applied Import Conversions</div>
             <table style="width:100%;border-collapse:collapse;font-size:11px;color:var(--text2);">
-              <thead><tr><th style="text-align:left;border-bottom:1px solid var(--border);padding:5px 6px;">File</th><th style="text-align:left;border-bottom:1px solid var(--border);padding:5px 6px;">Source</th><th style="text-align:left;border-bottom:1px solid var(--border);padding:5px 6px;">Target</th><th style="text-align:left;border-bottom:1px solid var(--border);padding:5px 6px;">Conversion</th></tr></thead>
+              <thead><tr><th style="text-align:left;border-bottom:1px solid var(--border);padding:5px 6px;">File</th><th style="text-align:left;border-bottom:1px solid var(--border);padding:5px 6px;">Source</th><th style="text-align:left;border-bottom:1px solid var(--border);padding:5px 6px;">Target</th><th style="text-align:left;border-bottom:1px solid var(--border);padding:5px 6px;">Units</th><th style="text-align:left;border-bottom:1px solid var(--border);padding:5px 6px;">Conversion</th></tr></thead>
               <tbody>${conversionRows}</tbody>
             </table>
           </div>
@@ -4653,10 +5047,13 @@ function closeCalibrationResultsModal() {
 }
 
 // Build hourly line charts for each day type (mon-sun + holiday)
-function buildDayOfWeekCharts(cal) {
-  if (!SIM.resultsPreHours || SIM.resultsPreHours.length === 0 || !MONITORED_DATA.datasets[0]) return '';
+function buildDayOfWeekCharts(cal, caseTypeInput) {
+  const caseType = normalizeSimCase(caseTypeInput || cal?.caseType);
+  const modelHours = getSimCaseModelHours(caseType);
+  const caseDatasets = getDatasetsForSimCase(caseType);
+  if (!modelHours || modelHours.length === 0 || !caseDatasets[0]) return '';
   
-  const dataset = MONITORED_DATA.datasets[0];
+  const dataset = caseDatasets[0];
   const dayTypes = ['mon','tue','wed','thu','fri','sat','sun','holiday'];
   const dayLabels = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday','Holiday'];
   
@@ -4665,7 +5062,7 @@ function buildDayOfWeekCharts(cal) {
   const modelCountByDayType = {};
   dayTypes.forEach(dt => { modelByDayType[dt] = new Array(24).fill(0); modelCountByDayType[dt] = new Array(24).fill(0); });
   
-  SIM.resultsPreHours.forEach(hr => {
+  modelHours.forEach(hr => {
     const date = new Date(hr.date);
     const dow = date.getDay();
     const isHol = hr.isHoliday;
@@ -4689,7 +5086,7 @@ function buildDayOfWeekCharts(cal) {
   // Build hourly arrays for measured data
   const measByDayType = {};
   const measCountByDayType = {};
-  dayTypes.forEach(dt => { measByDayType[dt] = new Array(24).fill(0); measCountByDayType[dt] = new Array(24).fill(0); });
+  dayTypes.forEach(dt => { measByDayType[dt] = new Array(24).fill(null); measCountByDayType[dt] = new Array(24).fill(0); });
   
   if (dataset.data15min && dataset.data15min.length > 0) {
     dataset.data15min.forEach(row => {
@@ -4699,6 +5096,7 @@ function buildDayOfWeekCharts(cal) {
       const dayKey = (dow === 0 ? 'sun' : dow === 6 ? 'sat' : ['mon','tue','wed','thu','fri'][dow-1]);
       const hourOfDay = date.getHours();
       if (hourOfDay >= 0 && hourOfDay < 24) {
+        if (measByDayType[dayKey][hourOfDay] === null) measByDayType[dayKey][hourOfDay] = 0;
         measByDayType[dayKey][hourOfDay] += (row.power || 0);
         measCountByDayType[dayKey][hourOfDay]++;
       }
@@ -4719,45 +5117,54 @@ function buildDayOfWeekCharts(cal) {
     const canvasId = `chart_${dayKey}`;
     const modelData = modelByDayType[dayKey];
     const measData = measByDayType[dayKey];
+    const hasMeasuredData = measData.some(value => value !== null);
     
     return `
       <div style="margin-bottom:24px;padding:12px;background:var(--surface3);border-radius:6px;">
         <div style="font-size:12px;font-weight:600;margin-bottom:10px;">${dayLabels[idx]}</div>
         <canvas id="${canvasId}" width="600" height="200" style="border:1px solid var(--border);border-radius:4px;max-width:100%;"></canvas>
         <div style="font-size:9px;color:var(--text3);margin-top:6px;">
-          <span style="color:#22c55e;font-weight:600;">▪ Measured (Green)</span> · 
+          ${hasMeasuredData ? '<span style="color:#22c55e;font-weight:600;">▪ Measured (Green)</span> · ' : '<span style="color:var(--text3);font-weight:600;">No measured data</span> · '}
           <span style="color:#ef4444;font-weight:600;">▪ Modeled (Red)</span>
         </div>
       </div>
-      <script>
-        (function() {
-          const canvas = document.getElementById('${canvasId}');
-          if (!canvas) return;
-          const ctx = canvas.getContext('2d');
-          const modelData = ${JSON.stringify(modelData)};
-          const measData = ${JSON.stringify(measData)};
-          drawHourlyLineChart(ctx, modelData, measData, canvas.width, canvas.height);
-        })();
-      </script>
     `;
   }).join('');
+
+  // Render charts after modal is displayed
+  setTimeout(() => {
+    dayTypes.forEach(dayKey => {
+      const canvasId = `chart_${dayKey}`;
+      const canvas = document.getElementById(canvasId);
+      if (canvas) {
+        const ctx = canvas.getContext('2d');
+        drawHourlyLineChart(ctx, modelByDayType[dayKey], measByDayType[dayKey], canvas.width, canvas.height);
+      }
+    });
+  }, 100);
   
   return chartHtml;
 }
 
 // Draw hourly line chart (0-23 hours, kWh on Y-axis)
 function drawHourlyLineChart(ctx, modelData, measData, width, height) {
-  const padding = { top: 20, right: 20, bottom: 30, left: 50 };
+  const padding = { top: 20, right: 20, bottom: 46, left: 62 };
   const chartW = width - padding.left - padding.right;
   const chartH = height - padding.top - padding.bottom;
+  const styles = getComputedStyle(document.documentElement);
+  const axisTextColor = styles.getPropertyValue('--text3').trim() || '#8b949e';
+  const gridColor = styles.getPropertyValue('--border').trim() || '#30363d';
+  const axisColor = styles.getPropertyValue('--border2').trim() || '#6e7681';
+  const numericModelData = modelData.filter(value => Number.isFinite(value));
+  const numericMeasuredData = measData.filter(value => Number.isFinite(value));
   
   // Find max kW for Y-axis scale
-  const maxKw = Math.max(...modelData, ...measData, 1) * 1.1;
+  const maxKw = Math.max(...numericModelData, ...numericMeasuredData, 1) * 1.1;
   const hourSpacing = chartW / 23; // 0-23 hours
   
   // Draw grid and axes
-  ctx.strokeStyle = 'var(--border)';
-  ctx.fillStyle = 'var(--text3)';
+  ctx.strokeStyle = gridColor;
+  ctx.fillStyle = axisTextColor;
   ctx.font = '11px Arial';
   ctx.textAlign = 'center';
   
@@ -4765,14 +5172,14 @@ function drawHourlyLineChart(ctx, modelData, measData, width, height) {
   for (let i = 0; i <= 5; i++) {
     const yVal = (maxKw * i) / 5;
     const yPos = padding.top + chartH - (i / 5) * chartH;
-    ctx.strokeStyle = '#ccc';
+    ctx.strokeStyle = gridColor;
     ctx.lineWidth = 0.5;
     ctx.beginPath();
     ctx.moveTo(padding.left, yPos);
     ctx.lineTo(width - padding.right, yPos);
     ctx.stroke();
     
-    ctx.fillStyle = 'var(--text3)';
+    ctx.fillStyle = axisTextColor;
     ctx.textAlign = 'right';
     ctx.fillText(yVal.toFixed(0), padding.left - 8, yPos + 4);
   }
@@ -4781,21 +5188,38 @@ function drawHourlyLineChart(ctx, modelData, measData, width, height) {
   ctx.textAlign = 'center';
   for (let h = 0; h <= 23; h += 3) {
     const xPos = padding.left + (h / 23) * chartW;
-    ctx.fillStyle = 'var(--text3)';
-    ctx.fillText(h, xPos, height - 8);
+    ctx.fillStyle = axisTextColor;
+    ctx.fillText(h, xPos, height - 26);
   }
+
+  // Axis labels
+  ctx.fillStyle = axisTextColor;
+  ctx.font = '12px Arial';
+  ctx.textAlign = 'center';
+  ctx.fillText('Hour of Day', padding.left + chartW / 2, height - 8);
+
+  ctx.save();
+  ctx.translate(16, padding.top + chartH / 2);
+  ctx.rotate(-Math.PI / 2);
+  ctx.fillText('kWh', 0, 0);
+  ctx.restore();
   
   // Draw measured line (green)
-  ctx.strokeStyle = '#22c55e';
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  for (let h = 0; h < 24; h++) {
-    const xPos = padding.left + (h / 23) * chartW;
-    const yPos = padding.top + chartH - (measData[h] / maxKw) * chartH;
-    if (h === 0) ctx.moveTo(xPos, yPos);
-    else ctx.lineTo(xPos, yPos);
+  if (numericMeasuredData.length > 0) {
+    ctx.strokeStyle = '#22c55e';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    let hasMeasuredPath = false;
+    for (let h = 0; h < 24; h++) {
+      if (!Number.isFinite(measData[h])) continue;
+      const xPos = padding.left + (h / 23) * chartW;
+      const yPos = padding.top + chartH - (measData[h] / maxKw) * chartH;
+      if (!hasMeasuredPath) ctx.moveTo(xPos, yPos);
+      else ctx.lineTo(xPos, yPos);
+      hasMeasuredPath = true;
+    }
+    ctx.stroke();
   }
-  ctx.stroke();
   
   // Draw modeled line (red)
   ctx.strokeStyle = '#ef4444';
@@ -4810,7 +5234,7 @@ function drawHourlyLineChart(ctx, modelData, measData, width, height) {
   ctx.stroke();
   
   // Draw axes
-  ctx.strokeStyle = 'var(--border2)';
+  ctx.strokeStyle = axisColor;
   ctx.lineWidth = 1;
   ctx.beginPath();
   ctx.moveTo(padding.left, padding.top);
@@ -4821,20 +5245,37 @@ function drawHourlyLineChart(ctx, modelData, measData, width, height) {
 
 // Download calibration results modal as PNG screenshot
 function printCalibrationReport() {
-  const modal = document.getElementById('mvCalibrationModal');
-  if (!modal) {
+  const reportPanel = document.getElementById('mvCalibrationReportPanel');
+  const reportBody = document.getElementById('mvCalibrationReportBody');
+  if (!reportPanel || !reportBody) {
     alert('Calibration results modal not found');
     return;
   }
   
-  // Load html2canvas library and capture modal
-  const script = document.createElement('script');
-  script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
-  script.onload = () => {
-    // Capture the modal content with high quality
-    html2canvas(modal, {
+  const captureReport = () => {
+    const panelStyle = reportPanel.getAttribute('style') || '';
+    const bodyStyle = reportBody.getAttribute('style') || '';
+    const originalScrollTop = reportBody.scrollTop;
+
+    reportPanel.style.height = 'auto';
+    reportPanel.style.minHeight = '0';
+    reportPanel.style.overflow = 'visible';
+    reportBody.style.overflow = 'visible';
+    reportBody.style.flex = 'none';
+    reportBody.style.height = 'auto';
+    reportBody.scrollTop = 0;
+
+    const captureWidth = reportPanel.scrollWidth;
+    const captureHeight = reportPanel.scrollHeight;
+
+    // Capture the complete report panel with high quality
+    html2canvas(reportPanel, {
       scale: 2,
-      backgroundColor: '#fff',
+      width: captureWidth,
+      height: captureHeight,
+      windowWidth: captureWidth,
+      windowHeight: captureHeight,
+      backgroundColor: getComputedStyle(reportPanel).backgroundColor,
       allowTaint: true,
       useCORS: true,
       logging: false
@@ -4856,8 +5297,22 @@ function printCalibrationReport() {
       }, 'image/png');
     }).catch(err => {
       alert('Failed to capture report: ' + err.message);
+    }).finally(() => {
+      reportPanel.setAttribute('style', panelStyle);
+      reportBody.setAttribute('style', bodyStyle);
+      reportBody.scrollTop = originalScrollTop;
     });
   };
+
+  if (window.html2canvas) {
+    captureReport();
+    return;
+  }
+
+  // Load html2canvas library and capture report
+  const script = document.createElement('script');
+  script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
+  script.onload = captureReport;
   script.onerror = () => {
     alert('Could not load screenshot library. Please check your internet connection.');
   };
@@ -6920,6 +7375,148 @@ function addResultsSheet(wb, preAgg, postAgg, preCalc, postCalc) {
   autoWidth(ws);
 }
 
+function addMonitoredDataSheet(wb) {
+  if (MONITORED_DATA.datasets.length === 0) return;
+  
+  const ws = wb.addWorksheet('MonitoredData');
+  
+  // Sources summary
+  ws.addRow(['Monitored Data Sources & Calibration']);
+  ws.addRow([]);
+  ws.addRow(['Source','Sim Case','Period Start','Period End','UTC Offset','Offset Source','Rows Imported','Intervals (15-min)','Mapped Channels','Unit Conversion (source -> target)','Completeness %']);
+  
+  MONITORED_DATA.datasets.forEach(dataset => {
+    const completeness = dataset.qa?.completenessPct ? `${(dataset.qa.completenessPct*100).toFixed(1)}%` : 'N/A';
+    const mapped = (dataset.channels || []).filter(c => c.mappedTo !== 'timestamp');
+    const channels = mapped.map(c => getChannelUnitLabel(c)).join(', ') || 'none';
+    const conversions = mapped.map(c => `${c.sourceColumn}: ${getChannelConversionLabel(c)}`).join('; ') || 'none';
+    ws.addRow([
+      dataset.fileName || `Source ${dataset.id}`,
+      getSimCaseLabel(dataset.simCase),
+      dataset.periodStart || '—',
+      dataset.periodEnd || '—',
+      dataset.utcOffset || '—',
+      dataset.utcOffsetSource || '—',
+      dataset.rowsImported || dataset.qa?.rowsImported || 0,
+      dataset.data15min?.length || 0,
+      channels,
+      conversions,
+      completeness
+    ]);
+  });
+  
+  setHeader(ws, 3);
+  autoWidth(ws);
+  
+  // Calibration summary per simulation case
+  ['pre', 'post'].forEach(caseType => {
+    const cal = getCalibrationForCase(caseType);
+    if (!cal) return;
+    ws.addRow([]);
+    ws.addRow([`${getSimCaseLabel(caseType)} Calibration Results`]);
+    ws.addRow(['Metric','Value']);
+    ws.addRow(['Measured Annual kWh', cal.measuredKwh ? `${cal.measuredKwh.toFixed(0)}` : 'N/A']);
+    ws.addRow(['Modeled Annual kWh', cal.modeledKwh ? `${cal.modeledKwh.toFixed(0)}` : 'N/A']);
+    ws.addRow(['Energy Error %', cal.errorPct !== undefined ? `${cal.errorPct > 0 ? '+' : ''}${cal.errorPct.toFixed(1)}%` : 'N/A']);
+    ws.addRow(['Energy Error kWh', cal.errorKwh !== undefined ? `${cal.errorKwh > 0 ? '+' : ''}${cal.errorKwh.toFixed(0)}` : 'N/A']);
+    ws.addRow(['Peak kW Error %', cal.peakKwErrorPct !== undefined ? `${cal.peakKwErrorPct.toFixed(1)}%` : 'N/A']);
+    ws.addRow(['CVRMSE %', cal.cvrmsePct !== undefined ? `${cal.cvrmsePct.toFixed(1)}%` : 'N/A']);
+    ws.addRow(['NMBE %', cal.nmbePct !== undefined ? `${cal.nmbePct > 0 ? '+' : ''}${cal.nmbePct.toFixed(1)}%` : 'N/A']);
+    ws.addRow(['Hourly Intervals Compared', cal.dataPoints || 'N/A']);
+    ws.addRow(['Calibration Status', cal.status || 'UNKNOWN']);
+    ws.addRow(['Calibration Issues', (cal.validationIssues || []).join('; ') || 'None']);
+    
+    setHeader(ws, ws.rowCount - 8);
+    autoWidth(ws);
+  });
+
+  // Merge all sources by timestamp, while qualifying fields with their source
+  // name to retain distinct values when sources use the same mapping.
+  const exportColumns = MONITORED_DATA.datasets.flatMap(dataset => {
+    const sourceName = dataset.fileName || `Source ${dataset.id}`;
+    const fields = [...new Set((dataset.data15min || []).flatMap(row => Object.keys(row || {})))];
+    return fields
+      .filter(field => field !== 'timestamp')
+      .map(field => ({ dataset, field, heading: `${sourceName}: ${getMonitoredFieldLabel(dataset, field)}` }));
+  });
+  if (exportColumns.length > 0) {
+    ws.addRow([]);
+    ws.addRow(['15-Minute Resampled Data']);
+    ws.addRow([`Timestamp (${getMonitoredDataExportTimeZone()})`, ...exportColumns.map(column => column.heading)]);
+
+    const rowsByTimestamp = new Map();
+    MONITORED_DATA.datasets.forEach(dataset => {
+      (dataset.data15min || []).forEach(row => {
+        if (!row.timestamp) return;
+        if (!rowsByTimestamp.has(row.timestamp)) rowsByTimestamp.set(row.timestamp, new Map());
+        const values = rowsByTimestamp.get(row.timestamp);
+        exportColumns
+          .filter(column => column.dataset === dataset)
+          .forEach(column => values.set(column.heading, row[column.field] ?? ''));
+      });
+    });
+
+    [...rowsByTimestamp.entries()]
+      .sort(([timestampA], [timestampB]) => new Date(timestampA) - new Date(timestampB))
+      .forEach(([timestamp, values]) => {
+        ws.addRow([formatMonitoredDataExportTimestamp(timestamp), ...exportColumns.map(column => values.get(column.heading) ?? '')]);
+      });
+
+    setHeader(ws, ws.rowCount - rowsByTimestamp.size);
+    autoWidth(ws);
+  }
+  
+  // Hourly measured vs modeled per calibrated case
+  ['pre', 'post'].forEach(caseType => {
+    const cal = getCalibrationForCase(caseType);
+    const modelHours = getSimCaseModelHours(caseType);
+    const caseDatasets = getDatasetsForSimCase(caseType);
+    if (!cal || caseDatasets.length === 0 || !modelHours?.length) return;
+    ws.addRow([]);
+    ws.addRow([`Hourly Comparison (Measured vs ${getSimCaseLabel(caseType)} Model)`]);
+    ws.addRow(['Date', 'Hour', 'Measured kW', 'Modeled kW', 'Difference kW', 'Difference %']);
+    
+    const dataset = caseDatasets[0];
+    const hourlyMeasured = aggregateTo1Hour(dataset.data15min || []);
+    
+    // Build measured kW by timestamp
+    const measuredByTimestamp = new Map();
+    hourlyMeasured.forEach(row => {
+      if (row.timestamp) measuredByTimestamp.set(row.timestamp, row.measuredKw);
+    });
+    
+    // Add rows for comparison (limit to first 168 hours = 1 week to keep file size down)
+    const rowLimit = Math.min(168, modelHours.length);
+    for (let i = 0; i < rowLimit; i++) {
+      const hr = modelHours[i];
+      const ts = new Date(hr.date);
+      const tsStr = ts.toISOString();
+      const measKw = measuredByTimestamp.get(tsStr) ?? null;
+      
+      if (measKw !== null && measKw !== undefined) {
+        const modKw = hr.systemKw || 0;
+        const diffKw = measKw - modKw;
+        const diffPct = modKw !== 0 ? (diffKw / modKw) * 100 : 0;
+        ws.addRow([
+          hr.dateStr || ts.toISOString().split('T')[0],
+          hr.hourOfDay || 0,
+          measKw.toFixed(3),
+          modKw.toFixed(3),
+          diffKw.toFixed(3),
+          `${diffPct > 0 ? '+' : ''}${diffPct.toFixed(1)}%`
+        ]);
+      }
+    }
+    
+    if (rowLimit === 168) {
+      ws.addRow(['(Showing first week; full hourly data available in calibration report)']);
+    }
+    
+    setHeader(ws, ws.rowCount - rowLimit - 2);
+    autoWidth(ws);
+  });
+}
+
 function addWarningsSheet(wb) {
   const ws = wb.addWorksheet('Warnings_Assumptions');
   ws.addRow(['Type','Message']);
@@ -6982,6 +7579,7 @@ async function buildFormulaWorkbookFile() {
   const postCalc = addCalcSheet(wb, 'Calc_Post', SIM.postNodes || nodes, SIM.postEquipment || SIM.equipment, 'Inputs_Post', SIM.resultsPostHours || SIM.resultsPreHours, lastScheduleRow, ambient);
   addResultsSheet(wb, aggHours(SIM.resultsPreHours), aggHours(SIM.resultsPostHours || SIM.resultsPreHours), preCalc, postCalc);
   addDiagramSheet(wb);
+  addMonitoredDataSheet(wb);
   addWarningsSheet(wb);
 
   const buffer = await wb.xlsx.writeBuffer();
@@ -7071,6 +7669,60 @@ function downloadCSV(caseType) {
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
   a.download = `cas_8760_${caseType}_${new Date().getFullYear()}.csv`;
+  a.click();
+}
+
+// Monitored data CSV download (15-minute or hourly)
+function downloadMonitoredDataCSV(interval) {
+  if (MONITORED_DATA.datasets.length === 0) {
+    alert('No monitored data loaded');
+    return;
+  }
+  
+  const dataset = MONITORED_DATA.datasets[0];
+  const data = interval === 'hourly' ? aggregateTo1Hour(dataset.data15min || []) : (dataset.data15min || []);
+  
+  if (!data || data.length === 0) {
+    alert('No data to export');
+    return;
+  }
+  
+  // Build headers from mapped channels
+  const channels = (dataset.channels || []).filter(c => c.mappedTo !== 'timestamp');
+  const headers = [`Timestamp (${getMonitoredDataExportTimeZone()})`, ...channels.map(c => getChannelUnitLabel(c))];
+  if (interval === 'hourly') headers.push('Measured_kW (kW)');
+  headers.push('Completeness_%');
+  
+  // Build rows
+  const rows = data.map(row => {
+    const values = [
+      formatMonitoredDataExportTimestamp(row.timestamp)
+    ];
+    
+    channels.forEach(channel => {
+      values.push(row[channel.mappedTo] !== undefined ? row[channel.mappedTo] : '');
+    });
+    
+    if (interval === 'hourly' && row.measuredKw !== undefined) {
+      values.push(row.measuredKw.toFixed(3));
+    }
+    
+    const completeness = row.completeness !== undefined ? `${(row.completeness*100).toFixed(1)}` : '';
+    values.push(completeness);
+    
+    return values.map(v => {
+      const str = String(v ?? '');
+      return str.includes(',') || str.includes('"') || str.includes('\n') ? `"${str.replace(/"/g, '""')}"` : str;
+    }).join(',');
+  }).join('\n');
+  
+  const content = headers.join(',') + '\n' + rows;
+  const blob = new Blob([content], { type: 'text/csv' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  const intervalLabel = interval === 'hourly' ? 'hourly' : '15min';
+  const sourceLabel = (dataset.fileName || 'monitored_data').split('.')[0];
+  a.download = `${sourceLabel}_${intervalLabel}_${new Date().toISOString().slice(0,10)}.csv`;
   a.click();
 }
 
@@ -7371,7 +8023,11 @@ updateSummary();
         </label>
         <button class="btn" onclick="document.getElementById('mvDataFileInput').click()" style="padding:3px 8px;font-size:10px" title="Import monitored data CSV">Upload</button>
         <button class="btn" onclick="showMonitoredSourceManager()" style="padding:3px 8px;font-size:10px" title="Review monitored data sources and mappings">Sources</button>
-        <button class="btn" id="btnRunCalibration" onclick="runBaselineCalibration()" style="padding:3px 8px;font-size:10px;display:none" title="Compare Pre Case model against monitored data">Calibrate</button>
+        <select id="mvCalibrationCase" style="display:none;padding:3px 4px;font-size:10px;background:var(--surface3);border:1px solid var(--border);border-radius:4px;color:var(--text);" title="Choose which simulation case the monitored data is compared against">
+          <option value="pre">Pre Case</option>
+          <option value="post">Post Case</option>
+        </select>
+        <button class="btn" id="btnRunCalibration" onclick="runBaselineCalibration()" style="padding:3px 8px;font-size:10px;display:none" title="Compare the selected case model against monitored data mapped to that case">Calibrate</button>
       </div>
       <label style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--text2);padding:0 6px" title="Show the Pre Case as a faded reference behind the editable Post Case">
         <input type="checkbox" id="showPreGhost" checked onchange="renderDetailedCanvas()"> Pre Reference
@@ -7501,11 +8157,23 @@ updateSummary();
         <div id="mvDataInfo" style="font-size:11px;color:var(--text3);margin-bottom:8px;">—</div>
         <div id="mvCalibrationResults" style="display:none;">
           <div style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:10px;margin-bottom:8px;">
-            <div style="font-size:10px;font-weight:600;color:var(--accent);margin-bottom:6px;">BASELINE CALIBRATION</div>
+            <div id="mvCalibrationPanelTitle" style="font-size:10px;font-weight:600;color:var(--accent);margin-bottom:6px;">PRE CASE CALIBRATION</div>
             <div id="mvMetricsDisplay" style="font-size:11px;color:var(--text2);line-height:1.8;"></div>
             <div id="mvStatusBadge" style="margin-top:8px;padding:4px 8px;border-radius:4px;font-weight:600;font-size:11px;text-align:center;color:#000;"></div>
           </div>
           <div style="font-size:10px;color:var(--text3);line-height:1.6;padding:6px 8px;background:var(--surface3);border-radius:4px;" id="mvInterpretation">—</div>
+        </div>
+        <div style="margin-top:12px;display:flex;gap:6px;flex-wrap:wrap;">
+          <button class="btn" onclick="downloadMonitoredDataCSV('15min')" style="padding:3px 8px;font-size:10px;" title="Export resampled 15-minute monitored data">⬇ 15-min CSV</button>
+          <button class="btn" onclick="downloadMonitoredDataCSV('hourly')" style="padding:3px 8px;font-size:10px;" title="Export hourly aggregated monitored data">⬇ Hourly CSV</button>
+        </div>
+        <div style="margin-top:10px;">
+          <label for="mvExportTimeZone" style="display:block;font-size:10px;color:var(--text3);margin-bottom:3px;">Export time zone</label>
+          <input id="mvExportTimeZone" list="mvExportTimeZoneOptions" placeholder="Browser default" onchange="updateMonitoredDataExportTimeZone(this.value)" style="width:100%;box-sizing:border-box;padding:4px 6px;background:var(--surface3);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:11px;">
+          <datalist id="mvExportTimeZoneOptions">
+            <option value="America/New_York"></option><option value="America/Chicago"></option><option value="America/Denver"></option><option value="America/Los_Angeles"></option><option value="America/Anchorage"></option><option value="Pacific/Honolulu"></option><option value="Europe/London"></option><option value="UTC"></option>
+          </datalist>
+          <div id="mvExportTimeZoneEffective" style="font-size:10px;color:var(--text3);margin-top:3px;">Exporting in browser time zone</div>
         </div>
       </div>
     </div>
