@@ -151,6 +151,33 @@ async function runChecks() {
     } catch (err) { record('fail', '8760 receiver pass-through topology', err.message); }
 
     try {
+      const branchCompressor = JSON.parse(JSON.stringify(compressor));
+      branchCompressor.props.flowRate = 335;
+      branchCompressor.props.power = 64.8;
+      const heatlessDryer = {id:'d1', type:'dryer', props:{name:'Heatless Dryer', flowRate:180, pressureDrop:2, power:0, dewPoint:-40, dryerType:'heatless', purgeFraction:15}};
+      const cncLoad = {id:'cnc', type:'load', props:{name:'CNC Line', flowRate:40, pressure:90, dutyCycle:100}};
+      const branchLeak = {id:'leak1', type:'leak', props:{name:'Branch Leak', flowRate:72, pressure:100}};
+      const branchNodes = [branchCompressor, heatlessDryer, cncLoad, branchLeak];
+      const branchConnections = [{id:'bd1', from:'c1', to:'d1'}, {id:'bl1', from:'d1', to:'cnc'}, {id:'bk1', from:'d1', to:'leak1'}];
+      win.eval(`
+        nodes = ${JSON.stringify(branchNodes)};
+        connections = ${JSON.stringify(branchConnections)};
+        drainAttachments = [];
+        SIM.schedules = ${JSON.stringify(schedules)};
+        SIM.equipment = {c1:'always', cnc:'always'};
+      `);
+      const branchResult = win.analyzeSystem();
+      if (!branchResult.valid) throw new Error(branchResult.errors.join('; '));
+      const downstreamLoadFlow = win.eval(`connections.find(c => c.id === 'bl1')._actualFlow`);
+      const leakFlow = win.eval(`connections.find(c => c.id === 'bk1')._actualFlow`);
+      const dryerInletFlow = win.eval(`connections.find(c => c.id === 'bd1')._actualFlow`);
+      approx(downstreamLoadFlow, 40, 1e-9, 'heatless dryer downstream load branch flow');
+      approx(leakFlow, 72, 1e-9, 'heatless dryer leak branch flow');
+      approx(dryerInletFlow, 139, 1e-9, 'heatless dryer inlet flow includes purge');
+      record('pass', 'Heatless dryer purge branch allocation', 'Purge is consumed at the dryer and no longer inflates downstream load branch flow.');
+    } catch (err) { record('fail', 'Heatless dryer purge branch allocation', err.message); }
+
+    try {
       const weekdayOnly = {id:'weekday', name:'Weekday 8-17', days:{mon:[{start:'08:00', stop:'17:00', factor:100}], tue:[{start:'08:00', stop:'17:00', factor:100}], wed:[{start:'08:00', stop:'17:00', factor:100}], thu:[{start:'08:00', stop:'17:00', factor:100}], fri:[{start:'08:00', stop:'17:00', factor:100}], sat:[], sun:[], holiday:[]}};
       const jan2 = new Date(2025, 0, 2);
       const jan4 = new Date(2025, 0, 4);
@@ -176,6 +203,21 @@ async function runChecks() {
     } catch (err) { record('fail', 'Schedule percentage scales load demand', err.message); }
 
     try {
+      const emptySchedule = {id:'empty', name:'Explicitly Off', days:{mon:[], tue:[], wed:[], thu:[], fri:[], sat:[], sun:[], holiday:[]}};
+      const jan2 = new Date(2025, 0, 2);
+      approx(win.getHourFactor('c1', jan2, 12, holidays, {c1:'empty'}, [emptySchedule]), 0, 0, 'empty weekday schedule factor');
+      const backup = JSON.parse(JSON.stringify(compressor));
+      backup.id = 'c2';
+      backup.props.name = 'Scheduled Off Backup';
+      backup.props.power = 25;
+      backup.props.flowRate = 100;
+      const alwaysOnly = win.runOneHour({date:jan2, hourOfDay:12, holidays}, [compressor, load], connectionsPre.slice(0, 1), {c1:'always', l1:'always'}, schedules, ambient);
+      const withEmptyBackup = win.runOneHour({date:jan2, hourOfDay:12, holidays}, [compressor, backup, load], [{id:'e1', from:'c1', to:'l1'}, {id:'e2', from:'c2', to:'l1'}], {c1:'always', c2:'empty', l1:'always'}, [schedules[0], emptySchedule], ambient);
+      approx(withEmptyBackup.systemKw, alwaysOnly.systemKw, 1e-9, 'scheduled-off backup compressor kW');
+      record('pass', 'Empty schedule means off', 'A schedule with explicit empty days stays off on weekdays and does not add backup compressor unload power.');
+    } catch (err) { record('fail', 'Empty schedule means off', err.message); }
+
+    try {
       const noHolidaySchedule = {id:'noholiday', name:'Weekdays No Holidays', days:{mon:[{start:'00:30', stop:'24:00', factor:100}], tue:[{start:'00:30', stop:'24:00', factor:100}], wed:[{start:'00:30', stop:'24:00', factor:100}], thu:[{start:'00:30', stop:'24:00', factor:100}], fri:[{start:'00:30', stop:'24:00', factor:100}], sat:[], sun:[], holiday:[]}};
       const holidayHour = calendarRows.find(row => row.isHoliday && row.hourOfDay === 8);
       const weekdayEarly = calendarRows.find(row => !row.isHoliday && row.dayName === 'Thu' && row.hourOfDay === 0);
@@ -193,11 +235,14 @@ async function runChecks() {
 
     try {
       if (!win.ExcelJS) throw new Error('ExcelJS is not loaded; check network or vendor the library for offline validation.');
+      const emptyScheduleDays = {};
+      ['mon','tue','wed','thu','fri','sat','sun','holiday'].forEach(day => emptyScheduleDays[day] = []);
+      const exportSchedules = [...schedules, {id:'empty', name:'Empty Export Schedule', days:emptyScheduleDays}];
       win.eval(`
         nodes = ${JSON.stringify(nodesPre)};
         connections = ${JSON.stringify(connectionsPre)};
         drainAttachments = [];
-        SIM.schedules = ${JSON.stringify(schedules)};
+        SIM.schedules = ${JSON.stringify(exportSchedules)};
         SIM.equipment = ${JSON.stringify(equipment)};
         SIM.postNodes = ${JSON.stringify(nodesPost)};
         SIM.postConnections = ${JSON.stringify(connectionsPost)};
@@ -228,6 +273,41 @@ async function runChecks() {
       const webKwHeader = wb.getWorksheet('Calc_Pre').getRow(1).values.indexOf('Web System kW');
       if (webKwHeader < 1) throw new Error('Calc_Pre is missing the Web System kW review column.');
       approx(wb.getWorksheet('Calc_Pre').getRow(2).getCell(webKwHeader).value, preHours[0].systemKw, 1e-9, 'first-hour web kW');
+      const inputsHeader = wb.getWorksheet('Inputs_Pre').getRow(1).values;
+      if (!inputsHeader.includes('Schedule Name')) throw new Error('Inputs_Pre is missing the Schedule Name review column.');
+      if (inputsHeader.indexOf('Power kW') !== 9) throw new Error('Inputs_Pre Power kW column moved; Calc formulas expect it in column I.');
+      if (inputsHeader.indexOf('Dryer Type') !== 17) throw new Error('Inputs_Pre Dryer Type column moved; Calc formulas expect it in column Q.');
+      if (inputsHeader.indexOf('Orifice Dia in') !== 22) throw new Error('Inputs_Pre drain audit columns should be appended after Schedule Name.');
+      if (inputsHeader.indexOf('Drain Line Pressure psig') !== 28) throw new Error('Inputs_Pre drain line pressure column should be appended as column AB.');
+      const assignmentsHeader = wb.getWorksheet('Assignments').getRow(1).values;
+      if (!assignmentsHeader.includes('Schedule Name')) throw new Error('Assignments is missing the Schedule Name review column.');
+      const assignmentScheduleNameCol = assignmentsHeader.indexOf('Schedule Name');
+      if (wb.getWorksheet('Assignments').getRow(2).getCell(assignmentScheduleNameCol).value !== 'always') throw new Error('Assignments should export the assigned schedule name.');
+      const emptyScheduleRow = wb.getWorksheet('Schedules').getSheetValues().find(row => row && row[1] === 'empty');
+      if (!emptyScheduleRow) throw new Error('Schedules sheet should include schedules with no active blocks.');
+      if (emptyScheduleRow[4] !== 0 || emptyScheduleRow[5] !== 0 || emptyScheduleRow[6] !== 0) throw new Error('Empty schedules must export numeric zero-hour rows so Excel formulas do not fail on blank INT() inputs.');
+      const formulaDryer = {id:'fd1', type:'dryer', props:{name:'Formula Dryer', flowRate:100, pressureDrop:2, power:1.5, dryerType:'refrigerated', purgeFraction:0}};
+      const formulaDrain = {id:'dr1', type:'drain', props:{name:'Formula Drain', drainType:'timer', orificeDia:0.25, onTime:5, cycleTime:300, condition:'normal', opensPerDay:4, openDuration:1}};
+      const formulaWb = new win.ExcelJS.Workbook();
+      const formulaRows = win.buildInputRows('Pre', [compressor, formulaDryer, formulaDrain, load], {c1:'always', l1:'always'});
+      win.addInputsSheet(formulaWb, 'Inputs_Pre', formulaRows);
+      const formulaSchedWs = win.addSchedulesSheet(formulaWb);
+      win.addCalendarSheet(formulaWb, 2025);
+      const formulaCalc = win.addCalcSheet(formulaWb, 'Calc_Pre', [compressor, formulaDryer, formulaDrain, load], {c1:'always', l1:'always'}, 'Inputs_Pre', preHours, Math.max(2, formulaSchedWs.rowCount), ambient);
+      const formulaHeaders = formulaWb.getWorksheet('Calc_Pre').getRow(1).values;
+      const dryerKwCol = formulaHeaders.indexOf('Formula Dryer Dryer kW');
+      if (dryerKwCol < 1) throw new Error('Calc_Pre is missing the dryer kW column.');
+      const dryerKwFormula = formulaWb.getWorksheet('Calc_Pre').getRow(2).getCell(dryerKwCol).value.formula;
+      if (!dryerKwFormula.includes('Inputs_Pre!Q3="heatless"') || !dryerKwFormula.includes('Inputs_Pre!I3')) throw new Error('Dryer kW formula should read Dryer Type from Q and Power kW from I.');
+      const drainScfmCol = formulaHeaders.indexOf('Formula Drain Drain scfm');
+      if (drainScfmCol < 1) throw new Error('Calc_Pre is missing the drain scfm column.');
+      const drainFormula = formulaWb.getWorksheet('Calc_Pre').getRow(2).getCell(drainScfmCol).value.formula;
+      if (!drainFormula.includes('Inputs_Pre!S4="timer"') || !drainFormula.includes('Inputs_Pre!V4^2') || !drainFormula.includes('Inputs_Pre!AB4')) throw new Error('Drain scfm formula should read drain type, orifice, and line pressure from Inputs_Pre.');
+      const totalDemandCol = formulaHeaders.indexOf('Total Demand scfm');
+      const totalDemandFormula = formulaWb.getWorksheet('Calc_Pre').getRow(2).getCell(totalDemandCol).value.formula;
+      if (!totalDemandFormula.includes(win.xlCol(drainScfmCol) + '2')) throw new Error('Total Demand scfm formula should include drain air loss.');
+      const formulaSystemKw = formulaWb.getWorksheet('Calc_Pre').getRow(2).getCell(formulaCalc.systemKwCol).value.formula;
+      if (!formulaSystemKw.includes(win.xlCol(dryerKwCol) + '2')) throw new Error('System kW formula should include refrigerated dryer kW.');
       record('pass', 'Excel workbook audit structure', `Required sheets present; Calc sheets have 8,760 formula rows; Results_QC exposes web-vs-Excel QC fields.`);
     } catch (err) { record(err.message.includes('ExcelJS is not loaded') ? 'skip' : 'fail', 'Excel workbook audit structure', err.message); }
 

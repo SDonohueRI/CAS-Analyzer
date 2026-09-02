@@ -1740,7 +1740,9 @@ function computeActualFlows(nodeInCap, cap) {
   const SINKS = new Set(['load', 'leak']);
 
   order.forEach(fromId => {
-    const actOut = nodeActOut[fromId];
+    const fromNode = nodes.find(n => n.id === fromId);
+    const purgeAtNode = fromNode && fromNode.type === 'dryer' ? dryerPurgeScfm(fromNode) : 0;
+    const actOut = Math.max(0, (nodeActOut[fromId] || 0) - purgeAtNode);
     if (actOut <= 0) return;
     const children = dn[fromId] || [];
     if (!children.length) return;
@@ -2636,6 +2638,10 @@ function applyProjectData(data) {
   setVal('elec-rate', amb.elecRate);
   setVal('hours-year', amb.hoursYear);
   SIM.schedules = JSON.parse(JSON.stringify(data.sim?.schedules || []));
+  normalizeScheduleIds();
+  syncScheduleIdCounter();
+  SIM.editingSchedId = getScheduleById(SIM.editingSchedId) ? SIM.editingSchedId : (SIM.schedules[0]?.id || null);
+  SIM.editingDay = 'mon';
   SIM.equipment = JSON.parse(JSON.stringify(data.sim?.equipment || {}));
   SIM.postNodes = data.sim?.postNodes ? JSON.parse(JSON.stringify(data.sim.postNodes)) : null;
   SIM.postConnections = data.sim?.postConnections ? JSON.parse(JSON.stringify(data.sim.postConnections)) : null;
@@ -5390,7 +5396,29 @@ function getFederalHolidays(year) {
 
 // ── Schedule helpers ─────────────────────────────────────────────
 let schedIdCounter = 1;
-function makeScheduleId() { return 'sched_' + (schedIdCounter++); }
+function makeScheduleId() {
+  let id;
+  do { id = 'sched_' + (schedIdCounter++); }
+  while (SIM.schedules.some(s => s.id === id));
+  return id;
+}
+
+function syncScheduleIdCounter() {
+  const maxExistingId = SIM.schedules.reduce((max, sched) => {
+    const match = String(sched.id || '').match(/^sched_(\d+)$/);
+    return match ? Math.max(max, parseInt(match[1], 10)) : max;
+  }, 0);
+  schedIdCounter = Math.max(schedIdCounter, maxExistingId + 1);
+}
+
+function normalizeScheduleIds() {
+  const seen = new Set();
+  SIM.schedules.forEach(schedule => {
+    const id = String(schedule.id || '');
+    if (!id || seen.has(id)) schedule.id = makeScheduleId();
+    seen.add(schedule.id);
+  });
+}
 
 function defaultSchedule(name) {
   const days = {};
@@ -5408,6 +5436,12 @@ function initSchedules() {
   if (SIM.schedules.length === 0) {
     SIM.schedules.push(defaultSchedule('Compressor Schedule 1'));
     SIM.schedules.push(defaultSchedule('Load Schedule 1'));
+  }
+  normalizeScheduleIds();
+  syncScheduleIdCounter();
+  if (!getScheduleById(SIM.editingSchedId)) {
+    SIM.editingSchedId = SIM.schedules[0]?.id || null;
+    SIM.editingDay = 'mon';
   }
   // Ensure every compressor and load has an assignment (handles nodes added after first open)
   const compSchedId = SIM.schedules[0].id;
@@ -5523,12 +5557,13 @@ function getHourFactor(nodeId, date, hour, holidays, equipMap, schedList) {
   const dateStr = `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`;
   const isHol   = holidays.has(dateStr);
   const dayKey  = isHol ? 'holiday' : JS_DOW_TO_KEY[date.getDay()];
-  let blocks    = sched.days[dayKey] || [];
+  let blocks    = sched.days[dayKey];
 
-  // If day is empty, fall back to default schedule (6-18 for weekdays, off for Sat/Sun/Holiday)
-  if (blocks.length === 0 && ['mon','tue','wed','thu','fri'].includes(dayKey)) {
+  // Legacy projects could omit weekday keys entirely; explicit empty arrays mean off.
+  if (!Array.isArray(blocks) && ['mon','tue','wed','thu','fri'].includes(dayKey)) {
     blocks = [{start:6, stop:18, factor:100}];
   }
+  if (!Array.isArray(blocks)) blocks = [];
 
   for (const blk of blocks) {
     // Handle both old format (HH:MM strings) and new format (hours as numbers)
@@ -6215,14 +6250,20 @@ function renderScheduleList() {
 function addSchedule() {
   const name = prompt('Schedule name:', 'New Schedule');
   if (!name) return;
-  SIM.schedules.push(defaultSchedule(name));
+  const schedule = defaultSchedule(name);
+  SIM.schedules.push(schedule);
+  SIM.editingSchedId = schedule.id;
+  SIM.editingDay = 'mon';
+  invalidateSimResults();
   renderScheduleList();
+  renderDayBlockEditor();
+  renderEquipAssignment();
 }
 
 function renameSchedule(id) {
   const s = getScheduleById(id); if (!s) return;
   const name = prompt('Rename schedule:', s.name);
-  if (name) { s.name = name; renderScheduleList(); renderEquipAssignment(); }
+  if (name) { s.name = name; invalidateSimResults(); renderScheduleList(); renderEquipAssignment(); }
 }
 
 function deleteSchedule(id) {
@@ -6634,7 +6675,7 @@ function runOneHour(hrData, nodeList, connList, eqMap, schedList, ambient) {
   const utilPct = supplyScfm > 0 ? Math.min(100, demandScfm/supplyScfm*100) : 0;
 
   return {
-    supplyScfm, demandScfm, leakScfm,
+    supplyScfm, demandScfm, leakScfm, drainScfm, purgeScfm,
     balanceScfm: supplyScfm - demandScfm - leakScfm - drainScfm - purgeScfm,
     systemKw, heatKw, delivPressure, utilPct,
     compResults
@@ -7055,6 +7096,16 @@ function scheduleFactorFormula(scheduleId, dayCell, hourCell, lastScheduleRow) {
   return `IFERROR(MIN(1,SUMPRODUCT((Schedules!$A$2:$A$${lastScheduleRow}="${scheduleId}")*(Schedules!$C$2:$C$${lastScheduleRow}=${dayCell})*${inHourRange}*(Schedules!$F$2:$F$${lastScheduleRow})/100)),0)`;
 }
 
+function getScheduleNameById(scheduleId) {
+  return getScheduleById(scheduleId)?.name || '';
+}
+
+function getDrainLinePressure(drainNode, nodeList) {
+  const att = drainAttachments.find(a => a.drainNodeId === drainNode.id);
+  const host = att ? nodeList.find(n => n.id === att.hostNodeId) : null;
+  return host ? (host.props.operatingPressure || host.props.pressure || 100) : 100;
+}
+
 function buildInputRows(caseName, nodeList, eqMap) {
   return nodeList.map(n => ({
     caseName,
@@ -7062,6 +7113,7 @@ function buildInputRows(caseName, nodeList, eqMap) {
     name: n.props.name || compDefs[n.type]?.label || n.type,
     type: n.type,
     scheduleId: eqMap?.[n.id] || '',
+    scheduleName: getScheduleNameById(eqMap?.[n.id]),
     flowRate: n.props.flowRate ?? '',
     pressure: n.props.pressure ?? '',
     dutyCycle: n.props.dutyCycle ?? '',
@@ -7076,7 +7128,14 @@ function buildInputRows(caseName, nodeList, eqMap) {
     dryerType: n.type === 'dryer' ? (n.props.dryerType || 'refrigerated') : '',
     purgeFraction: n.props.purgeFraction ?? '',
     drainType: n.props.drainType ?? '',
-    measured: n.props.measured ?? ''
+    measured: n.props.measured ?? '',
+    orificeDia: n.props.orificeDia ?? '',
+    onTime: n.props.onTime ?? '',
+    cycleTime: n.props.cycleTime ?? '',
+    condition: n.props.condition ?? '',
+    opensPerDay: n.props.opensPerDay ?? '',
+    openDuration: n.props.openDuration ?? '',
+    drainLinePressure: n.type === 'drain' ? getDrainLinePressure(n, nodeList) : ''
   }));
 }
 
@@ -7203,8 +7262,8 @@ function addDiagramSheet(wb) {
 
 function addInputsSheet(wb, name, rows) {
   const ws = wb.addWorksheet(name);
-  ws.addRow(['Case','Component ID','Name','Type','Schedule ID','Flow Rate','Pressure','Duty Cycle','Power kW','Control Type','Unload Power %','Staging Priority','Operating Pressure','Rated Inlet Psia','Rated Inlet Temp F','Pressure Drop','Dryer Type','Purge Fraction %','Drain Type','Measured']);
-  rows.forEach(r => ws.addRow([r.caseName,r.id,r.name,r.type,r.scheduleId,r.flowRate,r.pressure,r.dutyCycle,r.power,r.controlType,r.unloadPower,r.stagingPriority,r.operatingPressure,r.ratedInletPres,r.ratedInletTemp,r.pressureDrop,r.dryerType,r.purgeFraction,r.drainType,r.measured]));
+  ws.addRow(['Case','Component ID','Name','Type','Schedule ID','Flow Rate','Pressure','Duty Cycle','Power kW','Control Type','Unload Power %','Staging Priority','Operating Pressure','Rated Inlet Psia','Rated Inlet Temp F','Pressure Drop','Dryer Type','Purge Fraction %','Drain Type','Measured','Schedule Name','Orifice Dia in','On Time sec','Cycle Time sec','Drain Condition','Opens Per Day','Open Duration min','Drain Line Pressure psig']);
+  rows.forEach(r => ws.addRow([r.caseName,r.id,r.name,r.type,r.scheduleId,r.flowRate,r.pressure,r.dutyCycle,r.power,r.controlType,r.unloadPower,r.stagingPriority,r.operatingPressure,r.ratedInletPres,r.ratedInletTemp,r.pressureDrop,r.dryerType,r.purgeFraction,r.drainType,r.measured,r.scheduleName,r.orificeDia,r.onTime,r.cycleTime,r.condition,r.opensPerDay,r.openDuration,r.drainLinePressure]));
   setHeader(ws);
   autoWidth(ws);
   return ws;
@@ -7214,12 +7273,15 @@ function addSchedulesSheet(wb) {
   const ws = wb.addWorksheet('Schedules');
   ws.addRow(['Schedule ID','Schedule Name','Day Type','Start Hour','Stop Hour','Factor %']);
   SIM.schedules.forEach(s => {
+    let wroteBlock = false;
     DAY_KEYS.forEach(day => {
       (s.days[day] || []).forEach(b => {
         const {start: sh, stop: eh} = getBlockHourRange(b);
         ws.addRow([s.id, s.name, day, sh, eh, b.factor || 0]);
+        wroteBlock = true;
       });
     });
+    if (!wroteBlock) ws.addRow([s.id, s.name, '', 0, 0, 0]);
   });
   setHeader(ws);
   autoWidth(ws);
@@ -7228,8 +7290,8 @@ function addSchedulesSheet(wb) {
 
 function addAssignmentsSheet(wb, preRows, postRows) {
   const ws = wb.addWorksheet('Assignments');
-  ws.addRow(['Case','Component ID','Name','Type','Schedule ID']);
-  [...preRows, ...postRows].filter(r => r.scheduleId).forEach(r => ws.addRow([r.caseName,r.id,r.name,r.type,r.scheduleId]));
+  ws.addRow(['Case','Component ID','Name','Type','Schedule ID','Schedule Name']);
+  [...preRows, ...postRows].filter(r => r.scheduleId).forEach(r => ws.addRow([r.caseName,r.id,r.name,r.type,r.scheduleId,r.scheduleName]));
   setHeader(ws);
   autoWidth(ws);
 }
@@ -7251,6 +7313,7 @@ function addCalcSheet(wb, sheetName, nodeList, eqMap, inputSheetName, webHours, 
   const ws = wb.addWorksheet(sheetName);
   const loads = nodeList.filter(n => n.type === 'load');
   const leaks = nodeList.filter(n => n.type === 'leak');
+  const drains = nodeList.filter(n => n.type === 'drain');
   const dryers = nodeList.filter(n => n.type === 'dryer');
   const compressors = nodeList.filter(n => n.type === 'compressor')
     .sort((a,b) => (a.props.stagingPriority ?? 1) - (b.props.stagingPriority ?? 1));
@@ -7258,6 +7321,7 @@ function addCalcSheet(wb, sheetName, nodeList, eqMap, inputSheetName, webHours, 
   const headers = ['Hour Index','Date','Day Type','Hour Of Day','Any Compressor On'];
   loads.forEach(n => headers.push(`${n.props.name || n.id} Demand scfm`));
   leaks.forEach(n => headers.push(`${n.props.name || n.id} Leak scfm`));
+  drains.forEach(n => headers.push(`${n.props.name || n.id} Drain scfm`));
   dryers.forEach(n => headers.push(`${n.props.name || n.id} Purge scfm`, `${n.props.name || n.id} Dryer kW`));
   headers.push('Total Demand scfm');
   compressors.forEach(n => headers.push(`${n.props.name || n.id} On`, `${n.props.name || n.id} Remaining Before`, `${n.props.name || n.id} Rated Cap`, `${n.props.name || n.id} Load Fraction`, `${n.props.name || n.id} Actual Flow`, `${n.props.name || n.id} kW`, `${n.props.name || n.id} Remaining After`));
@@ -7300,6 +7364,16 @@ function addCalcSheet(wb, sheetName, nodeList, eqMap, inputSheetName, webHours, 
       row.getCell(col).value = { formula: `IF($E${rowNum}=1,${inputSheetName}!F${r},0)`, result: 0 };
       demandCols.push(col++);
     });
+    drains.forEach(n => {
+      const r = inputRow[n.id];
+      const orificeFlow = `0.65*PI()/4*${inputSheetName}!V${r}^2*${inputSheetName}!AB${r}*0.0685`;
+      const timerFlow = `${orificeFlow}*${inputSheetName}!W${r}/${inputSheetName}!X${r}`;
+      const floatFlow = `IF(${inputSheetName}!Y${r}="failed_open",${orificeFlow},0)`;
+      const manualFlow = `${orificeFlow}*(${inputSheetName}!Z${r}*${inputSheetName}!AA${r})/(24*60)`;
+      const formula = `IF($E${rowNum}=1,IF(${inputSheetName}!S${r}="zeroloss",0,IF(${inputSheetName}!S${r}="timer",${timerFlow},IF(${inputSheetName}!S${r}="float",${floatFlow},IF(${inputSheetName}!S${r}="manual",${manualFlow},0)))),0)`;
+      row.getCell(col).value = { formula, result: webHours?.[i]?.drainScfm || 0 };
+      demandCols.push(col++);
+    });
     dryers.forEach(n => {
       const r = inputRow[n.id];
       row.getCell(col).value = { formula: `IF($E${rowNum}=1,IF(${inputSheetName}!Q${r}="heatless",${inputSheetName}!F${r}*${inputSheetName}!R${r}/100,0),0)`, result: 0 };
@@ -7337,7 +7411,7 @@ function addCalcSheet(wb, sheetName, nodeList, eqMap, inputSheetName, webHours, 
     });
     const supplyCol = col++, systemKwCol = col++, webKwCol = col++, diffCol = col++, qcCol = col++;
     const dryerKwCols = [];
-    let dryerFirstCol = 6 + loads.length + leaks.length;
+    let dryerFirstCol = 6 + loads.length + leaks.length + drains.length;
     dryers.forEach(() => { dryerKwCols.push(dryerFirstCol + 1); dryerFirstCol += 2; });
     row.getCell(supplyCol).value = { formula: compFlowCols.length ? `SUM(${compFlowCols.map(c => `${xlCol(c)}${rowNum}`).join(',')})` : '0', result: webHours?.[i]?.supplyScfm || 0 };
     row.getCell(systemKwCol).value = { formula: `SUM(${[...compPowerCols, ...dryerKwCols].map(c => `${xlCol(c)}${rowNum}`).join(',') || '0'})`, result: webHours?.[i]?.systemKw || 0 };
