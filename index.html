@@ -145,6 +145,13 @@
   /* Canvas area */
   .canvas-area{flex:1;position:relative;overflow:hidden;background:radial-gradient(circle at 50% 50%,rgba(0,212,170,.03) 0%,transparent 60%),var(--bg);}
   .canvas-grid{position:absolute;inset:0;background-image:linear-gradient(var(--border) 1px,transparent 1px),linear-gradient(90deg,var(--border) 1px,transparent 1px);background-size:40px 40px;opacity:.3;pointer-events:none;}
+  .canvas-area.panning{cursor:grabbing;}
+  .canvas-toolbar{position:absolute;top:12px;right:12px;z-index:35;display:flex;align-items:center;gap:8px;padding:8px 10px;background:rgba(13,17,23,.92);border:1px solid var(--border);border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,.25);}
+  .canvas-toolbar-group{display:flex;align-items:center;gap:6px;}
+  .canvas-toolbar-btn{width:28px;height:28px;display:flex;align-items:center;justify-content:center;padding:0;border-radius:6px;border:1px solid var(--border);background:var(--surface3);color:var(--text);font-size:14px;font-family:'IBM Plex Mono',monospace;cursor:pointer;transition:all .15s;}
+  .canvas-toolbar-btn:hover{border-color:var(--border2);background:var(--surface2);}
+  .canvas-toolbar-btn.wide{width:auto;min-width:56px;padding:0 8px;font-size:11px;font-family:'IBM Plex Sans',sans-serif;font-weight:500;}
+  .zoom-indicator{min-width:46px;text-align:center;font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--text2);}
   /* Canvas 2D layer for connections - sits below nodes */
   #connCanvas{position:absolute;inset:0;z-index:5;cursor:default;}
   #detailedConnCanvas{position:absolute;inset:0;z-index:5;cursor:default;}
@@ -284,6 +291,7 @@
         Drag components onto canvas.<br>
         Click node to select &amp; edit.<br>
         Drag green port &#8594; gray port to connect.<br>
+        Mouse wheel zooms, drag open canvas space to pan.<br>
         <strong style="color:var(--text2)">Drain</strong> nodes connect to host node with a dashed line.<br>
         <strong style="color:var(--text2)">Double-click</strong> a connection to delete it.
       </div>
@@ -292,6 +300,17 @@
 
   <!-- Canvas area -->
   <div class="canvas-area" id="canvasArea">
+    <div class="canvas-toolbar">
+      <div class="canvas-toolbar-group">
+        <button class="canvas-toolbar-btn" onclick="zoomMainCanvasOut()" title="Zoom out">−</button>
+        <div class="zoom-indicator" id="mainZoomIndicator">100%</div>
+        <button class="canvas-toolbar-btn" onclick="zoomMainCanvasIn()" title="Zoom in">+</button>
+      </div>
+      <div class="canvas-toolbar-group">
+        <button class="canvas-toolbar-btn wide" onclick="resetMainViewport()" title="Reset zoom to 100% and center">100%</button>
+        <button class="canvas-toolbar-btn wide" onclick="centerMainViewport()" title="Center drawing">Center</button>
+      </div>
+    </div>
     <div class="canvas-grid"></div>
     <!-- Canvas 2D for connections (z-index 5) -->
     <canvas id="connCanvas"></canvas>
@@ -721,6 +740,8 @@ let connectingPort=null, dragType=null, currentTab='design', analysisRan=false;
 // Canvas hover state for cursor changes
 let hoveredConnId=null;
 let colourMode='flow'; // 'flow' | 'pressure'
+const mainViewport = { scale:1, minScale:0.5, maxScale:2.5, offsetX:40, offsetY:40 };
+let mainPanState=null, suppressCanvasClick=false;
 // Per-connection pressure values stamped by analysis engine
 // connPressure[connId] = psi at that point in the system
 
@@ -766,10 +787,117 @@ function resizeCanvas() {
   canvas.style.width  = area.clientWidth  + 'px';
   canvas.style.height = area.clientHeight + 'px';
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0); // reset + scale in one call, no accumulation
+  applyMainViewport();
   renderConnections();
 }
 
 new ResizeObserver(resizeCanvas).observe(document.getElementById('canvasArea'));
+
+function getMainNodeFrame(node) {
+  return (node.type === 'lineloss' || node.type === 'drain')
+    ? { width:88, height:54 }
+    : { width:130, height:86 };
+}
+
+function screenToMainWorld(clientX, clientY) {
+  const rect = document.getElementById('canvasArea').getBoundingClientRect();
+  return {
+    x: (clientX - rect.left - mainViewport.offsetX) / mainViewport.scale,
+    y: (clientY - rect.top - mainViewport.offsetY) / mainViewport.scale
+  };
+}
+
+function applyMainViewport() {
+  const grid = document.querySelector('#canvasArea .canvas-grid');
+  const container = document.getElementById('nodesContainer');
+  container.style.transformOrigin = '0 0';
+  container.style.transform = `translate(${mainViewport.offsetX}px,${mainViewport.offsetY}px) scale(${mainViewport.scale})`;
+  if (grid) {
+    const gridSize = 40 * mainViewport.scale;
+    grid.style.backgroundSize = `${gridSize}px ${gridSize}px`;
+    grid.style.backgroundPosition = `${mainViewport.offsetX}px ${mainViewport.offsetY}px`;
+  }
+  const indicator = document.getElementById('mainZoomIndicator');
+  if (indicator) indicator.textContent = Math.round(mainViewport.scale * 100) + '%';
+}
+
+function centerMainViewport() {
+  const area = document.getElementById('canvasArea');
+  if (!nodes.length) {
+    mainViewport.offsetX = 40;
+    mainViewport.offsetY = 40;
+    applyMainViewport();
+    renderConnections();
+    return;
+  }
+  const minX = Math.min(...nodes.map(node => node.x));
+  const minY = Math.min(...nodes.map(node => node.y));
+  const maxX = Math.max(...nodes.map(node => node.x + getMainNodeFrame(node).width));
+  const maxY = Math.max(...nodes.map(node => node.y + getMainNodeFrame(node).height));
+  const width = maxX - minX;
+  const height = maxY - minY;
+  mainViewport.offsetX = Math.round((area.clientWidth - width * mainViewport.scale) / 2 - minX * mainViewport.scale);
+  mainViewport.offsetY = Math.round((area.clientHeight - height * mainViewport.scale) / 2 - minY * mainViewport.scale);
+  applyMainViewport();
+  renderConnections();
+}
+
+function resetMainViewport() {
+  mainViewport.scale = 1;
+  centerMainViewport();
+}
+
+function zoomMainAt(clientX, clientY, factor) {
+  const rect = document.getElementById('canvasArea').getBoundingClientRect();
+  const before = screenToMainWorld(clientX, clientY);
+  const nextScale = Math.max(mainViewport.minScale, Math.min(mainViewport.maxScale, mainViewport.scale * factor));
+  mainViewport.scale = nextScale;
+  mainViewport.offsetX = Math.round(clientX - rect.left - before.x * nextScale);
+  mainViewport.offsetY = Math.round(clientY - rect.top - before.y * nextScale);
+  applyMainViewport();
+  renderConnections();
+}
+
+function zoomMainCanvasIn() {
+  const rect = document.getElementById('canvasArea').getBoundingClientRect();
+  zoomMainAt(rect.left + rect.width / 2, rect.top + rect.height / 2, 1.15);
+}
+
+function zoomMainCanvasOut() {
+  const rect = document.getElementById('canvasArea').getBoundingClientRect();
+  zoomMainAt(rect.left + rect.width / 2, rect.top + rect.height / 2, 1 / 1.15);
+}
+
+function beginMainPan(e) {
+  mainPanState = {
+    startClientX:e.clientX,
+    startClientY:e.clientY,
+    startOffsetX:mainViewport.offsetX,
+    startOffsetY:mainViewport.offsetY,
+    moved:false
+  };
+  canvasArea.classList.add('panning');
+  const onMove = ev => {
+    if (!mainPanState) return;
+    const dx = ev.clientX - mainPanState.startClientX;
+    const dy = ev.clientY - mainPanState.startClientY;
+    if (!mainPanState.moved && Math.hypot(dx, dy) >= 4) mainPanState.moved = true;
+    if (!mainPanState.moved) return;
+    mainViewport.offsetX = Math.round(mainPanState.startOffsetX + dx);
+    mainViewport.offsetY = Math.round(mainPanState.startOffsetY + dy);
+    applyMainViewport();
+    renderConnections();
+  };
+  const onUp = () => {
+    if (mainPanState?.moved) suppressCanvasClick = true;
+    mainPanState = null;
+    canvasArea.classList.remove('panning');
+    document.removeEventListener('mousemove', onMove);
+    document.removeEventListener('mouseup', onUp);
+  };
+  document.addEventListener('mousemove', onMove);
+  document.addEventListener('mouseup', onUp);
+}
 
 // ═══════════════════════════════════════════
 // COMPONENT DEFINITIONS
@@ -1033,6 +1161,7 @@ canvasArea.addEventListener('mousemove', canvasMouseMove);
 canvasArea.addEventListener('mouseup',   canvasMouseUp);
 canvasArea.addEventListener('click',     canvasClick);
 canvasArea.addEventListener('dblclick',  canvasDblClick);
+canvasArea.addEventListener('wheel',     canvasWheel, { passive:false });
 
 function canvasXY(e) {
   const r = document.getElementById('canvasArea').getBoundingClientRect();
@@ -1041,15 +1170,14 @@ function canvasXY(e) {
 
 function canvasMouseDown(e) {
   if (e.target.closest('.node')) return; // let nodeMouseDown handle it
+  if (e.button !== 0) return;
   const {x,y} = canvasXY(e);
   const hit = hitTestConnections(x, y);
-  if (!hit) {
-    selectNode(null);
-    selectConn(null);
-  }
+  if (!hit) beginMainPan(e);
 }
 
 function canvasMouseMove(e) {
+  if (mainPanState) return;
   if (e.target.closest('.node')) return;
   const {x,y} = canvasXY(e);
 
@@ -1071,6 +1199,7 @@ function canvasMouseMove(e) {
 }
 
 function canvasMouseUp(e) {
+  if (mainPanState) return;
   if (e.target.closest('.node')) return;
   if (connectingPort) {
     document.getElementById('pendingPath').setAttribute('d','');
@@ -1080,6 +1209,7 @@ function canvasMouseUp(e) {
 }
 
 function canvasClick(e) {
+  if (suppressCanvasClick) { suppressCanvasClick = false; return; }
   if (e.target.closest('.node')) return;
   const {x,y} = canvasXY(e);
   const hit = hitTestConnections(x, y);
@@ -1092,6 +1222,7 @@ function canvasClick(e) {
 }
 
 function canvasDblClick(e) {
+  if (suppressCanvasClick) { suppressCanvasClick = false; return; }
   if (e.target.closest('.node')) return;
   const {x,y} = canvasXY(e);
   const hit = hitTestConnections(x, y);
@@ -1102,6 +1233,11 @@ function canvasDblClick(e) {
     updateSummary();
     if (analysisRan) runAnalysis();
   }
+}
+
+function canvasWheel(e) {
+  e.preventDefault();
+  zoomMainAt(e.clientX, e.clientY, e.deltaY < 0 ? 1.1 : 1 / 1.1);
 }
 
 // ═══════════════════════════════════════════
@@ -1115,17 +1251,16 @@ function nodeMouseDown(e) {
   const node = nodes.find(n => n.id === el.id);
   selectNode(node);
   draggingNode = { node, el };
-  const r = el.getBoundingClientRect();
-  const cr = document.getElementById('canvasArea').getBoundingClientRect();
-  dragOffset.x = e.clientX - cr.left - node.x;
-  dragOffset.y = e.clientY - cr.top  - node.y;
+  const pointer = screenToMainWorld(e.clientX, e.clientY);
+  dragOffset.x = pointer.x - node.x;
+  dragOffset.y = pointer.y - node.y;
 
   const onMove = ev => {
-    const x = ev.clientX - cr.left, y = ev.clientY - cr.top;
-    const nx = Math.round((x - dragOffset.x) / 10) * 10;
-    const ny = Math.round((y - dragOffset.y) / 10) * 10;
-    draggingNode.node.x = Math.max(0, nx);
-    draggingNode.node.y = Math.max(0, ny);
+    const world = screenToMainWorld(ev.clientX, ev.clientY);
+    const nx = Math.round((world.x - dragOffset.x) / 10) * 10;
+    const ny = Math.round((world.y - dragOffset.y) / 10) * 10;
+    draggingNode.node.x = nx;
+    draggingNode.node.y = ny;
     draggingNode.el.style.left = draggingNode.node.x + 'px';
     draggingNode.el.style.top  = draggingNode.node.y + 'px';
     renderConnections();
@@ -1195,10 +1330,10 @@ function dropComponent(e) {
   e.preventDefault();
   const type = e.dataTransfer.getData('type') || dragType;
   if (!type) return;
-  const r = document.getElementById('canvasArea').getBoundingClientRect();
-  const x = Math.round((e.clientX - r.left - 65) / 20) * 20;
-  const y = Math.round((e.clientY - r.top  - 30) / 20) * 20;
-  addNode(type, Math.max(0,x), Math.max(0,y));
+  const world = screenToMainWorld(e.clientX, e.clientY);
+  const x = Math.round((world.x - 65) / 20) * 20;
+  const y = Math.round((world.y - 30) / 20) * 20;
+  addNode(type, x, y);
   dragType = null;
 }
 
@@ -2668,6 +2803,7 @@ function applyProjectData(data) {
   MONITORED_DATA.exportTimeZone = data.monitoredData?.exportTimeZone || '';
   renderProjectInfo();
   syncMainCanvasFromState();
+  resetMainViewport();
   selectNode(null);
   selectConn(null);
   // Update monitored data UI (shows calibrate button if data exists)
@@ -2700,6 +2836,7 @@ function clearAll(){
   updateSummary();
   document.getElementById('emptyState').style.display='';
   analysisRan=false;
+  resetMainViewport();
 }
 
 function loadExample(){
@@ -2731,6 +2868,7 @@ function loadExample(){
 
     document.getElementById('nodesContainer').innerHTML='';
     nodes.forEach(renderNode);
+    resetMainViewport();
 
     setTimeout(()=>{
       connections=[
@@ -5346,6 +5484,8 @@ const SIM = {
 
 let detailedCanvas=null, detailedCtx=null, detailedGhostCanvas=null, detailedGhostCtx=null, detailedConnectingPort=null, detailedDragType=null;
 let detailedSelectedNode=null, detailedSelectedConn=null, detailedHoveredConnId=null;
+const detailedViewport = { scale:1, minScale:0.5, maxScale:2.5, offsetX:40, offsetY:40 };
+let detailedPanState=null, suppressDetailedCanvasClick=false;
 
 function invalidateSimResults() {
   SIM.resultsPreHours = null;
@@ -5603,6 +5743,7 @@ function syncMainCanvasFromState() {
   nodes.forEach(renderNode);
   selectNode(null);
   selectConn(null);
+  applyMainViewport();
   renderConnections();
   updateSummary();
   document.getElementById('emptyState').style.display = nodes.length ? 'none' : '';
@@ -5621,6 +5762,7 @@ function initDetailedCanvas() {
   area.addEventListener('mouseup', detailedCanvasMouseUp);
   area.addEventListener('click', detailedCanvasClick);
   area.addEventListener('dblclick', detailedCanvasDblClick);
+  area.addEventListener('wheel', detailedCanvasWheel, { passive:false });
   [area, detailedCanvas, container].forEach(el => {
     el.addEventListener('dragover', e => { e.preventDefault(); e.stopPropagation(); });
     el.addEventListener('drop', detailedDropComponent);
@@ -5640,7 +5782,113 @@ function resizeDetailedCanvas() {
   });
   detailedCtx.setTransform(DPR, 0, 0, DPR, 0, 0);
   detailedGhostCtx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  applyDetailedViewport();
   renderDetailedConnections();
+}
+
+function screenToDetailedWorld(clientX, clientY) {
+  const rect = document.getElementById('detailedCanvasArea').getBoundingClientRect();
+  return {
+    x: (clientX - rect.left - detailedViewport.offsetX) / detailedViewport.scale,
+    y: (clientY - rect.top - detailedViewport.offsetY) / detailedViewport.scale
+  };
+}
+
+function applyDetailedViewport() {
+  const grid = document.querySelector('#detailedCanvasArea .canvas-grid');
+  const container = document.getElementById('detailedNodesContainer');
+  const ghostContainer = document.getElementById('detailedGhostNodesContainer');
+  [container, ghostContainer].forEach(el => {
+    if (!el) return;
+    el.style.transformOrigin = '0 0';
+    el.style.transform = `translate(${detailedViewport.offsetX}px,${detailedViewport.offsetY}px) scale(${detailedViewport.scale})`;
+  });
+  if (grid) {
+    const gridSize = 40 * detailedViewport.scale;
+    grid.style.backgroundSize = `${gridSize}px ${gridSize}px`;
+    grid.style.backgroundPosition = `${detailedViewport.offsetX}px ${detailedViewport.offsetY}px`;
+  }
+  const indicator = document.getElementById('detailedZoomIndicator');
+  if (indicator) indicator.textContent = Math.round(detailedViewport.scale * 100) + '%';
+}
+
+function centerDetailedViewport() {
+  const area = document.getElementById('detailedCanvasArea');
+  const ctxData = getDetailedCaseData();
+  if (!ctxData.nodes.length) {
+    detailedViewport.offsetX = 40;
+    detailedViewport.offsetY = 40;
+    applyDetailedViewport();
+    renderDetailedConnections();
+    return;
+  }
+  const minX = Math.min(...ctxData.nodes.map(node => node.x));
+  const minY = Math.min(...ctxData.nodes.map(node => node.y));
+  const maxX = Math.max(...ctxData.nodes.map(node => node.x + getMainNodeFrame(node).width));
+  const maxY = Math.max(...ctxData.nodes.map(node => node.y + getMainNodeFrame(node).height));
+  const width = maxX - minX;
+  const height = maxY - minY;
+  detailedViewport.offsetX = Math.round((area.clientWidth - width * detailedViewport.scale) / 2 - minX * detailedViewport.scale);
+  detailedViewport.offsetY = Math.round((area.clientHeight - height * detailedViewport.scale) / 2 - minY * detailedViewport.scale);
+  applyDetailedViewport();
+  renderDetailedConnections();
+}
+
+function resetDetailedViewport() {
+  detailedViewport.scale = 1;
+  centerDetailedViewport();
+}
+
+function zoomDetailedAt(clientX, clientY, factor) {
+  const rect = document.getElementById('detailedCanvasArea').getBoundingClientRect();
+  const before = screenToDetailedWorld(clientX, clientY);
+  const nextScale = Math.max(detailedViewport.minScale, Math.min(detailedViewport.maxScale, detailedViewport.scale * factor));
+  detailedViewport.scale = nextScale;
+  detailedViewport.offsetX = Math.round(clientX - rect.left - before.x * nextScale);
+  detailedViewport.offsetY = Math.round(clientY - rect.top - before.y * nextScale);
+  applyDetailedViewport();
+  renderDetailedConnections();
+}
+
+function zoomDetailedCanvasIn() {
+  const rect = document.getElementById('detailedCanvasArea').getBoundingClientRect();
+  zoomDetailedAt(rect.left + rect.width / 2, rect.top + rect.height / 2, 1.15);
+}
+
+function zoomDetailedCanvasOut() {
+  const rect = document.getElementById('detailedCanvasArea').getBoundingClientRect();
+  zoomDetailedAt(rect.left + rect.width / 2, rect.top + rect.height / 2, 1 / 1.15);
+}
+
+function beginDetailedPan(e) {
+  detailedPanState = {
+    startClientX:e.clientX,
+    startClientY:e.clientY,
+    startOffsetX:detailedViewport.offsetX,
+    startOffsetY:detailedViewport.offsetY,
+    moved:false
+  };
+  document.getElementById('detailedCanvasArea').classList.add('panning');
+  const onMove = ev => {
+    if (!detailedPanState) return;
+    const dx = ev.clientX - detailedPanState.startClientX;
+    const dy = ev.clientY - detailedPanState.startClientY;
+    if (!detailedPanState.moved && Math.hypot(dx, dy) >= 4) detailedPanState.moved = true;
+    if (!detailedPanState.moved) return;
+    detailedViewport.offsetX = Math.round(detailedPanState.startOffsetX + dx);
+    detailedViewport.offsetY = Math.round(detailedPanState.startOffsetY + dy);
+    applyDetailedViewport();
+    renderDetailedConnections();
+  };
+  const onUp = () => {
+    if (detailedPanState?.moved) suppressDetailedCanvasClick = true;
+    detailedPanState = null;
+    document.getElementById('detailedCanvasArea').classList.remove('panning');
+    document.removeEventListener('mousemove', onMove);
+    document.removeEventListener('mouseup', onUp);
+  };
+  document.addEventListener('mousemove', onMove);
+  document.addEventListener('mouseup', onUp);
 }
 
 function renderDetailedMode() {
@@ -5649,6 +5897,7 @@ function renderDetailedMode() {
   detailedSelectedConn = null;
   document.getElementById('simCaseLabel').textContent = SIM.currentCase === 'pre' ? 'Pre Case' : 'Post Case';
   renderDetailedCanvas();
+  resetDetailedViewport();
   renderDetailedPanel();
 }
 
@@ -5666,10 +5915,10 @@ function detailedDropComponent(e) {
     alert('Duplicate Pre to Post before editing the post case.');
     return;
   }
-  const r = document.getElementById('detailedCanvasArea').getBoundingClientRect();
-  const x = Math.round((e.clientX - r.left - 65) / 20) * 20;
-  const y = Math.round((e.clientY - r.top  - 30) / 20) * 20;
-  addDetailedNode(type, Math.max(0,x), Math.max(0,y));
+  const world = screenToDetailedWorld(e.clientX, e.clientY);
+  const x = Math.round((world.x - 65) / 20) * 20;
+  const y = Math.round((world.y - 30) / 20) * 20;
+  addDetailedNode(type, x, y);
   detailedDragType = null;
 }
 
@@ -5698,6 +5947,7 @@ function renderDetailedCanvas() {
   if (shouldShowPreGhost()) nodes.forEach(renderDetailedGhostNode);
   ctxData.nodes.forEach(renderDetailedNode);
   document.getElementById('detailedEmptyState').style.display = ctxData.nodes.length ? 'none' : '';
+  applyDetailedViewport();
   renderDetailedConnections();
   renderCanvasLegend('detailedCanvasLegend');
 }
@@ -5767,12 +6017,13 @@ function detailedNodeMouseDown(e) {
   const node = ctxData.nodes.find(n => n.id === id);
   if (!node) return;
   detailedSelectNode(node);
-  const cr = document.getElementById('detailedCanvasArea').getBoundingClientRect();
-  const offsetX = e.clientX - cr.left - node.x;
-  const offsetY = e.clientY - cr.top - node.y;
+  const pointer = screenToDetailedWorld(e.clientX, e.clientY);
+  const offsetX = pointer.x - node.x;
+  const offsetY = pointer.y - node.y;
   const onMove = ev => {
-    node.x = Math.max(0, Math.round((ev.clientX - cr.left - offsetX) / 10) * 10);
-    node.y = Math.max(0, Math.round((ev.clientY - cr.top - offsetY) / 10) * 10);
+    const world = screenToDetailedWorld(ev.clientX, ev.clientY);
+    node.x = Math.round((world.x - offsetX) / 10) * 10;
+    node.y = Math.round((world.y - offsetY) / 10) * 10;
     el.style.left = node.x + 'px';
     el.style.top = node.y + 'px';
     renderDetailedConnections();
@@ -5936,14 +6187,13 @@ function detailedHitTestConnections(px, py) {
 
 function detailedCanvasMouseDown(e) {
   if (e.target.closest('.node')) return;
+  if (e.button !== 0) return;
   const {x,y} = detailedCanvasXY(e);
-  if (!detailedHitTestConnections(x,y)) {
-    detailedSelectNode(null);
-    detailedSelectConn(null);
-  }
+  if (!detailedHitTestConnections(x,y)) beginDetailedPan(e);
 }
 
 function detailedCanvasMouseMove(e) {
+  if (detailedPanState) return;
   if (e.target.closest('.node')) return;
   const {x,y} = detailedCanvasXY(e);
   if (detailedConnectingPort) updateDetailedPendingPath(x,y);
@@ -5956,6 +6206,7 @@ function detailedCanvasMouseMove(e) {
 }
 
 function detailedCanvasMouseUp(e) {
+  if (detailedPanState) return;
   if (e && e.target.closest('.node')) return;
   if (detailedConnectingPort) {
     document.getElementById('detailedPendingPath').setAttribute('d','');
@@ -5965,6 +6216,7 @@ function detailedCanvasMouseUp(e) {
 }
 
 function detailedCanvasClick(e) {
+  if (suppressDetailedCanvasClick) { suppressDetailedCanvasClick = false; return; }
   if (e.target.closest('.node')) return;
   const {x,y} = detailedCanvasXY(e);
   const hit = detailedHitTestConnections(x,y);
@@ -5972,6 +6224,7 @@ function detailedCanvasClick(e) {
 }
 
 function detailedCanvasDblClick(e) {
+  if (suppressDetailedCanvasClick) { suppressDetailedCanvasClick = false; return; }
   if (e.target.closest('.node')) return;
   const {x,y} = detailedCanvasXY(e);
   const hit = detailedHitTestConnections(x,y);
@@ -5984,6 +6237,11 @@ function detailedCanvasDblClick(e) {
   commitDetailedCaseChange(ctxData);
 }
 
+
+function detailedCanvasWheel(e) {
+  e.preventDefault();
+  zoomDetailedAt(e.clientX, e.clientY, e.deltaY < 0 ? 1.1 : 1 / 1.1);
+}
 function renderCanvasLegend(targetId) {
   const el = document.getElementById(targetId);
   if (!el) return;
@@ -8051,6 +8309,7 @@ canvas.addEventListener('drop',     _onDrop);
 document.getElementById('canvasArea').addEventListener('dragover', _onDragOver);
 document.getElementById('canvasArea').addEventListener('drop',     _onDrop);
 
+resetMainViewport();
 updateSummary();
 
 </script>
@@ -8158,6 +8417,17 @@ updateSummary();
 
     <!-- Center: Detailed canvas -->
     <div class="canvas-area" id="detailedCanvasArea" style="flex:1;min-width:560px;">
+      <div class="canvas-toolbar">
+        <div class="canvas-toolbar-group">
+          <button class="canvas-toolbar-btn" onclick="zoomDetailedCanvasOut()" title="Zoom out">−</button>
+          <div class="zoom-indicator" id="detailedZoomIndicator">100%</div>
+          <button class="canvas-toolbar-btn" onclick="zoomDetailedCanvasIn()" title="Zoom in">+</button>
+        </div>
+        <div class="canvas-toolbar-group">
+          <button class="canvas-toolbar-btn wide" onclick="resetDetailedViewport()" title="Reset zoom to 100% and center">100%</button>
+          <button class="canvas-toolbar-btn wide" onclick="centerDetailedViewport()" title="Center drawing">Center</button>
+        </div>
+      </div>
       <div class="canvas-grid"></div>
       <canvas id="detailedGhostConnCanvas"></canvas>
       <canvas id="detailedConnCanvas"></canvas>
