@@ -427,7 +427,7 @@
         <div class="ref-h3">CAGI Rated Pressure vs Operating Pressure</div>
         <div class="ref-p">These are two distinct values. <strong>CAGI Rated Pressure</strong> is the discharge pressure printed on the data sheet — the condition under which rated flow and power were measured. <strong>Operating Pressure</strong> is the actual controller setpoint your system runs at. Most systems run 10–20 psi below the CAGI rated pressure. The tool corrects power for the difference using isentropic scaling. <span class="ref-link" onclick="showMethod('isentropicScale')">see: Isentropic Pressure Correction</span></div>
         <div class="ref-h3">Staging Priority</div>
-        <div class="ref-p">Priority 1 = base load unit (fills demand first, runs at highest load fraction). Priority 2 = first trim unit, and so on. The staging engine fills demand from the lowest priority number upward. A warning appears if any unit's computed load fraction falls below its minimum stable load threshold. <span class="ref-link" onclick="showMethod('staging')">see: Staging Logic</span></div>
+        <div class="ref-p">Priority 1 = base load unit (fills demand first, runs at highest load fraction). Priority 2 = first trim unit, and so on. Compressors with the same priority are staged as a group and share load at the same percent load. A warning appears if any unit's computed load fraction falls below its minimum stable load threshold. <span class="ref-link" onclick="showMethod('staging')">see: Staging Logic</span></div>
         <div class="ref-h3">Control Type</div>
         <div class="ref-p"><strong>Load/Unload (L/U):</strong> cycles between full load and unload power. Efficient at high loads, wasteful at part load. <strong>Modulating:</strong> throttles inlet valve — power stays high even at low flow. <strong>VSD:</strong> varies motor speed to match demand — power drops near-cubically with flow reduction. <span class="ref-link" onclick="showMethod('partLoad')">see: Part-Load Power Curves</span></div>
         <div class="ref-warn">Load fraction is always computed from system demand — you cannot enter it directly. To force a specific operating point, adjust loads until the staging engine produces the desired result.</div>
@@ -529,7 +529,7 @@
         <div class="ref-h2">M4 &#8212; Compressor Staging Logic</div>
         <div class="ref-p">Determines each compressor&#39;s operating load fraction from system demand using priority-based staging. Load fraction is a computed result, not a user input.</div>
         <div class="meth-label">Algorithm</div>
-        <div class="meth-eq">1. total_demand = load_demand + leak_flow + drain_loss<br>2. Sort online compressors by staging priority (1 = base load)<br>3. For each unit in order:<br>   if remaining &ge; rated_cap: unit runs at 100%, remaining -= rated_cap<br>   else: unit is trim unit, load_frac = remaining / rated_cap, remaining = 0<br>4. Units beyond demand: L/U stays at unload power; VSD/MOD go to zero</div>
+        <div class="meth-eq">1. total_demand = load_demand + leak_flow + drain_loss<br>2. Sort online compressors by staging priority (1 = base load)<br>3. Group compressors with the same priority<br>4. For each priority group:<br>   if remaining &ge; group_cap: all units run at 100%, remaining -= group_cap<br>   else: each unit shares the trim load at the same load_frac = remaining / group_cap, remaining = 0<br>5. Units beyond demand: L/U stays at unload power; VSD/MOD go to zero</div>
         <div class="meth-label">Unaccounted Demand</div>
         <div class="meth-assume">When total staged supply exceeds identified demand + leaks + drains, the difference is reported as unaccounted demand. This indicates unmapped loads, unreported leaks, purge/blow-off points, or other consumption not modelled in the diagram.</div>
         <div class="meth-label">Minimum Stable Load Warning</div>
@@ -1477,6 +1477,46 @@ function selectConn(conn) {
   renderConnections();
 }
 
+let pendingPanelTabFocus = null;
+
+function getPanelInputFields(containerId) {
+  const container = document.getElementById(containerId);
+  if (!container) return [];
+  return Array.from(container.querySelectorAll('input:not([type="hidden"]):not([type="file"]):not([disabled]), select:not([disabled]), textarea:not([disabled])'));
+}
+
+function queuePanelTabFocus(event, containerId) {
+  if (event.key !== 'Tab' || event.altKey || event.ctrlKey || event.metaKey) return;
+  const fields = getPanelInputFields(containerId);
+  const currentIndex = fields.indexOf(event.target);
+  if (currentIndex === -1) return;
+  const nextIndex = currentIndex + (event.shiftKey ? -1 : 1);
+  if (nextIndex < 0 || nextIndex >= fields.length) return;
+  pendingPanelTabFocus = { containerId, nextIndex };
+  event.preventDefault();
+  event.target.blur();
+}
+
+function restorePanelTabFocus(containerId) {
+  if (!pendingPanelTabFocus || pendingPanelTabFocus.containerId !== containerId) return;
+  const fields = getPanelInputFields(containerId);
+  const target = fields[pendingPanelTabFocus.nextIndex];
+  pendingPanelTabFocus = null;
+  if (!target) return;
+  target.focus();
+  if (typeof target.select === 'function' && target.tagName === 'INPUT') target.select();
+}
+
+function setPanelFieldsHtml(containerId, html) {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+  container.innerHTML = html;
+  restorePanelTabFocus(containerId);
+}
+
+document.getElementById('propFields')?.addEventListener('keydown', e => queuePanelTabFocus(e, 'propFields'));
+document.getElementById('detailedPropFields')?.addEventListener('keydown', e => queuePanelTabFocus(e, 'detailedPropFields'));
+
 function deleteSelectedConn() {
   if (!selectedConn) return;
   connections = connections.filter(c=>c.id!==selectedConn.id);
@@ -1492,7 +1532,7 @@ function showProperties(node) {
   // Special UI for lineloss
   if (node.type === 'lineloss') {
     const isMeasured = !!node.props.measured;
-    document.getElementById('propFields').innerHTML = `
+    setPanelFieldsHtml('propFields', `
       <div class="mode-toggle">
         <button class="mode-toggle-btn ${!isMeasured?'active':''}" onclick="setLinelossMode('${node.id}',false)">Flow-Scaled</button>
         <button class="mode-toggle-btn ${isMeasured?'active':''}"  onclick="setLinelossMode('${node.id}',true)">Measured</button>
@@ -1517,7 +1557,7 @@ function showProperties(node) {
         </div>
         <div class="mode-note">Measured mode: this exact dP is applied regardless of flow rate.</div>
       `}
-      <div id="linelossActual" style="margin-top:8px;font-size:11px;color:var(--text2);"></div>`;
+      <div id="linelossActual" style="margin-top:8px;font-size:11px;color:var(--text2);"></div>`);
     updateLinelossActualDisplay(node);
     return;
   }
@@ -1571,13 +1611,13 @@ function showProperties(node) {
       <div class="prop-divider">Computed</div>
       <div class="prop-row"><span class="prop-label">Air loss</span><div class="prop-computed">${airLoss.toFixed(3)}</div><span class="prop-unit">scfm</span></div>
       <div class="prop-row"><span class="prop-label">Annual cost</span><div class="prop-computed">$${annualCost.toFixed(0)}</div><span class="prop-unit">/yr</span></div>`;
-    document.getElementById('propFields').innerHTML = html;
+    setPanelFieldsHtml('propFields', html);
     return;
   }
 
   // Regulator panel
   if (node.type === 'regulator') {
-    document.getElementById('propFields').innerHTML = `
+    setPanelFieldsHtml('propFields', `
       <div class="prop-row"><span class="prop-label">Name</span>
         <input class="prop-input" type="text" value="${node.props.name||''}" style="width:130px" onchange="updateProp('${node.id}','name',this.value)">
         <span class="prop-unit"></span></div>
@@ -1591,7 +1631,7 @@ function showProperties(node) {
       <div class="prop-row"><span class="prop-label">Upstream margin</span>
         <input class="prop-input" type="number" value="${node.props.upstreamMargin??10}" step="1" min="5" onchange="updateProp('${node.id}','upstreamMargin',this.value)">
         <span class="prop-unit">psi</span></div>
-      <div class="mode-note">Regulator delivers set pressure downstream regardless of upstream pressure (within margin). Upstream must exceed set + margin to regulate. No flow restriction in normal operation.</div>`;
+      <div class="mode-note">Regulator delivers set pressure downstream regardless of upstream pressure (within margin). Upstream must exceed set + margin to regulate. No flow restriction in normal operation.</div>`);
     return;
   }
 
@@ -1601,7 +1641,7 @@ function showProperties(node) {
     const isHeatless = dt === 'heatless';
     const purge = dryerPurgeScfm(node);
     const elec  = dryerElecKw(node);
-    document.getElementById('propFields').innerHTML = `
+    setPanelFieldsHtml('propFields', `
       <div class="prop-row"><span class="prop-label">Name</span>
         <input class="prop-input" type="text" value="${node.props.name||''}" style="width:130px" onchange="updateProp('${node.id}','name',this.value)">
         <span class="prop-unit"></span></div>
@@ -1637,7 +1677,7 @@ function showProperties(node) {
         <span class="prop-unit">scfm</span></div>
       <div class="mode-note">Purge air is exhausted to atmosphere continuously. It is treated as system demand — compressors must supply it. No electrical power draw.</div>
       `}
-      <div class="mode-note" style="margin-top:4px">Typical PDP: Refrigerated +38°F · Heated/Heatless desiccant -40°F</div>`;
+      <div class="mode-note" style="margin-top:4px">Typical PDP: Refrigerated +38°F · Heated/Heatless desiccant -40°F</div>`);
     return;
   }
 
@@ -1676,8 +1716,8 @@ function showProperties(node) {
     <div class="prop-row"><span class="prop-label">Load fraction</span><div class="prop-computed">${node._stagedLoadFrac!=null?(node._stagedLoadFrac*100).toFixed(1):'—'}</div><span class="prop-unit">%</span></div>
     <div class="prop-row"><span class="prop-label">Site-corr. flow</span><div class="prop-computed">${out.actualFlow.toFixed(1)}</div><span class="prop-unit">scfm</span></div>
     <div class="prop-row"><span class="prop-label">Site-corr. power</span><div class="prop-computed">${out.actualPower.toFixed(1)}</div><span class="prop-unit">kW</span></div>
-    <div class="mode-note">Priority 1 = base load (fills first). Load fraction is computed from system demand — not a user input. Run Analyze to update.</div>`;
-    document.getElementById('propFields').innerHTML = html;
+    <div class="mode-note">Priority 1 = base load (fills first). Compressors with the same priority share load at the same percent load, proportional to their capacities. Load fraction is computed from system demand — not a user input. Run Analyze to update.</div>`;
+    setPanelFieldsHtml('propFields', html);
     return;
   }
 
@@ -1688,7 +1728,7 @@ function showProperties(node) {
       <span class="prop-unit">${unit}</span>
     </div>`;
   });
-  document.getElementById('propFields').innerHTML = html;
+  setPanelFieldsHtml('propFields', html);
 }
 
 function setLinelossMode(id, measured) {
@@ -6331,7 +6371,7 @@ function renderDetailedProperties(node) {
         ${compatibleReplacementTypes(node.type).map(t=>`<option value="${t}" ${t===node.type?'selected':''}>${compDefs[t].label}</option>`).join('')}
       </select><span class="prop-unit"></span></div>
     <button class="btn" style="width:100%;margin-bottom:8px" onclick="replaceDetailedNode('${node.id}',document.getElementById('replaceType-${node.id}').value)">Apply Replacement</button>` : '';
-  document.getElementById('detailedPropFields').innerHTML = schedulePicker + replaceTools + `<div class="prop-divider">Inputs</div>` + rows;
+  setPanelFieldsHtml('detailedPropFields', schedulePicker + replaceTools + `<div class="prop-divider">Inputs</div>` + rows);
 }
 
 function detailedControlOptions(node, key) {
@@ -6813,45 +6853,50 @@ function stageCompressors(onlineNodes, demandScfm, ambient) {
   let remaining = demandScfm;
   const results = [];
 
+  const groups = [];
   sorted.forEach(node => {
-    const ratedCap = (node.props.flowRate || 0) * siteCorrection(node, ambient);
-    let warning = null;
+    const priority = node.props.stagingPriority ?? 1;
+    const last = groups[groups.length - 1];
+    if (!last || last.priority !== priority) groups.push({ priority, nodes:[node] });
+    else last.nodes.push(node);
+  });
 
+  groups.forEach(group => {
     if (remaining <= 0) {
-      // Unit not needed — L/U stays at unload power, VSD/MOD go to zero
-      const ct = node.props.controlType || 'lu';
-      const isLU = ct === 'lu';
-      const ulFrac = isLU ? (node.props.unloadPower ?? 20) / 100 : 0;
-      const unloadPower = (node.props.power || 0) * ulFrac;
-      results.push({ node, loadFrac: 0, actualFlow: 0, actualPower: unloadPower,
-        inUnload: isLU, warning: null });
+      group.nodes.forEach(node => {
+        const ct = node.props.controlType || 'lu';
+        const isLU = ct === 'lu';
+        const ulFrac = isLU ? (node.props.unloadPower ?? 20) / 100 : 0;
+        const unloadPower = (node.props.power || 0) * ulFrac;
+        results.push({ node, loadFrac: 0, actualFlow: 0, actualPower: unloadPower,
+          inUnload: isLU, warning: null });
+      });
       return;
     }
 
-    let loadFrac;
-    if (remaining >= ratedCap) {
-      // Full load
-      loadFrac = 1.0;
-      remaining -= ratedCap;
-    } else {
-      // Trim unit
-      loadFrac = ratedCap > 0 ? remaining / ratedCap : 0;
-      remaining = 0;
-    }
+    const capacities = group.nodes.map(node => ({
+      node,
+      ratedCap: (node.props.flowRate || 0) * siteCorrection(node, ambient)
+    }));
+    const groupCap = capacities.reduce((sum, entry) => sum + entry.ratedCap, 0);
+    const loadFrac = groupCap > 0 ? Math.min(1, remaining / groupCap) : 0;
+    if (groupCap > 0) remaining = Math.max(0, remaining - groupCap * loadFrac);
 
-    // Check minimum stable load
-    const ct = node.props.controlType || 'lu';
-    const minLoad = node.props.minStableLoad != null
-      ? node.props.minStableLoad / 100
-      : (MIN_STABLE_LOAD[ct] ?? 0.30);
+    capacities.forEach(({ node }) => {
+      let warning = null;
+      const ct = node.props.controlType || 'lu';
+      const minLoad = node.props.minStableLoad != null
+        ? node.props.minStableLoad / 100
+        : (MIN_STABLE_LOAD[ct] ?? 0.30);
 
-    if (loadFrac > 0 && loadFrac < minLoad) {
-      warning = `"${node.props.name}" computed load ${(loadFrac*100).toFixed(1)}% is below minimum stable load ${(minLoad*100).toFixed(0)}% — consider staging this unit off.`;
-    }
+      if (loadFrac > 0 && loadFrac < minLoad) {
+        warning = `"${node.props.name}" computed load ${(loadFrac*100).toFixed(1)}% is below minimum stable load ${(minLoad*100).toFixed(0)}% — consider staging this unit off.`;
+      }
 
-    const out = compressorOutput(node, ambient, loadFrac);
-    results.push({ node, loadFrac, actualFlow: out.actualFlow,
-      actualPower: out.actualPower, inUnload: false, warning });
+      const out = compressorOutput(node, ambient, loadFrac);
+      results.push({ node, loadFrac, actualFlow: out.actualFlow,
+        actualPower: out.actualPower, inUnload: false, warning });
+    });
   });
 
   return results;
@@ -7273,6 +7318,7 @@ function renderSimCharts() {
   const pre  = SIM.resultsPreHours;
   const post = SIM.resultsPostHours;
   if (!pre) return;
+  const activeHours = SIM.currentCase === 'post' && post ? post : pre;
 
   // ── Load duration curve ──
   const preLDC  = [...pre].map(h=>h.systemKw).sort((a,b)=>b-a);
@@ -7315,6 +7361,47 @@ function renderSimCharts() {
     flowDs[2].data.push(post.reduce((s,h)=>s+h.leakScfm,0)/1000);
   }
   drawChart('chartFlow','bar',post?['Pre','Post']:['Pre'],flowDs,{yFmt:v=>v.toFixed(0)+'k'});
+
+  // ── SCFM demand by day type for active case ──
+  const dayTypeProfiles = buildDemandDayTypeProfiles(activeHours);
+  drawChart('chartDemandByDayType','line',dayTypeProfiles.labels,dayTypeProfiles.datasets,{yFmt:v=>v.toFixed(0)+' scfm'});
+}
+
+function buildDemandDayTypeProfiles(hours) {
+  const dayDefs = [
+    { key:'sun', label:'Sun', color:'#f59e0b' },
+    { key:'mon', label:'Mon', color:'#00d4aa' },
+    { key:'tue', label:'Tue', color:'#0096ff' },
+    { key:'wed', label:'Wed', color:'#bc8cff' },
+    { key:'thu', label:'Thu', color:'#ff7b72' },
+    { key:'fri', label:'Fri', color:'#3fb950' },
+    { key:'sat', label:'Sat', color:'#e8b84b' },
+    { key:'holiday', label:'Hol', color:'#8b949e' }
+  ];
+  const sums = {};
+  const counts = {};
+  dayDefs.forEach(def => {
+    sums[def.key] = Array(24).fill(0);
+    counts[def.key] = Array(24).fill(0);
+  });
+
+  (hours || []).forEach(hr => {
+    const dayKey = hr.isHoliday ? 'holiday' : JS_DOW_TO_KEY[hr.date.getDay()];
+    const hour = hr.hourOfDay;
+    if (sums[dayKey] && hour >= 0 && hour < 24) {
+      sums[dayKey][hour] += hr.demandScfm || 0;
+      counts[dayKey][hour]++;
+    }
+  });
+
+  return {
+    labels: Array.from({length:24},(_,i)=>i%6===0?i+'h':''),
+    datasets: dayDefs.map(def => ({
+      label: def.label,
+      color: def.color,
+      data: sums[def.key].map((value, hour) => counts[def.key][hour] ? value / counts[def.key][hour] : 0)
+    }))
+  };
 }
 
 // ── Formula workbook export ───────────────────────────────────────
@@ -7411,14 +7498,19 @@ function drawRoundedRect(ctxLocal, x, y, w, h, r) {
   ctxLocal.closePath();
 }
 
-function buildCanvasDiagramImage(nodeList=nodes, connList=connections) {
-  if (!nodeList.length) return null;
+function buildCanvasDiagramImage(nodeList=nodes, connList=connections, ghostNodeList=null, ghostConnList=null) {
+  const primaryNodes = nodeList || [];
+  const primaryConnections = connList || [];
+  const ghostNodes = ghostNodeList || [];
+  const ghostConnections = ghostConnList || [];
+  const allNodes = [...ghostNodes, ...primaryNodes];
+  if (!allNodes.length) return null;
   const margin = 50;
   const nodeW = 150, nodeH = 82;
-  const minX = Math.min(...nodeList.map(n=>n.x));
-  const minY = Math.min(...nodeList.map(n=>n.y));
-  const maxX = Math.max(...nodeList.map(n=>n.x + nodeW));
-  const maxY = Math.max(...nodeList.map(n=>n.y + nodeH));
+  const minX = Math.min(...allNodes.map(n=>n.x));
+  const minY = Math.min(...allNodes.map(n=>n.y));
+  const maxX = Math.max(...allNodes.map(n=>n.x + nodeW));
+  const maxY = Math.max(...allNodes.map(n=>n.y + nodeH));
   const width = Math.max(720, Math.ceil(maxX - minX + margin*2));
   const height = Math.max(420, Math.ceil(maxY - minY + margin*2));
   const canvasOut = document.createElement('canvas');
@@ -7434,11 +7526,58 @@ function buildCanvasDiagramImage(nodeList=nodes, connList=connections) {
   ctxLocal.globalAlpha = 1;
 
   const nodeMap = {};
-  nodeList.forEach(n => {
+  primaryNodes.forEach(n => {
     nodeMap[n.id] = { ...n, dx:n.x - minX + margin, dy:n.y - minY + margin };
   });
+  const ghostNodeMap = {};
+  ghostNodes.forEach(n => {
+    ghostNodeMap[n.id] = { ...n, dx:n.x - minX + margin, dy:n.y - minY + margin };
+  });
 
-  connList.forEach(conn => {
+  ghostConnections.forEach(conn => {
+    const from = ghostNodeMap[conn.from], to = ghostNodeMap[conn.to];
+    if (!from || !to) return;
+    const x1 = from.dx + nodeW, y1 = from.dy + nodeH/2;
+    const x2 = to.dx, y2 = to.dy + nodeH/2;
+    const cx = (x1+x2)/2;
+    ctxLocal.save();
+    ctxLocal.globalAlpha = 0.28;
+    ctxLocal.beginPath();
+    ctxLocal.moveTo(x1,y1);
+    ctxLocal.bezierCurveTo(cx,y1,cx,y2,x2,y2);
+    ctxLocal.strokeStyle = CLR.text2;
+    ctxLocal.lineWidth = 1.5;
+    ctxLocal.setLineDash([5,4]);
+    ctxLocal.stroke();
+    ctxLocal.restore();
+  });
+
+  ghostNodes.forEach(n => {
+    const dn = ghostNodeMap[n.id];
+    const def = compDefs[n.type] || {label:n.type, color:CLR.text2, bgColor:CLR.surface2};
+    ctxLocal.save();
+    ctxLocal.globalAlpha = 0.28;
+    ctxLocal.fillStyle = CLR.surface;
+    ctxLocal.strokeStyle = CLR.text3;
+    ctxLocal.lineWidth = 1.25;
+    ctxLocal.setLineDash([5,4]);
+    drawRoundedRect(ctxLocal, dn.dx, dn.dy, nodeW, nodeH, 8);
+    ctxLocal.fill();
+    ctxLocal.stroke();
+    ctxLocal.setLineDash([]);
+    ctxLocal.fillStyle = def.bgColor || CLR.surface2;
+    drawRoundedRect(ctxLocal, dn.dx+10, dn.dy+10, 24, 24, 5);
+    ctxLocal.fill();
+    ctxLocal.fillStyle = CLR.text2;
+    ctxLocal.font = '600 13px Arial';
+    ctxLocal.fillText(def.label || n.type, dn.dx+42, dn.dy+27);
+    ctxLocal.fillStyle = CLR.text2;
+    ctxLocal.font = '600 12px Arial';
+    ctxLocal.fillText(String(n.props.name || def.label || n.type).slice(0,22), dn.dx+12, dn.dy+52);
+    ctxLocal.restore();
+  });
+
+  primaryConnections.forEach(conn => {
     const from = nodeMap[conn.from], to = nodeMap[conn.to];
     if (!from || !to) return;
     const x1 = from.dx + nodeW, y1 = from.dy + nodeH/2;
@@ -7467,7 +7606,7 @@ function buildCanvasDiagramImage(nodeList=nodes, connList=connections) {
     ctxLocal.restore();
   });
 
-  nodeList.forEach(n => {
+  primaryNodes.forEach(n => {
     const dn = nodeMap[n.id];
     const def = compDefs[n.type] || {label:n.type, color:CLR.text2, bgColor:CLR.surface2};
     ctxLocal.save();
@@ -7503,10 +7642,13 @@ function buildCanvasDiagramImage(nodeList=nodes, connList=connections) {
 
 function addDiagramSheet(wb) {
   const ws = wb.addWorksheet('System_Diagram');
-  ws.addRow(['System Diagram']);
+  const usePostDiagram = !!SIM.postNodes;
+  ws.addRow([usePostDiagram ? 'System Diagram (Post with Pre Reference)' : 'System Diagram']);
   ws.addRow(['Project Name', PROJECT.projectName || '']);
   ws.addRow(['Customer Name', PROJECT.customerName || '']);
-  const image = buildCanvasDiagramImage(nodes, connections);
+  const image = usePostDiagram
+    ? buildCanvasDiagramImage(SIM.postNodes || nodes, SIM.postConnections || connections, nodes, connections)
+    : buildCanvasDiagramImage(nodes, connections);
   if (image) {
     const scale = Math.min(1, 940 / image.width);
     const imageId = wb.addImage({ base64:image.dataUrl, extension:'png' });
@@ -7575,6 +7717,13 @@ function addCalcSheet(wb, sheetName, nodeList, eqMap, inputSheetName, webHours, 
   const dryers = nodeList.filter(n => n.type === 'dryer');
   const compressors = nodeList.filter(n => n.type === 'compressor')
     .sort((a,b) => (a.props.stagingPriority ?? 1) - (b.props.stagingPriority ?? 1));
+  const compressorGroups = [];
+  compressors.forEach(comp => {
+    const priority = comp.props.stagingPriority ?? 1;
+    const last = compressorGroups[compressorGroups.length - 1];
+    if (!last || last.priority !== priority) compressorGroups.push({ priority, nodes:[comp] });
+    else last.nodes.push(comp);
+  });
 
   const headers = ['Hour Index','Date','Day Type','Hour Of Day','Any Compressor On'];
   loads.forEach(n => headers.push(`${n.props.name || n.id} Demand scfm`));
@@ -7646,26 +7795,45 @@ function addCalcSheet(wb, sheetName, nodeList, eqMap, inputSheetName, webHours, 
     compPowerCols.length = 0;
     compFlowCols.length = 0;
     let previousRemainingCol = totalDemandCol;
-    compressors.forEach(n => {
-      const r = inputRow[n.id];
-      const onCol = col++, remBeforeCol = col++, capCol = col++, loadFracCol = col++, flowCol = col++, powerCol = col++, remAfterCol = col++;
-      const sf = scheduleFactorFormula(eqMap?.[n.id], dayCell, hourCell, lastScheduleRow);
+    compressorGroups.forEach(group => {
+      const groupMeta = [];
       const remBefore = previousRemainingCol === totalDemandCol ? `${xlCol(totalDemandCol)}${rowNum}` : `${xlCol(previousRemainingCol)}${rowNum}`;
-      const ratedCap = `${inputSheetName}!F${r}*(${ambient.psia}/${inputSheetName}!N${r})*SQRT((${inputSheetName}!O${r}+459.67)/(${ambient.tempF}+459.67))`;
-      const isoScale = `IFERROR((((${inputSheetName}!M${r}+${inputSheetName}!N${r})/${inputSheetName}!N${r})^0.286-1)/(((${inputSheetName}!G${r}+${inputSheetName}!N${r})/${inputSheetName}!N${r})^0.286-1),1)`;
-      const lfCell = `${xlCol(loadFracCol)}${rowNum}`;
-      const pf = `IF(${lfCell}<=0,IF(${inputSheetName}!J${r}="lu",${inputSheetName}!K${r}/100,0),IF(${lfCell}>=1,1,IF(${inputSheetName}!J${r}="lu",${lfCell}+(1-${lfCell})*${inputSheetName}!K${r}/100,IF(${inputSheetName}!J${r}="mod",0.3+0.7*${lfCell},IF(${inputSheetName}!J${r}="vsd",${lfCell}^1.3,${lfCell})))))`;
-      row.getCell(onCol).value = { formula: `--((${sf})>0)`, result: 0 };
-      row.getCell(remBeforeCol).value = { formula: remBefore, result: 0 };
-      row.getCell(capCol).value = { formula: `IF(${xlCol(onCol)}${rowNum}=1,${ratedCap},0)`, result: 0 };
-      row.getCell(loadFracCol).value = { formula: `IF(${xlCol(onCol)}${rowNum}=1,IF(${xlCol(capCol)}${rowNum}>0,MIN(1,${xlCol(remBeforeCol)}${rowNum}/${xlCol(capCol)}${rowNum}),0),0)`, result: 0 };
-      row.getCell(flowCol).value = { formula: `${xlCol(capCol)}${rowNum}*${xlCol(loadFracCol)}${rowNum}`, result: 0 };
-      row.getCell(powerCol).value = { formula: `IF(${xlCol(onCol)}${rowNum}=1,IF(${lfCell}<=0,IF(${inputSheetName}!J${r}="lu",${inputSheetName}!I${r}*${inputSheetName}!K${r}/100,0),${inputSheetName}!I${r}*${isoScale}*${pf}),0)`, result: 0 };
-      row.getCell(remAfterCol).value = { formula: `MAX(0,${xlCol(remBeforeCol)}${rowNum}-${xlCol(flowCol)}${rowNum})`, result: 0 };
-      previousRemainingCol = remAfterCol;
-      compOnCols.push(onCol);
-      compFlowCols.push(flowCol);
-      compPowerCols.push(powerCol);
+
+      group.nodes.forEach(n => {
+        const r = inputRow[n.id];
+        const onCol = col++, remBeforeCol = col++, capCol = col++, loadFracCol = col++, flowCol = col++, powerCol = col++, remAfterCol = col++;
+        const sf = scheduleFactorFormula(eqMap?.[n.id], dayCell, hourCell, lastScheduleRow);
+        const ratedCap = `${inputSheetName}!F${r}*(${ambient.psia}/${inputSheetName}!N${r})*SQRT((${inputSheetName}!O${r}+459.67)/(${ambient.tempF}+459.67))`;
+        const isoScale = `IFERROR((((${inputSheetName}!M${r}+${inputSheetName}!N${r})/${inputSheetName}!N${r})^0.286-1)/(((${inputSheetName}!G${r}+${inputSheetName}!N${r})/${inputSheetName}!N${r})^0.286-1),1)`;
+        row.getCell(onCol).value = { formula: `--((${sf})>0)`, result: 0 };
+        row.getCell(remBeforeCol).value = { formula: remBefore, result: 0 };
+        row.getCell(capCol).value = { formula: `IF(${xlCol(onCol)}${rowNum}=1,${ratedCap},0)`, result: 0 };
+        groupMeta.push({ n, r, onCol, remBeforeCol, capCol, loadFracCol, flowCol, powerCol, remAfterCol, isoScale });
+        compOnCols.push(onCol);
+        compFlowCols.push(flowCol);
+        compPowerCols.push(powerCol);
+      });
+
+      const groupCapFormula = groupMeta.length
+        ? `SUM(${groupMeta.map(meta => `${xlCol(meta.capCol)}${rowNum}`).join(',')})`
+        : '0';
+
+      groupMeta.forEach(meta => {
+        const lfCell = `${xlCol(meta.loadFracCol)}${rowNum}`;
+        const pf = `IF(${lfCell}<=0,IF(${inputSheetName}!J${meta.r}="lu",${inputSheetName}!K${meta.r}/100,0),IF(${lfCell}>=1,1,IF(${inputSheetName}!J${meta.r}="lu",${lfCell}+(1-${lfCell})*${inputSheetName}!K${meta.r}/100,IF(${inputSheetName}!J${meta.r}="mod",0.3+0.7*${lfCell},IF(${inputSheetName}!J${meta.r}="vsd",${lfCell}^1.3,${lfCell})))))`;
+        row.getCell(meta.loadFracCol).value = { formula: `IF(${xlCol(meta.onCol)}${rowNum}=1,IF((${groupCapFormula})>0,MIN(1,${xlCol(meta.remBeforeCol)}${rowNum}/(${groupCapFormula})),0),0)`, result: 0 };
+        row.getCell(meta.flowCol).value = { formula: `${xlCol(meta.capCol)}${rowNum}*${xlCol(meta.loadFracCol)}${rowNum}`, result: 0 };
+        row.getCell(meta.powerCol).value = { formula: `IF(${xlCol(meta.onCol)}${rowNum}=1,IF(${lfCell}<=0,IF(${inputSheetName}!J${meta.r}="lu",${inputSheetName}!I${meta.r}*${inputSheetName}!K${meta.r}/100,0),${inputSheetName}!I${meta.r}*${meta.isoScale}*${pf}),0)`, result: 0 };
+      });
+
+      const groupFlowFormula = groupMeta.length
+        ? `SUM(${groupMeta.map(meta => `${xlCol(meta.flowCol)}${rowNum}`).join(',')})`
+        : '0';
+      const groupRemainingAfter = `MAX(0,${remBefore}-(${groupFlowFormula}))`;
+      groupMeta.forEach(meta => {
+        row.getCell(meta.remAfterCol).value = { formula: groupRemainingAfter, result: 0 };
+      });
+      previousRemainingCol = groupMeta[groupMeta.length - 1]?.remAfterCol ?? previousRemainingCol;
     });
     const supplyCol = col++, systemKwCol = col++, webKwCol = col++, diffCol = col++, qcCol = col++;
     const dryerKwCols = [];
@@ -8490,6 +8658,8 @@ updateSummary();
           <canvas id="chartMonthly" height="160" style="width:100%;margin-bottom:16px;"></canvas>
           <div style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.8px;margin-bottom:8px">Average Daily Profile (kW by hour)</div>
           <canvas id="chartDaily"   height="160" style="width:100%;margin-bottom:16px;"></canvas>
+          <div style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.8px;margin-bottom:8px">Average Demand Profile by Day Type (SCFM)</div>
+          <canvas id="chartDemandByDayType" height="180" style="width:100%;margin-bottom:16px;"></canvas>
           <div style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.8px;margin-bottom:8px">Annual Flow Balance (scfm&#183;hr)</div>
           <canvas id="chartFlow"    height="140" style="width:100%;margin-bottom:8px;"></canvas>
 
