@@ -760,6 +760,7 @@ const PROJECT_FILE_VERSION = 1;
 const PROJECT_FILE_LABEL = `CAS-v${PROJECT_FILE_VERSION}`;
 let nodes=[], connections=[], drainAttachments=[], selectedNode=null, selectedConn=null;
 let PROJECT = { projectName:'', customerName:'' };
+const CAGI_CATALOG = { datasheets: [], status: 'Loading CAGI data-sheet library...' };
 // drainAttachments: [{drainNodeId, hostNodeId}] — drain satellite → host node
 let nodeCounter=0, draggingNode=null, dragOffset={x:0,y:0};
 let connectingPort=null, dragType=null, currentTab='design', analysisRan=false;
@@ -906,6 +907,7 @@ const compDefs = {
   compressor:{label:'Compressor',icon:'&#9881;',color:CLR.compressor,bgColor:'#1a3a4a',
     defaultProps:{name:'Compressor',flowRate:100,pressure:125,power:25,efficiency:92,load:75,
       cagiManufacturer:'',cagiModel:'',cagiSource:'',cagiNotes:'',
+      zeroFlowPower:'',
       curveMode:'analytical',curvePressure:125,curvePressureMode:'estimate',performanceCurve:[],
       controlType:'lu',
       unloadPower:20,
@@ -1721,6 +1723,120 @@ function getCagiCurvePoints(node) {
   return node.props.performanceCurve;
 }
 
+function catalogNumber(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
+function normalizeCagiCatalog(data) {
+  const datasheets = Array.isArray(data?.datasheets) ? data.datasheets : [];
+  return datasheets.filter(entry => typeof entry?.manufacturer === 'string' && typeof entry?.model === 'string')
+    .map(entry => ({
+      ...entry,
+      ratedPressurePsig: catalogNumber(entry.ratedPressurePsig),
+      ratedCapacityScfm: catalogNumber(entry.ratedCapacityScfm),
+      fullLoadPackagePowerKw: catalogNumber(entry.fullLoadPackagePowerKw),
+      zeroFlowPackagePowerKw: catalogNumber(entry.zeroFlowPackagePowerKw),
+      ratedInletPressurePsia: catalogNumber(entry.ratedInletPressurePsia),
+      ratedInletTemperatureF: catalogNumber(entry.ratedInletTemperatureF),
+      curvePressurePsig: catalogNumber(entry.curvePressurePsig),
+      performanceCurve: Array.isArray(entry.performanceCurve) ? entry.performanceCurve
+        .map(point => ({flowCfm:catalogNumber(point?.flowCfm), powerKw:catalogNumber(point?.powerKw)}))
+        .filter(point => point.flowCfm !== null && point.powerKw !== null && point.flowCfm >= 0 && point.powerKw >= 0)
+        .sort((a, b) => a.flowCfm - b.flowCfm) : []
+    }));
+}
+
+async function loadCagiCatalog() {
+  try {
+    const response = await fetch('cagi-datasheets.json', {cache:'no-store'});
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    CAGI_CATALOG.datasheets = normalizeCagiCatalog(await response.json());
+    CAGI_CATALOG.status = CAGI_CATALOG.datasheets.length
+      ? `${CAGI_CATALOG.datasheets.length} CAGI data sheet${CAGI_CATALOG.datasheets.length === 1 ? '' : 's'} available.`
+      : 'CAGI library is empty. Add verified entries to cagi-datasheets.json.';
+  } catch (error) {
+    CAGI_CATALOG.status = 'CAGI library unavailable. Serve the app over HTTP and verify cagi-datasheets.json is present.';
+  }
+  renderCagiCatalogSearch();
+}
+
+function cagiCatalogFieldInput(key, value) {
+  cagiModalFieldChanged(key, value);
+  renderCagiCatalogSearch();
+}
+
+function fillCagiDatalist(id, values) {
+  const list = document.getElementById(id);
+  if (!list) return;
+  list.replaceChildren(...values.map(value => {
+    const option = document.createElement('option');
+    option.value = String(value);
+    return option;
+  }));
+}
+
+function renderCagiCatalogSearch() {
+  const status = document.getElementById('cagiCatalogStatus');
+  const matches = document.getElementById('cagiCatalogMatches');
+  const manufacturerInput = document.getElementById('cagiManufacturer');
+  const modelInput = document.getElementById('cagiModel');
+  const pressureInput = document.getElementById('cagiRatedPressure');
+  if (!status || !matches || !manufacturerInput || !modelInput || !pressureInput) return;
+
+  const manufacturer = manufacturerInput.value.trim().toLowerCase();
+  const model = modelInput.value.trim().toLowerCase();
+  const pressure = catalogNumber(pressureInput.value);
+  const catalog = CAGI_CATALOG.datasheets;
+  const manufacturerMatches = catalog.filter(entry => !manufacturer || entry.manufacturer.toLowerCase().includes(manufacturer));
+  const modelMatches = manufacturerMatches.filter(entry => !model || entry.model.toLowerCase().includes(model));
+  const matchingEntries = modelMatches.filter(entry => pressure === null || entry.ratedPressurePsig === pressure);
+
+  fillCagiDatalist('cagiManufacturerOptions', [...new Set(catalog.map(entry => entry.manufacturer))].sort());
+  fillCagiDatalist('cagiModelOptions', [...new Set(manufacturerMatches.map(entry => entry.model))].sort());
+  fillCagiDatalist('cagiPressureOptions', [...new Set(modelMatches.map(entry => entry.ratedPressurePsig).filter(value => value !== null))].sort((a,b) => a-b));
+
+  matches.replaceChildren();
+  const prompt = document.createElement('option');
+  prompt.value = '';
+  prompt.textContent = matchingEntries.length ? `Select from ${matchingEntries.length} matching data sheet${matchingEntries.length === 1 ? '' : 's'}` : 'No matching data sheets';
+  matches.append(prompt);
+  matchingEntries.forEach(entry => {
+    const option = document.createElement('option');
+    option.value = String(catalog.indexOf(entry));
+    option.textContent = `${entry.manufacturer} | ${entry.model} | ${entry.ratedPressurePsig ?? 'n/a'} psig | ${entry.ratedCapacityScfm ?? 'n/a'} scfm`;
+    matches.append(option);
+  });
+  status.textContent = CAGI_CATALOG.status;
+}
+
+function applyCagiCatalogEntry(index) {
+  const entry = CAGI_CATALOG.datasheets[Number(index)];
+  const node = getCagiModalNode(document.getElementById('cagiModal')?.dataset.nodeId);
+  if (!entry || !node) return;
+  const setIfPresent = (key, value) => { if (value !== null && value !== undefined) node.props[key] = value; };
+  setIfPresent('cagiManufacturer', entry.manufacturer);
+  setIfPresent('cagiModel', entry.model);
+  setIfPresent('flowRate', entry.ratedCapacityScfm);
+  setIfPresent('pressure', entry.ratedPressurePsig);
+  setIfPresent('power', entry.fullLoadPackagePowerKw);
+  setIfPresent('zeroFlowPower', entry.zeroFlowPackagePowerKw);
+  setIfPresent('ratedInletPres', entry.ratedInletPressurePsia);
+  setIfPresent('ratedInletTemp', entry.ratedInletTemperatureF);
+  setIfPresent('curvePressure', entry.curvePressurePsig ?? entry.ratedPressurePsig);
+  node.props.curvePressureMode = entry.curvePressureMode === 'rated' ? 'rated' : 'estimate';
+  if (['lu','mod','vsd'].includes(entry.controlType)) node.props.controlType = entry.controlType;
+  if (entry.source) node.props.cagiSource = entry.source;
+  if (entry.notes) node.props.cagiNotes = entry.notes;
+  const curve = entry.performanceCurve.map(point => ({...point}));
+  if (entry.zeroFlowPackagePowerKw !== null && !curve.some(point => point.flowCfm === 0)) curve.unshift({flowCfm:0, powerKw:entry.zeroFlowPackagePowerKw});
+  node.props.performanceCurve = curve.sort((a,b) => a.flowCfm - b.flowCfm);
+  node.props.curveMode = curve.length >= 2 ? 'custom' : 'analytical';
+  openCagiModal(node.id, cagiModalTarget?.detailed);
+  refreshCagiTargetNode(node);
+  if (analysisRan) runAnalysis();
+}
+
 function updateCagiField(nodeId, key, value) {
   const node = nodes.find(n => n.id === nodeId);
   if (!node) return;
@@ -1916,12 +2032,14 @@ function openCagiModal(nodeId, detailedMode = false) {
   document.getElementById('cagiRatedCapacity').value = node.props.flowRate ?? '';
   document.getElementById('cagiRatedPressure').value = node.props.pressure ?? '';
   document.getElementById('cagiPackagePower').value = node.props.power ?? '';
+  document.getElementById('cagiZeroFlowPower').value = node.props.zeroFlowPower ?? '';
   document.getElementById('cagiRatedInletPres').value = node.props.ratedInletPres ?? 14.696;
   document.getElementById('cagiRatedInletTemp').value = node.props.ratedInletTemp ?? 68;
   document.getElementById('cagiCurvePressure').value = node.props.curvePressure ?? node.props.pressure ?? '';
   document.getElementById('cagiCurvePressureMode').value = node.props.curvePressureMode || 'estimate';
   document.getElementById('cagiCurveMode').value = node.props.curveMode || 'analytical';
   renderCagiCurveEditor(node);
+  renderCagiCatalogSearch();
   modal.classList.add('open');
 }
 
@@ -1937,11 +2055,11 @@ function closeCagiModal() {
 function cagiModalFieldChanged(key, value) {
   const nodeId = document.getElementById('cagiModal')?.dataset.nodeId;
   if (!nodeId) return;
-  const keyMap = {cagiRatedCapacity:'flowRate', cagiRatedPressure:'pressure', cagiPackagePower:'power', cagiRatedInletPres:'ratedInletPres', cagiRatedInletTemp:'ratedInletTemp', cagiCurvePressure:'curvePressure'};
+  const keyMap = {cagiRatedCapacity:'flowRate', cagiRatedPressure:'pressure', cagiPackagePower:'power', cagiZeroFlowPower:'zeroFlowPower', cagiRatedInletPres:'ratedInletPres', cagiRatedInletTemp:'ratedInletTemp', cagiCurvePressure:'curvePressure'};
   const node = getCagiModalNode(nodeId);
   if (!node) return;
   const actualKey = keyMap[key] || key;
-  const numericKeys = new Set(['flowRate','pressure','power','ratedInletPres','ratedInletTemp','curvePressure']);
+  const numericKeys = new Set(['flowRate','pressure','power','zeroFlowPower','ratedInletPres','ratedInletTemp','curvePressure']);
   node.props[actualKey] = numericKeys.has(actualKey) ? (value === '' ? '' : parseFloat(value)) : value;
   refreshCagiTargetNode(node);
   if (node) {
@@ -1967,6 +2085,20 @@ function customCurvePowerFactor(comp, loadFrac) {
     }
   }
   return points[points.length - 1].powerKw / comp.props.power;
+}
+
+function customCurveOperatingRangeError(comp, loadFrac) {
+  const points = Array.isArray(comp.props.performanceCurve) ? comp.props.performanceCurve
+    .filter(point => Number.isFinite(point.flowCfm) && Number.isFinite(point.powerKw) && point.flowCfm >= 0 && point.powerKw >= 0)
+    .sort((a, b) => a.flowCfm - b.flowCfm) : [];
+  if (comp.props.curveMode !== 'custom' || points.length < 2 || !(comp.props.flowRate > 0) || loadFrac <= 0) return null;
+
+  const targetFlow = comp.props.flowRate * Math.max(0, Math.min(1, loadFrac));
+  const minFlow = points[0].flowCfm;
+  const maxFlow = points[points.length - 1].flowCfm;
+  if (targetFlow >= minFlow - 0.01 && targetFlow <= maxFlow + 0.01) return null;
+
+  return `Compressor "${comp.props.name || 'Compressor'}" requires ${targetFlow.toFixed(1)} scfm, but its manufacturer power curve only covers ${minFlow.toFixed(1)} to ${maxFlow.toFixed(1)} scfm. Add a curve point covering the operating condition or use the analytical control curve.`;
 }
 
 function setLinelossMode(id, measured) {
@@ -2615,6 +2747,15 @@ function analyzeSystem() {
     sr.node._stagedInUnload  = sr.inUnload;
     if (sr.warning) res.warnings.push(sr.warning);
   });
+
+  const curveRangeErrors = stagingResults
+    .map(sr => customCurveOperatingRangeError(sr.node, sr.loadFrac))
+    .filter(Boolean);
+  if (curveRangeErrors.length) {
+    res.valid = false;
+    res.errors.push(...curveRangeErrors);
+    return res;
+  }
 
   res.totalSupply = stagingResults.reduce((s,sr)=>s+sr.actualFlow, 0);
 
@@ -5783,6 +5924,9 @@ const SIM = {
 };
 
 let detailedCanvas=null, detailedCtx=null, detailedGhostCanvas=null, detailedGhostCtx=null, detailedConnectingPort=null, detailedDragType=null;
+const detailedViewport = {scale:1,minScale:0.5,maxScale:2.5,offsetX:40,offsetY:40};
+let detailedPanState = null;
+let suppressDetailedCanvasClick = false;
 let detailedSelectedNode=null, detailedSelectedConn=null, detailedHoveredConnId=null;
 
 function invalidateSimResults() {
@@ -6095,6 +6239,7 @@ function initDetailedCanvas() {
   area.addEventListener('mouseup', detailedCanvasMouseUp);
   area.addEventListener('click', detailedCanvasClick);
   area.addEventListener('dblclick', detailedCanvasDblClick);
+  area.addEventListener('wheel', detailedCanvasWheel, {passive:false});
   [area, detailedCanvas, container].forEach(el => {
     el.addEventListener('dragover', e => { e.preventDefault(); e.stopPropagation(); });
     el.addEventListener('drop', detailedDropComponent);
@@ -6114,7 +6259,95 @@ function resizeDetailedCanvas() {
   });
   detailedCtx.setTransform(DPR, 0, 0, DPR, 0, 0);
   detailedGhostCtx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  applyDetailedViewport();
   renderDetailedConnections();
+}
+
+function screenToDetailedWorld(clientX, clientY) {
+  const rect = document.getElementById('detailedCanvasArea').getBoundingClientRect();
+  return {x:(clientX - rect.left - detailedViewport.offsetX) / detailedViewport.scale, y:(clientY - rect.top - detailedViewport.offsetY) / detailedViewport.scale};
+}
+
+function applyDetailedViewport() {
+  const grid = document.querySelector('#detailedCanvasArea .canvas-grid');
+  const containers = [document.getElementById('detailedNodesContainer'), document.getElementById('detailedGhostNodesContainer')];
+  containers.forEach(container => {
+    if (!container) return;
+    container.style.transformOrigin = '0 0';
+    container.style.transform = `translate(${detailedViewport.offsetX}px,${detailedViewport.offsetY}px) scale(${detailedViewport.scale})`;
+  });
+  if (grid) {
+    const gridSize = 40 * detailedViewport.scale;
+    grid.style.backgroundSize = `${gridSize}px ${gridSize}px`;
+    grid.style.backgroundPosition = `${detailedViewport.offsetX}px ${detailedViewport.offsetY}px`;
+  }
+  const indicator = document.getElementById('detailedZoomIndicator');
+  if (indicator) indicator.textContent = Math.round(detailedViewport.scale * 100) + '%';
+}
+
+function centerDetailedViewport() {
+  const area = document.getElementById('detailedCanvasArea');
+  const ctxData = getDetailedCaseData();
+  if (!ctxData.nodes.length) {
+    detailedViewport.offsetX = 40; detailedViewport.offsetY = 40;
+  } else {
+    const minX = Math.min(...ctxData.nodes.map(node => node.x));
+    const minY = Math.min(...ctxData.nodes.map(node => node.y));
+    const maxX = Math.max(...ctxData.nodes.map(node => node.x + getMainNodeFrame(node).width));
+    const maxY = Math.max(...ctxData.nodes.map(node => node.y + getMainNodeFrame(node).height));
+    detailedViewport.offsetX = Math.round((area.clientWidth-(maxX-minX)*detailedViewport.scale)/2 - minX*detailedViewport.scale);
+    detailedViewport.offsetY = Math.round((area.clientHeight-(maxY-minY)*detailedViewport.scale)/2 - minY*detailedViewport.scale);
+  }
+  applyDetailedViewport(); renderDetailedConnections();
+}
+
+function resetDetailedViewport() { detailedViewport.scale = 1; centerDetailedViewport(); }
+
+function zoomDetailedAt(clientX, clientY, factor) {
+  const rect = document.getElementById('detailedCanvasArea').getBoundingClientRect();
+  const before = screenToDetailedWorld(clientX, clientY);
+  const nextScale = Math.max(detailedViewport.minScale, Math.min(detailedViewport.maxScale, detailedViewport.scale * factor));
+  detailedViewport.scale = nextScale;
+  detailedViewport.offsetX = Math.round(clientX - rect.left - before.x * nextScale);
+  detailedViewport.offsetY = Math.round(clientY - rect.top - before.y * nextScale);
+  applyDetailedViewport(); renderDetailedConnections();
+}
+
+function zoomDetailedCanvasIn() {
+  const rect = document.getElementById('detailedCanvasArea').getBoundingClientRect();
+  zoomDetailedAt(rect.left+rect.width/2, rect.top+rect.height/2, 1.15);
+}
+
+function zoomDetailedCanvasOut() {
+  const rect = document.getElementById('detailedCanvasArea').getBoundingClientRect();
+  zoomDetailedAt(rect.left+rect.width/2, rect.top+rect.height/2, 1/1.15);
+}
+
+function beginDetailedPan(e) {
+  detailedPanState = {startClientX:e.clientX,startClientY:e.clientY,startOffsetX:detailedViewport.offsetX,startOffsetY:detailedViewport.offsetY,moved:false};
+  document.getElementById('detailedCanvasArea').classList.add('panning');
+  const onMove = ev => {
+    if (!detailedPanState) return;
+    const dx = ev.clientX-detailedPanState.startClientX, dy = ev.clientY-detailedPanState.startClientY;
+    if (!detailedPanState.moved && Math.hypot(dx,dy) >= 4) detailedPanState.moved = true;
+    if (!detailedPanState.moved) return;
+    detailedViewport.offsetX = Math.round(detailedPanState.startOffsetX+dx);
+    detailedViewport.offsetY = Math.round(detailedPanState.startOffsetY+dy);
+    applyDetailedViewport(); renderDetailedConnections();
+  };
+  const onUp = () => {
+    if (detailedPanState?.moved) suppressDetailedCanvasClick = true;
+    detailedPanState = null;
+    document.getElementById('detailedCanvasArea').classList.remove('panning');
+    document.removeEventListener('mousemove',onMove); document.removeEventListener('mouseup',onUp);
+  };
+  document.addEventListener('mousemove',onMove); document.addEventListener('mouseup',onUp);
+}
+
+function detailedCanvasWheel(e) {
+  if (e.target.closest('.node') || e.target.closest('.canvas-toolbar')) return;
+  e.preventDefault();
+  zoomDetailedAt(e.clientX,e.clientY,e.deltaY < 0 ? 1.1 : 1/1.1);
 }
 
 function renderDetailedMode() {
@@ -6124,6 +6357,7 @@ function renderDetailedMode() {
   document.getElementById('simCaseLabel').textContent = SIM.currentCase === 'pre' ? 'Pre Case' : 'Post Case';
   renderDetailedCanvas();
   renderDetailedPanel();
+  resetDetailedViewport();
 }
 
 function startDetailedDrag(e, type) {
@@ -6241,12 +6475,13 @@ function detailedNodeMouseDown(e) {
   const node = ctxData.nodes.find(n => n.id === id);
   if (!node) return;
   detailedSelectNode(node);
-  const cr = document.getElementById('detailedCanvasArea').getBoundingClientRect();
-  const offsetX = e.clientX - cr.left - node.x;
-  const offsetY = e.clientY - cr.top - node.y;
+  const worldPoint = screenToDetailedWorld(e.clientX, e.clientY);
+  const offsetX = worldPoint.x - node.x;
+  const offsetY = worldPoint.y - node.y;
   const onMove = ev => {
-    node.x = Math.max(0, Math.round((ev.clientX - cr.left - offsetX) / 10) * 10);
-    node.y = Math.max(0, Math.round((ev.clientY - cr.top - offsetY) / 10) * 10);
+    const world = screenToDetailedWorld(ev.clientX, ev.clientY);
+    node.x = Math.max(0, Math.round((world.x - offsetX) / 10) * 10);
+    node.y = Math.max(0, Math.round((world.y - offsetY) / 10) * 10);
     el.style.left = node.x + 'px';
     el.style.top = node.y + 'px';
     renderDetailedConnections();
@@ -6409,9 +6644,10 @@ function detailedHitTestConnections(px, py) {
 }
 
 function detailedCanvasMouseDown(e) {
-  if (e.target.closest('.node')) return;
+  if (e.target.closest('.node') || e.target.closest('.canvas-toolbar')) return;
   const {x,y} = detailedCanvasXY(e);
   if (!detailedHitTestConnections(x,y)) {
+    beginDetailedPan(e);
     detailedSelectNode(null);
     detailedSelectConn(null);
   }
@@ -6439,14 +6675,15 @@ function detailedCanvasMouseUp(e) {
 }
 
 function detailedCanvasClick(e) {
-  if (e.target.closest('.node')) return;
+  if (e.target.closest('.node') || e.target.closest('.canvas-toolbar')) return;
+  if (suppressDetailedCanvasClick) { suppressDetailedCanvasClick = false; return; }
   const {x,y} = detailedCanvasXY(e);
   const hit = detailedHitTestConnections(x,y);
   if (hit) detailedSelectConn(hit);
 }
 
 function detailedCanvasDblClick(e) {
-  if (e.target.closest('.node')) return;
+  if (e.target.closest('.node') || e.target.closest('.canvas-toolbar')) return;
   const {x,y} = detailedCanvasXY(e);
   const hit = detailedHitTestConnections(x,y);
   if (!hit) return;
@@ -7218,6 +7455,9 @@ function runOneHour(hrData, nodeList, connList, eqMap, schedList, ambient) {
   const compResults = anyCompOn
     ? stageCompressors(onlineComps, totalDemand, ambient)
     : [];
+  const curveRangeErrors = compResults
+    .map(result => customCurveOperatingRangeError(result.node, result.loadFrac))
+    .filter(Boolean);
 
   // ── 6. System totals ──
   const supplyScfm = compResults.reduce((s,c) => s+c.actualFlow, 0);
@@ -7251,7 +7491,7 @@ function runOneHour(hrData, nodeList, connList, eqMap, schedList, ambient) {
     supplyScfm, demandScfm, leakScfm, drainScfm, purgeScfm,
     balanceScfm: supplyScfm - demandScfm - leakScfm - drainScfm - purgeScfm,
     systemKw, heatKw, delivPressure, utilPct,
-    compResults
+    compResults, curveRangeErrors
   };
 }
 
@@ -7406,6 +7646,15 @@ async function runSim8760() {
     );
   } else {
     SIM.resultsPostHours = null;
+  }
+
+  const curveRangeErrors = [...SIM.resultsPreHours, ...(SIM.resultsPostHours || [])]
+    .flatMap(hour => hour.curveRangeErrors || []);
+  if (curveRangeErrors.length) {
+    SIM.resultsPreHours = null;
+    SIM.resultsPostHours = null;
+    document.getElementById('simNoResults').textContent = `Simulation cannot run: ${curveRangeErrors[0]}`;
+    return;
   }
 
   document.getElementById('simNoResults').textContent = '';
@@ -7731,12 +7980,15 @@ function buildInputRows(caseName, nodeList, eqMap) {
     pressure: n.props.pressure ?? '',
     dutyCycle: n.props.dutyCycle ?? '',
     power: n.props.power ?? '',
+    zeroFlowPower: n.props.zeroFlowPower ?? '',
     controlType: n.props.controlType ?? '',
     unloadPower: n.props.unloadPower ?? '',
     stagingPriority: n.props.stagingPriority ?? '',
     operatingPressure: n.props.operatingPressure ?? '',
     ratedInletPres: n.props.ratedInletPres ?? '',
     ratedInletTemp: n.props.ratedInletTemp ?? '',
+    curveMode: n.props.curveMode ?? 'analytical',
+    curvePressureMode: n.props.curvePressureMode ?? 'estimate',
     pressureDrop: n.props.pressureDrop ?? '',
     dryerType: n.type === 'dryer' ? (n.props.dryerType || 'refrigerated') : '',
     purgeFraction: n.props.purgeFraction ?? '',
@@ -7930,8 +8182,8 @@ function addDiagramSheet(wb) {
 
 function addInputsSheet(wb, name, rows) {
   const ws = wb.addWorksheet(name);
-  ws.addRow(['Case','Component ID','Name','Type','Schedule ID','Flow Rate','Pressure','Duty Cycle','Power kW','Control Type','Unload Power %','Staging Priority','Operating Pressure','Rated Inlet Psia','Rated Inlet Temp F','Pressure Drop','Dryer Type','Purge Fraction %','Drain Type','Measured','Schedule Name','Orifice Dia in','On Time sec','Cycle Time sec','Drain Condition','Opens Per Day','Open Duration min','Drain Line Pressure psig']);
-  rows.forEach(r => ws.addRow([r.caseName,r.id,r.name,r.type,r.scheduleId,r.flowRate,r.pressure,r.dutyCycle,r.power,r.controlType,r.unloadPower,r.stagingPriority,r.operatingPressure,r.ratedInletPres,r.ratedInletTemp,r.pressureDrop,r.dryerType,r.purgeFraction,r.drainType,r.measured,r.scheduleName,r.orificeDia,r.onTime,r.cycleTime,r.condition,r.opensPerDay,r.openDuration,r.drainLinePressure]));
+  ws.addRow(['Case','Component ID','Name','Type','Schedule ID','Flow Rate','Pressure','Duty Cycle','Power kW','Control Type','Unload Power %','Staging Priority','Operating Pressure','Rated Inlet Psia','Rated Inlet Temp F','Pressure Drop','Dryer Type','Purge Fraction %','Drain Type','Measured','Schedule Name','Orifice Dia in','On Time sec','Cycle Time sec','Drain Condition','Opens Per Day','Open Duration min','Drain Line Pressure psig','Curve Mode','Curve Pressure Mode','Zero-Flow Package Input Power kW']);
+  rows.forEach(r => ws.addRow([r.caseName,r.id,r.name,r.type,r.scheduleId,r.flowRate,r.pressure,r.dutyCycle,r.power,r.controlType,r.unloadPower,r.stagingPriority,r.operatingPressure,r.ratedInletPres,r.ratedInletTemp,r.pressureDrop,r.dryerType,r.purgeFraction,r.drainType,r.measured,r.scheduleName,r.orificeDia,r.onTime,r.cycleTime,r.condition,r.opensPerDay,r.openDuration,r.drainLinePressure,r.curveMode,r.curvePressureMode,r.zeroFlowPower]));
   setHeader(ws);
   autoWidth(ws);
   return ws;
@@ -7939,26 +8191,32 @@ function addInputsSheet(wb, name, rows) {
 
 function addCompressorCurvesSheet(wb, caseName, nodeList) {
   const ws = wb.addWorksheet(`Curves_${caseName}`);
+  const curvePointRows = {};
   ws.addRow(['Case','Component ID','Compressor','Manufacturer','Model','Curve Mode','Pressure Handling','Curve Pressure psi','Full-load Capacity scfm','Full-load Package Power kW','Point','Package Input Power kW','Flow scfm','Flow Fraction','Specific Package Power kW/100 scfm','Data Sheet Source','Notes']);
   nodeList.filter(node => node.type === 'compressor').forEach(node => {
-    const points = Array.isArray(node.props.performanceCurve) ? node.props.performanceCurve : [];
+    const points = Array.isArray(node.props.performanceCurve) ? node.props.performanceCurve
+      .filter(point => Number.isFinite(point.flowCfm) && Number.isFinite(point.powerKw) && point.flowCfm >= 0 && point.powerKw >= 0)
+      .sort((a, b) => a.flowCfm - b.flowCfm) : [];
     const base = [caseName,node.id,node.props.name || 'Compressor',node.props.cagiManufacturer || '',node.props.cagiModel || '',node.props.curveMode || 'analytical',node.props.curvePressureMode || 'estimate',node.props.curvePressure ?? node.props.pressure ?? '',node.props.flowRate ?? '',node.props.power ?? ''];
     if (!points.length) {
       ws.addRow([...base,'','','','','',node.props.cagiSource || '',node.props.cagiNotes || '']);
       return;
     }
+    curvePointRows[node.id] = [];
     points.forEach((point,index) => {
       const flow = Number.isFinite(point.flowCfm) ? point.flowCfm : '';
       const power = Number.isFinite(point.powerKw) ? point.powerKw : '';
       const flowFraction = flow !== '' && node.props.flowRate > 0 ? flow / node.props.flowRate : '';
       const specificPower = flow > 0 && power !== '' ? power / (flow / 100) : '';
       ws.addRow([...base,index + 1,power,flow,flowFraction,specificPower,node.props.cagiSource || '',node.props.cagiNotes || '']);
+      curvePointRows[node.id].push(ws.rowCount);
     });
   });
   setHeader(ws);
   ws.getColumn(14).numFmt = '0.0%';
   ws.getColumn(15).numFmt = '0.00';
   autoWidth(ws, 32);
+  ws.curvePointRows = curvePointRows;
   return ws;
 }
 
@@ -8002,8 +8260,36 @@ function addCalendarSheet(wb, year) {
   autoWidth(ws);
 }
 
+function customCurvePowerFormula(comp, inputSheetName, inputRowNum, loadFractionCell, curveSheet) {
+  const points = Array.isArray(comp.props.performanceCurve) ? comp.props.performanceCurve
+    .filter(point => Number.isFinite(point.flowCfm) && Number.isFinite(point.powerKw) && point.flowCfm >= 0 && point.powerKw >= 0)
+    .sort((a, b) => a.flowCfm - b.flowCfm)
+    : [];
+  const pointRows = curveSheet?.curvePointRows?.[comp.id];
+  if (comp.props.curveMode !== 'custom' || points.length < 2 || pointRows?.length !== points.length) return null;
+
+  const targetFlow = `${inputSheetName}!F${inputRowNum}*${loadFractionCell}`;
+  const sheetName = `'${curveSheet.name.replace(/'/g, "''")}'`;
+  const flowCell = index => `${sheetName}!$M$${pointRows[index]}`;
+  const powerCell = index => `${sheetName}!$L$${pointRows[index]}`;
+  let formula = powerCell(points.length - 1);
+  for (let index = points.length - 1; index > 0; index--) {
+    const left = points[index - 1];
+    const right = points[index];
+    if (left.flowCfm === right.flowCfm) continue;
+    const leftFlow = flowCell(index - 1);
+    const rightFlow = flowCell(index);
+    const leftPower = powerCell(index - 1);
+    const rightPower = powerCell(index);
+    const interpolatedPower = `${leftPower}+(${targetFlow}-${leftFlow})*(${rightPower}-${leftPower})/(${rightFlow}-${leftFlow})`;
+    formula = `IF(${targetFlow}<=${rightFlow},${interpolatedPower},${formula})`;
+  }
+  return `IF(${targetFlow}<=${flowCell(0)},${powerCell(0)},${formula})`;
+}
+
 function addCalcSheet(wb, sheetName, nodeList, eqMap, inputSheetName, webHours, lastScheduleRow, ambient) {
   const ws = wb.addWorksheet(sheetName);
+  const curveSheet = wb.getWorksheet(`Curves_${sheetName.replace('Calc_', '')}`);
   const loads = nodeList.filter(n => n.type === 'load');
   const leaks = nodeList.filter(n => n.type === 'leak');
   const drains = nodeList.filter(n => n.type === 'drain');
@@ -8090,12 +8376,16 @@ function addCalcSheet(wb, sheetName, nodeList, eqMap, inputSheetName, webHours, 
       const isoScale = `IFERROR((((${inputSheetName}!M${r}+${inputSheetName}!N${r})/${inputSheetName}!N${r})^0.286-1)/(((${inputSheetName}!G${r}+${inputSheetName}!N${r})/${inputSheetName}!N${r})^0.286-1),1)`;
       const lfCell = `${xlCol(loadFracCol)}${rowNum}`;
       const pf = `IF(${lfCell}<=0,IF(${inputSheetName}!J${r}="lu",${inputSheetName}!K${r}/100,0),IF(${lfCell}>=1,1,IF(${inputSheetName}!J${r}="lu",${lfCell}+(1-${lfCell})*${inputSheetName}!K${r}/100,IF(${inputSheetName}!J${r}="mod",0.3+0.7*${lfCell},IF(${inputSheetName}!J${r}="vsd",${lfCell}^1.3,${lfCell})))))`;
+      const customCurvePower = customCurvePowerFormula(n, inputSheetName, r, lfCell, curveSheet);
+      const powerFormula = customCurvePower
+        ? `IF(${xlCol(onCol)}${rowNum}=1,IF(${lfCell}<=0,IF(${inputSheetName}!J${r}="lu",${inputSheetName}!I${r}*${inputSheetName}!K${r}/100,0),IF(${inputSheetName}!AC${r}="custom",${customCurvePower}*IF(${inputSheetName}!AD${r}="rated",1,${isoScale}),${inputSheetName}!I${r}*${isoScale}*${pf})),0)`
+        : `IF(${xlCol(onCol)}${rowNum}=1,IF(${lfCell}<=0,IF(${inputSheetName}!J${r}="lu",${inputSheetName}!I${r}*${inputSheetName}!K${r}/100,0),${inputSheetName}!I${r}*${isoScale}*${pf}),0)`;
       row.getCell(onCol).value = { formula: `--((${sf})>0)`, result: 0 };
       row.getCell(remBeforeCol).value = { formula: remBefore, result: 0 };
       row.getCell(capCol).value = { formula: `IF(${xlCol(onCol)}${rowNum}=1,${ratedCap},0)`, result: 0 };
       row.getCell(loadFracCol).value = { formula: `IF(${xlCol(onCol)}${rowNum}=1,IF(${xlCol(capCol)}${rowNum}>0,MIN(1,${xlCol(remBeforeCol)}${rowNum}/${xlCol(capCol)}${rowNum}),0),0)`, result: 0 };
       row.getCell(flowCol).value = { formula: `${xlCol(capCol)}${rowNum}*${xlCol(loadFracCol)}${rowNum}`, result: 0 };
-      row.getCell(powerCol).value = { formula: `IF(${xlCol(onCol)}${rowNum}=1,IF(${lfCell}<=0,IF(${inputSheetName}!J${r}="lu",${inputSheetName}!I${r}*${inputSheetName}!K${r}/100,0),${inputSheetName}!I${r}*${isoScale}*${pf}),0)`, result: 0 };
+      row.getCell(powerCol).value = { formula: powerFormula, result: 0 };
       row.getCell(remAfterCol).value = { formula: `MAX(0,${xlCol(remBeforeCol)}${rowNum}-${xlCol(flowCol)}${rowNum})`, result: 0 };
       previousRemainingCol = remAfterCol;
       compOnCols.push(onCol);
@@ -8747,6 +9037,7 @@ document.getElementById('canvasArea').addEventListener('drop',     _onDrop);
 initPanelResizer('mainPanelResizer','mainResultsPanel',240,520,'--main-panel-width');
 applyMainViewport();
 updateSummary();
+loadCagiCatalog();
 
 </script>
 <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
@@ -8771,18 +9062,21 @@ updateSummary();
     <div class="cagi-section">
       <div class="cagi-section-title">Equipment Identification</div>
       <div class="cagi-grid">
-        <div class="cagi-field"><label for="cagiManufacturer">Manufacturer</label><input id="cagiManufacturer" type="text" onchange="cagiModalFieldChanged('cagiManufacturer',this.value)"></div>
-        <div class="cagi-field"><label for="cagiModel">Model</label><input id="cagiModel" type="text" onchange="cagiModalFieldChanged('cagiModel',this.value)"></div>
+        <div class="cagi-field"><label for="cagiManufacturer">Manufacturer</label><input id="cagiManufacturer" type="text" list="cagiManufacturerOptions" oninput="cagiCatalogFieldInput('cagiManufacturer',this.value)"><datalist id="cagiManufacturerOptions"></datalist></div>
+        <div class="cagi-field"><label for="cagiModel">Model</label><input id="cagiModel" type="text" list="cagiModelOptions" oninput="cagiCatalogFieldInput('cagiModel',this.value)"><datalist id="cagiModelOptions"></datalist></div>
         <div class="cagi-field"><label for="cagiSource">Data sheet / source</label><input id="cagiSource" type="text" placeholder="File name or URL" onchange="cagiModalFieldChanged('cagiSource',this.value)"></div>
       </div>
+      <div class="cagi-help" id="cagiCatalogStatus">Loading CAGI data-sheet library...</div>
+      <div class="cagi-field" style="margin-top:8px"><label for="cagiCatalogMatches">Matching data sheet</label><select id="cagiCatalogMatches" onchange="applyCagiCatalogEntry(this.value)"><option value="">No matching data sheets</option></select></div>
     </div>
 
     <div class="cagi-section">
       <div class="cagi-section-title">CAGI Rated Performance</div>
       <div class="cagi-grid">
         <div class="cagi-field"><label for="cagiRatedCapacity">Full-load rated capacity</label><input id="cagiRatedCapacity" type="number" min="0" step="0.1" onchange="cagiModalFieldChanged('cagiRatedCapacity',this.value)"><span class="cagi-unit">scfm</span></div>
-        <div class="cagi-field"><label for="cagiRatedPressure">Rated discharge pressure</label><input id="cagiRatedPressure" type="number" min="0" step="1" onchange="cagiModalFieldChanged('cagiRatedPressure',this.value)"><span class="cagi-unit">psi</span></div>
+        <div class="cagi-field"><label for="cagiRatedPressure">Rated discharge pressure</label><input id="cagiRatedPressure" type="number" min="0" step="1" list="cagiPressureOptions" oninput="cagiCatalogFieldInput('cagiRatedPressure',this.value)"><datalist id="cagiPressureOptions"></datalist><span class="cagi-unit">psi</span></div>
         <div class="cagi-field"><label for="cagiPackagePower">Full-load package input power</label><input id="cagiPackagePower" type="number" min="0" step="0.1" onchange="cagiModalFieldChanged('cagiPackagePower',this.value)"><span class="cagi-unit">kW</span></div>
+        <div class="cagi-field"><label for="cagiZeroFlowPower">Zero-flow package input power</label><input id="cagiZeroFlowPower" type="number" min="0" step="0.1" onchange="cagiModalFieldChanged('cagiZeroFlowPower',this.value)"><span class="cagi-unit">kW</span></div>
         <div class="cagi-field"><label>Specific package power</label><div class="cagi-readonly" id="cagiSpecificPower">—</div><span class="cagi-unit">kW/100</span></div>
         <div class="cagi-field"><label for="cagiRatedInletPres">Rated inlet pressure</label><input id="cagiRatedInletPres" type="number" min="0" step="0.001" onchange="cagiModalFieldChanged('cagiRatedInletPres',this.value)"><span class="cagi-unit">psia</span></div>
         <div class="cagi-field"><label for="cagiRatedInletTemp">Rated inlet temperature</label><input id="cagiRatedInletTemp" type="number" step="1" onchange="cagiModalFieldChanged('cagiRatedInletTemp',this.value)"><span class="cagi-unit">°F</span></div>
@@ -8911,6 +9205,12 @@ updateSummary();
     <!-- Center: Detailed canvas -->
     <div class="canvas-area" id="detailedCanvasArea" style="flex:1;min-width:560px;">
       <div class="canvas-grid"></div>
+      <div class="canvas-toolbar" aria-label="Detailed canvas viewport controls">
+        <button class="canvas-toolbar-btn" onclick="zoomDetailedCanvasOut()" title="Zoom out" aria-label="Zoom out">−</button>
+        <div class="zoom-indicator" id="detailedZoomIndicator">100%</div>
+        <button class="canvas-toolbar-btn" onclick="zoomDetailedCanvasIn()" title="Zoom in" aria-label="Zoom in">+</button>
+        <button class="canvas-toolbar-btn wide" onclick="resetDetailedViewport()" title="Reset zoom and center" aria-label="Reset zoom and center">100%</button>
+      </div>
       <canvas id="detailedGhostConnCanvas"></canvas>
       <canvas id="detailedConnCanvas"></canvas>
       <svg id="detailedPendingSvg" style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:8;">

@@ -1,0 +1,43 @@
+{
+  "schema": "measureworks-cagi-datasheet-library",
+  "version": 1,
+  "description": "Add verified manufacturer CAGI performance data to the datasheets array. Do not enter estimated values as manufacturer data. JSON does not support comments; entryTemplate and fieldDescriptions provide in-file documentation and are ignored by the app.",
+  "entryTemplate": {
+    "manufacturer": "Required: manufacturer name used for search, for example Example Air",
+    "model": "Required: manufacturer model identifier, for example EA-100",
+    "ratedPressurePsig": 125,
+    "ratedCapacityScfm": 100,
+    "fullLoadPackagePowerKw": 25,
+    "zeroFlowPackagePowerKw": 6,
+    "ratedInletPressurePsia": 14.696,
+    "ratedInletTemperatureF": 68,
+    "curvePressurePsig": 125,
+    "curvePressureMode": "estimate",
+    "controlType": "vsd",
+    "performanceCurve": [
+      { "flowCfm": 0, "powerKw": 6 },
+      { "flowCfm": 100, "powerKw": 25 }
+    ],
+    "source": "Manufacturer CAGI data sheet, document number, revision, and date",
+    "notes": "Optional notes about testing conditions or curve interpretation"
+  },
+  "fieldDescriptions": {
+    "manufacturer": "Required string. Searchable manufacturer name.",
+    "model": "Required string. Searchable compressor model.",
+    "ratedPressurePsig": "Optional number. CAGI rated discharge pressure in psig; searchable and applied to Rated discharge pressure.",
+    "ratedCapacityScfm": "Optional number. Full-load rated capacity in standard cubic feet per minute; applied to Full-load rated capacity.",
+    "fullLoadPackagePowerKw": "Optional number. Package input power at full load in kW; applied to Full-load package input power.",
+    "zeroFlowPackagePowerKw": "Optional number. Package input power at zero flow in kW. The importer adds this as a 0 scfm curve point when the performanceCurve does not already include one.",
+    "ratedInletPressurePsia": "Optional number. CAGI rated inlet pressure in psia; defaults to the app value when omitted.",
+    "ratedInletTemperatureF": "Optional number. CAGI rated inlet temperature in degrees F; defaults to the app value when omitted.",
+    "curvePressurePsig": "Optional number. Pressure basis of performanceCurve in psig. When omitted, ratedPressurePsig is used.",
+    "curvePressureMode": "Optional string: estimate or rated. estimate applies operating-pressure correction; rated uses the curve power without correction.",
+    "controlType": "Optional string: lu, mod, or vsd. Applied to the compressor control type when present.",
+    "performanceCurve": "Optional array of zero or more {flowCfm, powerKw} points. Both values must be non-negative numbers. Points are sorted by flow; use at least two strictly increasing points to activate the custom curve.",
+    "performanceCurve[].flowCfm": "Required number for each curve point. Airflow in scfm.",
+    "performanceCurve[].powerKw": "Required number for each curve point. Package input power in kW.",
+    "source": "Optional string. Copied to the compressor Data sheet / source field.",
+    "notes": "Optional string. Copied to the compressor Source Notes field."
+  },
+  "datasheets": []
+}

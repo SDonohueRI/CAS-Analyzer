@@ -73,6 +73,36 @@ All application code is inside `index.html`. Two third-party libraries are still
 
 Everything else — analysis engine, 8760 simulation, monitored-data import, canvas rendering — runs with no network access.
 
+### CAGI Data-Sheet Library
+
+The optional local library is stored in [cagi-datasheets.json](cagi-datasheets.json). When the app is served over HTTP, the CAGI Performance Data dialog loads this file live and filters manufacturer, model, and rated-pressure suggestions as users type. Selecting a matching data sheet populates the rated fields and curve, including zero-flow package input power.
+
+Add only verified manufacturer data using this entry shape:
+
+```json
+{
+  "manufacturer": "Example Manufacturer",
+  "model": "Model 100",
+  "ratedPressurePsig": 125,
+  "ratedCapacityScfm": 100,
+  "fullLoadPackagePowerKw": 25,
+  "zeroFlowPackagePowerKw": 6,
+  "ratedInletPressurePsia": 14.696,
+  "ratedInletTemperatureF": 68,
+  "curvePressurePsig": 125,
+  "curvePressureMode": "estimate",
+  "controlType": "vsd",
+  "performanceCurve": [
+    {"flowCfm": 0, "powerKw": 6},
+    {"flowCfm": 100, "powerKw": 25}
+  ],
+  "source": "Manufacturer CAGI data sheet, revision/date",
+  "notes": "Optional verification notes"
+}
+```
+
+Insert entries into the file's `datasheets` array. When opening `index.html` directly from the file system, browser security may block JSON fetches; manual CAGI entry still works. Serve the folder from a static web server to enable catalog search.
+
 **Fonts do not require the network.** The Google Fonts `@import` was removed. The `IBM Plex Sans` / `IBM Plex Mono` family names are aliased in CSS to locally installed fonts using `@font-face { src: local(...) }`, with `local('IBM Plex ...')` listed first so a real install still wins, then falling back to Segoe UI / Consolas on Windows, SF Pro / SF Mono on macOS, and DejaVu on Linux. Separate faces cover the 100–500 and 600–900 weight ranges so headings are not faux-bolded.
 
 #### Offline fallback
