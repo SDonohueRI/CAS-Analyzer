@@ -95,6 +95,7 @@ The workbook is reviewable only if an independent reviewer can trace the calcula
 | Project | Project name, customer name, export date, calculation basis, ambient pressure, ambient temperature, QC threshold. |
 | System_Diagram | Generated visual of the current system layout embedded as an image. |
 | Inputs_Pre / Inputs_Post | Component ID, name, type, schedule ID, flow, pressure, duty cycle, power, control type, unload power, staging priority, operating pressure, rated inlet conditions, pressure drops, dryer/drain fields. |
+| Curves_Pre / Curves_Post | Compressor curve mode, pressure handling, pressure basis, full-load anchors, CFM/package-power points, flow fractions, specific package power, source, and notes. |
 | Schedules | Schedule ID, day type, start hour, stop hour, factor. |
 | Assignments | Case, component ID, type, schedule ID. |
 | Calendar_8760 | Hour index, date, day type, hour of day, month, holiday flag. |

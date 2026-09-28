@@ -14,6 +14,7 @@
   @font-face{font-family:'IBM Plex Mono';font-style:normal;font-weight:600 900;src:local('IBM Plex Mono SemiBold'),local('Consolas Bold'),local('Menlo Bold'),local('DejaVu Sans Mono Bold');}
   :root {
     --bg:#0d1117;--surface:#161b22;--surface2:#1c2330;--surface3:#21262d;
+    --main-panel-width:270px;--detailed-panel-width:310px;
     --border:#30363d;--border2:#444c56;--text:#e6edf3;--text2:#8b949e;--text3:#6e7681;
     --accent:#00d4aa;--accent2:#0096ff;--warn:#f0a93a;--danger:#f85149;
     --success:#3fb950;--purple:#bc8cff;--pink:#ff7b72;
@@ -107,6 +108,33 @@
   #methodsModal{display:none;position:fixed;inset:0;z-index:3000;background:rgba(0,0,0,.6);align-items:center;justify-content:center;}
   #methodsModal.open{display:flex;}
   #methodsModalBox{background:var(--surface);border:1px solid var(--border2);border-radius:10px;width:min(680px,92vw);max-height:80vh;overflow-y:auto;padding:20px 24px;}
+  #cagiModal{display:none;position:fixed;inset:0;z-index:3100;background:rgba(0,0,0,.68);align-items:center;justify-content:center;padding:18px;}
+  #cagiModal.open{display:flex;}
+  #cagiModalBox{background:var(--surface);border:1px solid var(--border2);border-radius:10px;width:min(820px,96vw);max-height:90vh;overflow-y:auto;padding:20px 24px;box-shadow:0 20px 80px rgba(0,0,0,.4);}
+  .cagi-modal-header{display:flex;align-items:flex-start;gap:12px;margin-bottom:16px;}
+  .cagi-modal-title{font-family:'IBM Plex Mono',monospace;color:var(--accent);font-size:14px;font-weight:600;flex:1;}
+  .cagi-modal-subtitle{font-size:11px;color:var(--text2);line-height:1.6;margin-top:3px;}
+  .cagi-close{background:none;border:none;color:var(--text2);cursor:pointer;font-size:16px;line-height:1;}
+  .cagi-section{border:1px solid var(--border);border-radius:7px;background:var(--surface2);padding:12px;margin-bottom:10px;}
+  .cagi-section-title{font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--accent);text-transform:uppercase;letter-spacing:.8px;margin-bottom:10px;}
+  .cagi-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px 14px;}
+  .cagi-field{display:flex;align-items:center;gap:8px;min-width:0;}
+  .cagi-field label{font-size:11px;color:var(--text2);flex:1;}
+  .cagi-field input,.cagi-field select,.cagi-field textarea{width:150px;min-width:0;padding:4px 7px;background:var(--surface3);border:1px solid var(--border);border-radius:5px;color:var(--text);font:11px 'IBM Plex Mono',monospace;}
+  .cagi-field textarea{width:100%;resize:vertical;min-height:54px;font-family:inherit;}
+  .cagi-field input:focus,.cagi-field select:focus,.cagi-field textarea:focus{outline:none;border-color:var(--accent);}
+  .cagi-unit{font-size:10px;color:var(--text3);min-width:38px;}
+  .cagi-help{font-size:10px;color:var(--text3);line-height:1.6;margin-top:7px;}
+  .cagi-curve-table{width:100%;border-collapse:collapse;font-size:11px;margin-top:5px;}
+  .cagi-curve-table th{text-align:left;color:var(--text3);font:10px 'IBM Plex Mono',monospace;padding:5px 6px;border-bottom:1px solid var(--border);}
+  .cagi-curve-table td{padding:4px 6px;border-bottom:1px solid rgba(48,54,61,.5);}
+  .cagi-curve-table input{width:100%;padding:3px 5px;background:var(--surface3);border:1px solid var(--border);border-radius:4px;color:var(--text);font:11px 'IBM Plex Mono',monospace;text-align:right;}
+  .cagi-curve-table button{background:none;border:none;color:var(--danger);cursor:pointer;font-size:13px;}
+  .cagi-curve-actions{display:flex;align-items:center;gap:8px;margin-top:8px;}
+  .cagi-status{font-size:10px;color:var(--text3);line-height:1.5;}
+  .cagi-readonly{font:11px 'IBM Plex Mono',monospace;color:var(--accent);text-align:right;min-width:90px;}
+  .cagi-curve-preview{display:block;width:100%;height:180px;margin-top:10px;background:var(--surface3);border:1px solid var(--border);border-radius:5px;}
+  @media(max-width:680px){.cagi-grid{grid-template-columns:1fr;}#cagiModalBox{padding:16px;}.cagi-field input,.cagi-field select{width:130px;}}
   .meth-title{font-size:14px;font-weight:700;color:var(--text);margin-bottom:4px;font-family:'IBM Plex Mono',monospace;}
   .meth-purpose{font-size:11px;color:var(--text2);margin-bottom:10px;line-height:1.6;}
   .meth-label{font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.8px;margin:10px 0 4px;font-family:'IBM Plex Mono',monospace;}
@@ -144,7 +172,13 @@
   .ambient-note{font-size:10px;color:var(--text3);line-height:1.5;padding:5px 7px;background:var(--surface2);border-radius:5px;margin-bottom:6px;}
   /* Canvas area */
   .canvas-area{flex:1;position:relative;overflow:hidden;background:radial-gradient(circle at 50% 50%,rgba(0,212,170,.03) 0%,transparent 60%),var(--bg);}
+  .canvas-area.panning{cursor:grabbing;}
   .canvas-grid{position:absolute;inset:0;background-image:linear-gradient(var(--border) 1px,transparent 1px),linear-gradient(90deg,var(--border) 1px,transparent 1px);background-size:40px 40px;opacity:.3;pointer-events:none;}
+  .canvas-toolbar{position:absolute;top:10px;left:10px;z-index:35;display:flex;align-items:center;gap:4px;padding:4px;background:rgba(13,17,23,.9);border:1px solid var(--border);border-radius:6px;box-shadow:0 4px 16px rgba(0,0,0,.25);}
+  .canvas-toolbar-btn{min-width:28px;height:24px;padding:2px 7px;border:1px solid var(--border);border-radius:4px;background:var(--surface3);color:var(--text);font:12px 'IBM Plex Mono',monospace;cursor:pointer;}
+  .canvas-toolbar-btn:hover{border-color:var(--accent);color:var(--accent);}
+  .canvas-toolbar-btn.wide{min-width:42px;font-size:10px;}
+  .zoom-indicator{min-width:46px;text-align:center;font:11px 'IBM Plex Mono',monospace;color:var(--text2);}
   /* Canvas 2D layer for connections - sits below nodes */
   #connCanvas{position:absolute;inset:0;z-index:5;cursor:default;}
   #detailedConnCanvas{position:absolute;inset:0;z-index:5;cursor:default;}
@@ -181,6 +215,10 @@
   .port-label{position:absolute;font-size:9px;color:var(--text3);white-space:nowrap;top:-14px;left:50%;transform:translateX(-50%);}
   /* Right panel */
   .panel{width:270px;background:var(--surface);border-left:1px solid var(--border);overflow-y:auto;flex-shrink:0;display:flex;flex-direction:column;}
+  .panel.main-results-panel{width:var(--main-panel-width);}
+  .panel.detailed-results-panel{width:var(--detailed-panel-width)!important;}
+  .panel-resizer{width:7px;flex:0 0 7px;background:transparent;border-left:1px solid transparent;border-right:1px solid transparent;cursor:col-resize;touch-action:none;z-index:40;}
+  .panel-resizer:hover,.panel-resizer:focus{background:rgba(0,212,170,.08);border-left-color:var(--accent);border-right-color:var(--accent);outline:none;}
   .panel-section{padding:12px 14px;border-bottom:1px solid var(--border);}
   .panel-title{font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.8px;margin-bottom:12px;display:flex;align-items:center;gap:6px;}
   .panel-title::after{content:'';flex:1;height:1px;background:var(--border);}
@@ -293,6 +331,12 @@
   <!-- Canvas area -->
   <div class="canvas-area" id="canvasArea">
     <div class="canvas-grid"></div>
+    <div class="canvas-toolbar" aria-label="Canvas viewport controls">
+      <button class="canvas-toolbar-btn" onclick="zoomMainCanvasOut()" title="Zoom out" aria-label="Zoom out">−</button>
+      <div class="zoom-indicator" id="mainZoomIndicator">100%</div>
+      <button class="canvas-toolbar-btn" onclick="zoomMainCanvasIn()" title="Zoom in" aria-label="Zoom in">+</button>
+      <button class="canvas-toolbar-btn wide" onclick="resetMainViewport()" title="Reset zoom and center" aria-label="Reset zoom and center">100%</button>
+    </div>
     <!-- Canvas 2D for connections (z-index 5) -->
     <canvas id="connCanvas"></canvas>
     <!-- SVG for pending connection line only (pointer-events:none) -->
@@ -315,7 +359,8 @@
   </div>
 
   <!-- Right panel -->
-  <div class="panel">
+  <div id="mainPanelResizer" class="panel-resizer" role="separator" aria-label="Resize results sidebar" aria-orientation="vertical" aria-valuemin="240" aria-valuemax="520" aria-valuenow="270" tabindex="0"></div>
+  <div id="mainResultsPanel" class="panel main-results-panel">
     <div id="panelDesign">
       <div class="panel-section">
         <div class="panel-title">Project Info</div>
@@ -388,7 +433,7 @@
         <div class="ref-step"><div class="ref-step-num">1</div><div class="ref-step-body"><strong>Drag components</strong> from the left palette onto the canvas. Start with your compressors, then add treatment equipment (dryer, filter, receiver) in flow order, then loads and leaks.</div></div>
         <div class="ref-step"><div class="ref-step-num">2</div><div class="ref-step-body"><strong>Connect components</strong> by dragging from a green output port to a gray input port. Air flows left-to-right by convention. Double-click a connection to delete it.</div></div>
         <div class="ref-step"><div class="ref-step-num">3</div><div class="ref-step-body"><strong>Enter Project Info</strong> in the right panel. Project name and customer name are saved with the JSON project file, included in reports, and written to the Excel workbook.</div></div>
-        <div class="ref-step"><div class="ref-step-num">4</div><div class="ref-step-body"><strong>Click any component</strong> to select it and edit its properties in this panel. Enter CAGI data sheet values for compressors — rated capacity, package input power, rated pressure, and operating pressure.</div></div>
+        <div class="ref-step"><div class="ref-step-num">4</div><div class="ref-step-body"><strong>Click any component</strong> to select it and edit its properties in this panel. For compressors, use <strong>Edit CAGI Performance</strong> to enter rated capacity, package input power, rated pressure, inlet conditions, curve points, and source notes; use the right panel for operating pressure and control behavior.</div></div>
         <div class="ref-step"><div class="ref-step-num">5</div><div class="ref-step-body"><strong>Add Line Loss nodes</strong> in series to model distribution pressure drops. Add <strong>Regulator</strong> nodes to define pressure zones. Add <strong>Drain</strong> nodes near receivers, dryers, and filters to model condensate removal losses.</div></div>
         <div class="ref-tip">Tip: Set Site Conditions (climate zone, elevation) first — they affect compressor capacity correction and moisture analysis throughout.</div>
       </div>
@@ -758,6 +803,9 @@ const MONITORED_DATA_CONFIG = {
 const canvas = document.getElementById('connCanvas');
 const ctx    = canvas.getContext('2d');
 const DPR    = window.devicePixelRatio || 1;
+const mainViewport = {scale:1,minScale:0.5,maxScale:2.5,offsetX:40,offsetY:40};
+let mainPanState = null;
+let suppressCanvasClick = false;
 
 function resizeCanvas() {
   const area = document.getElementById('canvasArea');
@@ -771,12 +819,94 @@ function resizeCanvas() {
 
 new ResizeObserver(resizeCanvas).observe(document.getElementById('canvasArea'));
 
+function getMainNodeFrame(node) {
+  return (node.type === 'lineloss' || node.type === 'drain') ? {width:88,height:54} : {width:130,height:86};
+}
+
+function screenToMainWorld(clientX, clientY) {
+  const rect = document.getElementById('canvasArea').getBoundingClientRect();
+  return {x:(clientX - rect.left - mainViewport.offsetX) / mainViewport.scale, y:(clientY - rect.top - mainViewport.offsetY) / mainViewport.scale};
+}
+
+function applyMainViewport() {
+  const grid = document.querySelector('#canvasArea .canvas-grid');
+  const container = document.getElementById('nodesContainer');
+  container.style.transformOrigin = '0 0';
+  container.style.transform = `translate(${mainViewport.offsetX}px,${mainViewport.offsetY}px) scale(${mainViewport.scale})`;
+  if (grid) {
+    const gridSize = 40 * mainViewport.scale;
+    grid.style.backgroundSize = `${gridSize}px ${gridSize}px`;
+    grid.style.backgroundPosition = `${mainViewport.offsetX}px ${mainViewport.offsetY}px`;
+  }
+  const indicator = document.getElementById('mainZoomIndicator');
+  if (indicator) indicator.textContent = Math.round(mainViewport.scale * 100) + '%';
+}
+
+function centerMainViewport() {
+  const area = document.getElementById('canvasArea');
+  if (!nodes.length) {
+    mainViewport.offsetX = 40; mainViewport.offsetY = 40;
+  } else {
+    const minX = Math.min(...nodes.map(node => node.x));
+    const minY = Math.min(...nodes.map(node => node.y));
+    const maxX = Math.max(...nodes.map(node => node.x + getMainNodeFrame(node).width));
+    const maxY = Math.max(...nodes.map(node => node.y + getMainNodeFrame(node).height));
+    mainViewport.offsetX = Math.round((area.clientWidth - (maxX-minX)*mainViewport.scale)/2 - minX*mainViewport.scale);
+    mainViewport.offsetY = Math.round((area.clientHeight - (maxY-minY)*mainViewport.scale)/2 - minY*mainViewport.scale);
+  }
+  applyMainViewport(); renderConnections();
+}
+
+function resetMainViewport() { mainViewport.scale = 1; centerMainViewport(); }
+
+function zoomMainAt(clientX, clientY, factor) {
+  const rect = document.getElementById('canvasArea').getBoundingClientRect();
+  const before = screenToMainWorld(clientX, clientY);
+  const nextScale = Math.max(mainViewport.minScale, Math.min(mainViewport.maxScale, mainViewport.scale * factor));
+  mainViewport.scale = nextScale;
+  mainViewport.offsetX = Math.round(clientX - rect.left - before.x * nextScale);
+  mainViewport.offsetY = Math.round(clientY - rect.top - before.y * nextScale);
+  applyMainViewport(); renderConnections();
+}
+
+function zoomMainCanvasIn() {
+  const rect = document.getElementById('canvasArea').getBoundingClientRect();
+  zoomMainAt(rect.left + rect.width/2, rect.top + rect.height/2, 1.15);
+}
+
+function zoomMainCanvasOut() {
+  const rect = document.getElementById('canvasArea').getBoundingClientRect();
+  zoomMainAt(rect.left + rect.width/2, rect.top + rect.height/2, 1/1.15);
+}
+
+function beginMainPan(e) {
+  mainPanState = {startClientX:e.clientX,startClientY:e.clientY,startOffsetX:mainViewport.offsetX,startOffsetY:mainViewport.offsetY,moved:false};
+  canvasArea.classList.add('panning');
+  const onMove = ev => {
+    if (!mainPanState) return;
+    const dx = ev.clientX-mainPanState.startClientX, dy = ev.clientY-mainPanState.startClientY;
+    if (!mainPanState.moved && Math.hypot(dx,dy) >= 4) mainPanState.moved = true;
+    if (!mainPanState.moved) return;
+    mainViewport.offsetX = Math.round(mainPanState.startOffsetX + dx);
+    mainViewport.offsetY = Math.round(mainPanState.startOffsetY + dy);
+    applyMainViewport(); renderConnections();
+  };
+  const onUp = () => {
+    if (mainPanState?.moved) suppressCanvasClick = true;
+    mainPanState = null; canvasArea.classList.remove('panning');
+    document.removeEventListener('mousemove',onMove); document.removeEventListener('mouseup',onUp);
+  };
+  document.addEventListener('mousemove',onMove); document.addEventListener('mouseup',onUp);
+}
+
 // ═══════════════════════════════════════════
 // COMPONENT DEFINITIONS
 // ═══════════════════════════════════════════
 const compDefs = {
   compressor:{label:'Compressor',icon:'&#9881;',color:CLR.compressor,bgColor:'#1a3a4a',
     defaultProps:{name:'Compressor',flowRate:100,pressure:125,power:25,efficiency:92,load:75,
+      cagiManufacturer:'',cagiModel:'',cagiSource:'',cagiNotes:'',
+      curveMode:'analytical',curvePressure:125,curvePressureMode:'estimate',performanceCurve:[],
       controlType:'lu',
       unloadPower:20,
       stagingPriority:1,
@@ -908,7 +1038,8 @@ function renderConnections() {
   const pMin = window._pressureMin || 60;
   const pMax = window._pressureMax || 130;
   function pressureToColor(psi) {
-    const t = Math.max(0, Math.min(1, (psi - pMin) / (pMax - pMin)));
+    const range = pMax - pMin;
+    const t = range > 0 ? Math.max(0, Math.min(1, (psi - pMin) / range)) : 1;
     const r = Math.round((1-t)*240), g = Math.round(t*150+(1-t)*169), b = Math.round(t*255+(1-t)*58);
     return `rgb(${Math.min(255,r)},${Math.min(255,g)},${Math.min(255,b)})`;
   }
@@ -1033,6 +1164,7 @@ canvasArea.addEventListener('mousemove', canvasMouseMove);
 canvasArea.addEventListener('mouseup',   canvasMouseUp);
 canvasArea.addEventListener('click',     canvasClick);
 canvasArea.addEventListener('dblclick',  canvasDblClick);
+canvasArea.addEventListener('wheel',     mainCanvasWheel, {passive:false});
 
 function canvasXY(e) {
   const r = document.getElementById('canvasArea').getBoundingClientRect();
@@ -1040,9 +1172,10 @@ function canvasXY(e) {
 }
 
 function canvasMouseDown(e) {
-  if (e.target.closest('.node')) return; // let nodeMouseDown handle it
+  if (e.target.closest('.node') || e.target.closest('.canvas-toolbar')) return; // let node/toolbar handlers handle it
   const {x,y} = canvasXY(e);
   const hit = hitTestConnections(x, y);
+  if (!hit) beginMainPan(e);
   if (!hit) {
     selectNode(null);
     selectConn(null);
@@ -1070,6 +1203,12 @@ function canvasMouseMove(e) {
   }
 }
 
+function mainCanvasWheel(e) {
+  if (e.target.closest('.node') || e.target.closest('.canvas-toolbar')) return;
+  e.preventDefault();
+  zoomMainAt(e.clientX, e.clientY, e.deltaY < 0 ? 1.1 : 1/1.1);
+}
+
 function canvasMouseUp(e) {
   if (e.target.closest('.node')) return;
   if (connectingPort) {
@@ -1081,6 +1220,7 @@ function canvasMouseUp(e) {
 
 function canvasClick(e) {
   if (e.target.closest('.node')) return;
+  if (suppressCanvasClick) { suppressCanvasClick = false; return; }
   const {x,y} = canvasXY(e);
   const hit = hitTestConnections(x, y);
   if (hit) {
@@ -1115,13 +1255,13 @@ function nodeMouseDown(e) {
   const node = nodes.find(n => n.id === el.id);
   selectNode(node);
   draggingNode = { node, el };
-  const r = el.getBoundingClientRect();
-  const cr = document.getElementById('canvasArea').getBoundingClientRect();
-  dragOffset.x = e.clientX - cr.left - node.x;
-  dragOffset.y = e.clientY - cr.top  - node.y;
+  const worldPoint = screenToMainWorld(e.clientX, e.clientY);
+  dragOffset.x = worldPoint.x - node.x;
+  dragOffset.y = worldPoint.y - node.y;
 
   const onMove = ev => {
-    const x = ev.clientX - cr.left, y = ev.clientY - cr.top;
+    const world = screenToMainWorld(ev.clientX, ev.clientY);
+    const x = world.x, y = world.y;
     const nx = Math.round((x - dragOffset.x) / 10) * 10;
     const ny = Math.round((y - dragOffset.y) / 10) * 10;
     draggingNode.node.x = Math.max(0, nx);
@@ -1511,18 +1651,20 @@ function showProperties(node) {
     const ct = node.props.controlType || 'lu';
     const amb = getAmbient();
     const out = compressorOutput(node, amb);
+    const curvePoints = Array.isArray(node.props.performanceCurve) ? node.props.performanceCurve : [];
+    const curveLabel = node.props.curveMode === 'custom' && curvePoints.length >= 2
+      ? `${curvePoints.length} manufacturer points`
+      : 'Analytical fallback';
     html += `
-    <div class="prop-divider">Performance (CAGI Data)</div>
-    <div class="prop-row"><span class="prop-label">Rated capacity</span><input class="prop-input" type="number" value="${node.props.flowRate??''}" step="1" onchange="updateProp('${node.id}','flowRate',this.value)"><span class="prop-unit">scfm</span></div>
-    <div class="prop-row"><span class="prop-label">CAGI rated pressure</span><input class="prop-input" type="number" value="${node.props.pressure??''}" step="5" onchange="updateProp('${node.id}','pressure',this.value)"><span class="prop-unit">psi</span></div>
-    <div class="prop-row"><span class="prop-label">Package input power</span><input class="prop-input" type="number" value="${node.props.power??''}" step="0.1" onchange="updateProp('${node.id}','power',this.value)"><span class="prop-unit">kW</span></div>
-    <div class="prop-row"><span class="prop-label">Spec. pkg. power</span><div class="prop-computed">${out.spp>0?out.spp.toFixed(2):'—'}</div><span class="prop-unit">kW/100</span></div>
+    <div class="prop-divider">CAGI Performance Data</div>
+    <div class="prop-row"><span class="prop-label">Full-load rated capacity</span><div class="prop-computed">${node.props.flowRate??'—'}</div><span class="prop-unit">scfm</span></div>
+    <div class="prop-row"><span class="prop-label">Rated pressure</span><div class="prop-computed">${node.props.pressure??'—'}</div><span class="prop-unit">psi</span></div>
+    <div class="prop-row"><span class="prop-label">Full-load package input power</span><div class="prop-computed">${node.props.power??'—'}</div><span class="prop-unit">kW</span></div>
+    <div class="prop-row"><span class="prop-label">Curve</span><div class="prop-computed" style="width:130px;font-size:10px">${curveLabel}</div><span class="prop-unit"></span></div>
+    <button class="btn" style="width:100%;margin-bottom:8px" onclick="openCagiModal('${node.id}')">Edit CAGI Performance</button>
     <div class="prop-divider">Operating Conditions</div>
     <div class="prop-row"><span class="prop-label">Operating pressure</span><input class="prop-input" type="number" value="${node.props.operatingPressure??node.props.pressure??125}" step="5" onchange="updateProp('${node.id}','operatingPressure',this.value)"><span class="prop-unit">psi</span></div>
     <div class="mode-note">Isentropic scale: ${out.isentropicScale.toFixed(3)} (${out.isentropicScale<1?'lower than rated → less power':out.isentropicScale>1?'higher than rated → more power':'at rated pressure'}).</div>
-    <div class="prop-divider">CAGI Inlet Conditions</div>
-    <div class="prop-row"><span class="prop-label">Rated inlet pres.</span><input class="prop-input" type="number" value="${node.props.ratedInletPres??14.696}" step="0.1" onchange="updateProp('${node.id}','ratedInletPres',this.value)"><span class="prop-unit">psia</span></div>
-    <div class="prop-row"><span class="prop-label">Rated inlet temp.</span><input class="prop-input" type="number" value="${node.props.ratedInletTemp??68}" step="1" onchange="updateProp('${node.id}','ratedInletTemp',this.value)"><span class="prop-unit">°F</span></div>
     <div class="prop-divider">Control Type</div>
     <div class="mode-toggle" style="margin-bottom:8px">
       <button class="mode-toggle-btn ${ct==='lu'?'active':''}"  onclick="updateProp('${node.id}','controlType','lu')">Load/Unload</button>
@@ -1554,6 +1696,277 @@ function showProperties(node) {
     </div>`;
   });
   document.getElementById('propFields').innerHTML = html;
+}
+
+let cagiModalTarget = null;
+
+function getCagiModalNode(nodeId) {
+  if (cagiModalTarget?.node?.id === nodeId) return cagiModalTarget.node;
+  return nodes.find(n => n.id === nodeId) || null;
+}
+
+function refreshCagiTargetNode(node) {
+  if (cagiModalTarget?.detailed) {
+    renderDetailedCanvas();
+    detailedSelectNode(node);
+    return;
+  }
+  renderNode(node);
+  document.getElementById(node.id)?.classList.add('selected');
+  if (selectedNode?.id === node.id) showProperties(node);
+}
+
+function getCagiCurvePoints(node) {
+  if (!Array.isArray(node?.props?.performanceCurve)) node.props.performanceCurve = [];
+  return node.props.performanceCurve;
+}
+
+function updateCagiField(nodeId, key, value) {
+  const node = nodes.find(n => n.id === nodeId);
+  if (!node) return;
+  const numericKeys = new Set(['flowRate','pressure','power','ratedInletPres','ratedInletTemp','curvePressure']);
+  node.props[key] = numericKeys.has(key) ? (value === '' ? '' : parseFloat(value)) : value;
+  renderNode(node);
+  document.getElementById(node.id)?.classList.add('selected');
+  if (selectedNode?.id === node.id) showProperties(node);
+  if (analysisRan) runAnalysis();
+}
+
+function updateCagiCurvePoint(nodeId, index, key, value) {
+  const node = getCagiModalNode(nodeId);
+  const point = getCagiCurvePoints(node)[index];
+  if (!point) return;
+  point[key] = value === '' ? '' : parseFloat(value);
+  refreshCagiDerivedValues(node);
+  renderCagiCurveStatus(node);
+  refreshCagiTargetNode(node);
+  if (analysisRan) runAnalysis();
+}
+
+function addCagiCurvePoint(nodeId) {
+  const node = getCagiModalNode(nodeId);
+  if (!node) return;
+  const points = getCagiCurvePoints(node);
+  const last = points[points.length - 1];
+  points.push({flowCfm: last?.flowCfm || node.props.flowRate || 100, powerKw: last?.powerKw || node.props.power || 25});
+  renderCagiCurveEditor(node);
+}
+
+function removeCagiCurvePoint(nodeId, index) {
+  const node = getCagiModalNode(nodeId);
+  if (!node) return;
+  getCagiCurvePoints(node).splice(index, 1);
+  renderCagiCurveEditor(node);
+  if (analysisRan) runAnalysis();
+}
+
+function cagiCurveValidation(node) {
+  const points = getCagiCurvePoints(node);
+  if (node.props.curveMode !== 'custom') return {message:'Analytical control-type curve is active.', color:'var(--text3)'};
+  if (points.length < 2) return {message:'Add at least two CFM / package kW points to activate the custom curve.', color:'var(--warn)'};
+  const valid = points.every(point => Number.isFinite(point.flowCfm) && Number.isFinite(point.powerKw) && point.flowCfm >= 0 && point.powerKw >= 0);
+  if (!valid) return {message:'Every point must have non-negative numeric CFM and package input power.', color:'var(--danger)'};
+  const sorted = [...points].sort((a,b) => a.flowCfm - b.flowCfm);
+  if (sorted.some((point, index) => index > 0 && point.flowCfm <= sorted[index - 1].flowCfm)) {
+    return {message:'Flow points must be strictly increasing.', color:'var(--danger)'};
+  }
+  const pressureDelta = Math.abs((node.props.curvePressure ?? node.props.pressure ?? 0) - (node.props.operatingPressure ?? node.props.pressure ?? 0));
+  const pressureNote = pressureDelta > 0.5
+    ? (node.props.curvePressureMode === 'rated'
+      ? ` Curve power is being used at its rated pressure; operating pressure differs by ${pressureDelta.toFixed(1)} psi.`
+      : ` Curve basis differs from operating pressure by ${pressureDelta.toFixed(1)} psi; estimated pressure correction is active.`)
+    : '';
+  return {message:`${points.length} valid points. Piecewise-linear interpolation is active.${pressureNote}`, color:pressureDelta > 0.5 ? 'var(--warn)' : 'var(--success)'};
+}
+
+function renderCagiCurveStatus(node) {
+  const status = document.getElementById('cagiCurveStatus');
+  if (!status) return;
+  const result = cagiCurveValidation(node);
+  status.textContent = result.message;
+  status.style.color = result.color;
+}
+
+function refreshCagiDerivedValues(node) {
+  const specificPower = document.getElementById('cagiSpecificPower');
+  if (specificPower) specificPower.textContent = node.props.flowRate > 0 && node.props.power > 0
+    ? (node.props.power / (node.props.flowRate / 100)).toFixed(2)
+    : '—';
+  getCagiCurvePoints(node).forEach((point, index) => {
+    const flowFraction = document.getElementById(`cagiCurveFlowFraction-${node.id}-${index}`);
+    const specificPointPower = document.getElementById(`cagiCurveSpecificPower-${node.id}-${index}`);
+    if (flowFraction) flowFraction.textContent = node.props.flowRate > 0 && Number.isFinite(point.flowCfm)
+      ? (point.flowCfm / node.props.flowRate * 100).toFixed(1) + '%'
+      : '—';
+    if (specificPointPower) specificPointPower.textContent = point.flowCfm > 0 && Number.isFinite(point.powerKw)
+      ? (point.powerKw / (point.flowCfm / 100)).toFixed(2)
+      : '—';
+  });
+  drawCagiCurvePreview(node);
+}
+
+function drawCagiCurvePreview(node) {
+  const preview = document.getElementById('cagiCurvePreview');
+  if (!preview) return;
+  const context = preview.getContext('2d');
+  const width = preview.clientWidth || preview.width;
+  const height = preview.clientHeight || preview.height;
+  const scale = window.devicePixelRatio || 1;
+  preview.width = width * scale;
+  preview.height = height * scale;
+  context.setTransform(scale, 0, 0, scale, 0, 0);
+  context.clearRect(0, 0, width, height);
+  const styles = getComputedStyle(document.documentElement);
+  const border = styles.getPropertyValue('--border').trim() || '#30363d';
+  const text = styles.getPropertyValue('--text3').trim() || '#6e7681';
+  const accent = styles.getPropertyValue('--accent').trim() || '#00d4aa';
+  const points = getCagiCurvePoints(node)
+    .filter(point => Number.isFinite(point.flowCfm) && Number.isFinite(point.powerKw) && point.flowCfm >= 0 && point.powerKw >= 0)
+    .sort((a,b) => a.flowCfm - b.flowCfm);
+  const pad = {left:48,right:14,top:14,bottom:30};
+  const chartWidth = Math.max(1, width - pad.left - pad.right);
+  const chartHeight = Math.max(1, height - pad.top - pad.bottom);
+  const maxFlow = Math.max(node.props.flowRate || 0, ...points.map(point => point.flowCfm), 1);
+  const maxPower = Math.max(node.props.power || 0, ...points.map(point => point.powerKw), 1);
+  const x = value => pad.left + value / maxFlow * chartWidth;
+  const y = value => pad.top + chartHeight - value / maxPower * chartHeight;
+
+  context.strokeStyle = border;
+  context.lineWidth = 1;
+  context.fillStyle = text;
+  context.font = '10px IBM Plex Mono, monospace';
+  context.textAlign = 'right';
+  for (let index = 0; index <= 4; index++) {
+    const value = maxPower * index / 4;
+    const yPos = y(value);
+    context.beginPath(); context.moveTo(pad.left, yPos); context.lineTo(width - pad.right, yPos); context.stroke();
+    context.fillText(value.toFixed(1), pad.left - 6, yPos + 3);
+  }
+  context.textAlign = 'center';
+  context.fillText('Flow (scfm)', pad.left + chartWidth / 2, height - 8);
+  context.save();
+  context.translate(12, pad.top + chartHeight / 2);
+  context.rotate(-Math.PI / 2);
+  context.fillText('Package input power (kW)', 0, 0);
+  context.restore();
+  context.textAlign = 'left';
+  context.fillText('0', pad.left, height - 16);
+  context.textAlign = 'right';
+  context.fillText(maxFlow.toFixed(0), width - pad.right, height - 16);
+
+  if (points.length < 2) {
+    context.textAlign = 'center';
+    context.fillText('Add at least two points to preview the curve', pad.left + chartWidth / 2, pad.top + chartHeight / 2);
+    return;
+  }
+  context.strokeStyle = accent;
+  context.fillStyle = accent;
+  context.lineWidth = 2;
+  context.beginPath();
+  points.forEach((point, index) => {
+    const pointX = x(point.flowCfm), pointY = y(point.powerKw);
+    if (index === 0) context.moveTo(pointX, pointY); else context.lineTo(pointX, pointY);
+  });
+  context.stroke();
+  points.forEach(point => {
+    context.beginPath(); context.arc(x(point.flowCfm), y(point.powerKw), 3, 0, Math.PI * 2); context.fill();
+  });
+}
+
+function renderCagiCurveEditor(node) {
+  const body = document.getElementById('cagiCurveEditorBody');
+  if (!body) return;
+  const points = getCagiCurvePoints(node);
+  body.innerHTML = points.map((point, index) => `
+    <tr>
+      <td>${index + 1}</td>
+      <td><input type="number" min="0" step="0.1" value="${point.powerKw ?? ''}" oninput="updateCagiCurvePoint('${node.id}',${index},'powerKw',this.value)"></td>
+      <td><input type="number" min="0" step="0.1" value="${point.flowCfm ?? ''}" oninput="updateCagiCurvePoint('${node.id}',${index},'flowCfm',this.value)"></td>
+      <td class="cagi-readonly" id="cagiCurveFlowFraction-${node.id}-${index}"></td>
+      <td class="cagi-readonly" id="cagiCurveSpecificPower-${node.id}-${index}"></td>
+      <td><button title="Remove point" onclick="removeCagiCurvePoint('${node.id}',${index})">&#10005;</button></td>
+    </tr>`).join('');
+  refreshCagiDerivedValues(node);
+  renderCagiCurveStatus(node);
+}
+
+function setCagiCurveMode(nodeId, mode) {
+  const node = getCagiModalNode(nodeId);
+  if (!node) return;
+  node.props.curveMode = mode;
+  refreshCagiDerivedValues(node);
+  renderCagiCurveStatus(node);
+  refreshCagiTargetNode(node);
+  if (analysisRan) runAnalysis();
+}
+
+function openCagiModal(nodeId, detailedMode = false) {
+  const node = detailedMode
+    ? getDetailedCaseData().nodes.find(item => item.id === nodeId)
+    : nodes.find(item => item.id === nodeId);
+  if (!node || node.type !== 'compressor') return;
+  const modal = document.getElementById('cagiModal');
+  if (!modal) return;
+  cagiModalTarget = {node, detailed:detailedMode};
+  modal.dataset.nodeId = nodeId;
+  document.getElementById('cagiManufacturer').value = node.props.cagiManufacturer || '';
+  document.getElementById('cagiModel').value = node.props.cagiModel || '';
+  document.getElementById('cagiSource').value = node.props.cagiSource || '';
+  document.getElementById('cagiNotes').value = node.props.cagiNotes || '';
+  document.getElementById('cagiRatedCapacity').value = node.props.flowRate ?? '';
+  document.getElementById('cagiRatedPressure').value = node.props.pressure ?? '';
+  document.getElementById('cagiPackagePower').value = node.props.power ?? '';
+  document.getElementById('cagiRatedInletPres').value = node.props.ratedInletPres ?? 14.696;
+  document.getElementById('cagiRatedInletTemp').value = node.props.ratedInletTemp ?? 68;
+  document.getElementById('cagiCurvePressure').value = node.props.curvePressure ?? node.props.pressure ?? '';
+  document.getElementById('cagiCurvePressureMode').value = node.props.curvePressureMode || 'estimate';
+  document.getElementById('cagiCurveMode').value = node.props.curveMode || 'analytical';
+  renderCagiCurveEditor(node);
+  modal.classList.add('open');
+}
+
+function closeCagiModal() {
+  const modal = document.getElementById('cagiModal');
+  if (!modal) return;
+  modal.classList.remove('open');
+  const node = cagiModalTarget?.node;
+  if (node) refreshCagiTargetNode(node);
+  cagiModalTarget = null;
+}
+
+function cagiModalFieldChanged(key, value) {
+  const nodeId = document.getElementById('cagiModal')?.dataset.nodeId;
+  if (!nodeId) return;
+  const keyMap = {cagiRatedCapacity:'flowRate', cagiRatedPressure:'pressure', cagiPackagePower:'power', cagiRatedInletPres:'ratedInletPres', cagiRatedInletTemp:'ratedInletTemp', cagiCurvePressure:'curvePressure'};
+  const node = getCagiModalNode(nodeId);
+  if (!node) return;
+  const actualKey = keyMap[key] || key;
+  const numericKeys = new Set(['flowRate','pressure','power','ratedInletPres','ratedInletTemp','curvePressure']);
+  node.props[actualKey] = numericKeys.has(actualKey) ? (value === '' ? '' : parseFloat(value)) : value;
+  refreshCagiTargetNode(node);
+  if (node) {
+    refreshCagiDerivedValues(node);
+    renderCagiCurveStatus(node);
+  }
+}
+
+function customCurvePowerFactor(comp, loadFrac) {
+  const points = Array.isArray(comp.props.performanceCurve) ? comp.props.performanceCurve
+    .filter(point => Number.isFinite(point.flowCfm) && Number.isFinite(point.powerKw) && point.flowCfm >= 0 && point.powerKw >= 0)
+    .sort((a,b) => a.flowCfm - b.flowCfm) : [];
+  if (comp.props.curveMode !== 'custom' || points.length < 2 || !(comp.props.flowRate > 0) || !(comp.props.power > 0)) return null;
+  const targetFlow = comp.props.flowRate * Math.max(0, Math.min(1, loadFrac));
+  if (targetFlow <= points[0].flowCfm) return points[0].powerKw / comp.props.power;
+  if (targetFlow >= points[points.length - 1].flowCfm) return points[points.length - 1].powerKw / comp.props.power;
+  for (let index = 1; index < points.length; index++) {
+    const left = points[index - 1], right = points[index];
+    if (targetFlow <= right.flowCfm) {
+      const fraction = (targetFlow - left.flowCfm) / (right.flowCfm - left.flowCfm);
+      const powerKw = left.powerKw + fraction * (right.powerKw - left.powerKw);
+      return powerKw / comp.props.power;
+    }
+  }
+  return points[points.length - 1].powerKw / comp.props.power;
 }
 
 function setLinelossMode(id, measured) {
@@ -1858,6 +2271,9 @@ function partLoadPowerFactor(comp, loadFrac) {
   if (loadFrac <= 0) return 0;
   if (loadFrac >= 1) return 1;
 
+  const customFactor = customCurvePowerFactor(comp, loadFrac);
+  if (customFactor !== null) return customFactor;
+
   if (type === 'lu') {
     // Load/Unload: weighted average of full-load and unload power
     const ulFrac = (comp.props.unloadPower || 20) / 100;
@@ -1901,7 +2317,8 @@ function compressorOutput(comp, ambient, overrideLoadFrac) {
   // the actual pressure ratio and load fraction, independent of inlet density.
   const actualFlow  = ratedFlow  * corr * loadFrac;
   const powerFactor = partLoadPowerFactor(comp, loadFrac);
-  const actualPower = ratedPower * isentropicScale * powerFactor;
+  const useRatedCurvePower = comp.props.curveMode === 'custom' && comp.props.curvePressureMode === 'rated';
+  const actualPower = ratedPower * (useRatedCurvePower ? 1 : isentropicScale) * powerFactor;
   const spp = actualFlow > 0 ? (actualPower / (actualFlow / 100)) : 0;
   return { actualFlow, actualPower, corr, powerFactor, isentropicScale, spp, loadFrac };
 }
@@ -1921,6 +2338,7 @@ function setColourMode(mode) {
   colourMode = mode;
   document.getElementById('clrBtn-flow').classList.toggle('active',     mode==='flow');
   document.getElementById('clrBtn-pressure').classList.toggle('active', mode==='pressure');
+  if (nodes.length && !analysisRan) runAnalysis();
   renderConnections();
   renderDetailedConnections();
   renderCanvasLegend('detailedCanvasLegend');
@@ -2153,6 +2571,26 @@ function analyzeSystem() {
   const loads       = nodes.filter(n=>n.type==='load');
   const leaks       = nodes.filter(n=>n.type==='leak');
   const drains      = nodes.filter(n=>n.type==='drain');
+
+  compressors.forEach(comp => {
+    const points = Array.isArray(comp.props.performanceCurve) ? comp.props.performanceCurve : [];
+    if (comp.props.curveMode === 'custom') {
+      const validPoints = points.filter(point => Number.isFinite(point.flowCfm) && Number.isFinite(point.powerKw) && point.flowCfm >= 0 && point.powerKw >= 0);
+      const sortedFlows = validPoints.map(point => point.flowCfm).sort((a,b) => a - b);
+      const duplicateFlow = sortedFlows.some((flow, index) => index > 0 && flow <= sortedFlows[index - 1]);
+      if (points.length < 2 || validPoints.length !== points.length || duplicateFlow) {
+        res.warnings.push(`Compressor "${comp.props.name || 'Compressor'}" is set to Manufacturer points, but its curve is incomplete or invalid. The analytical control curve is being used until at least two valid points with strictly increasing flow are entered.`);
+        return;
+      }
+    }
+    if (comp.props.curveMode !== 'custom' || points.length < 2) return;
+    const curvePressure = Number(comp.props.curvePressure ?? comp.props.pressure ?? 0);
+    const operatingPressure = Number(comp.props.operatingPressure ?? comp.props.pressure ?? 0);
+    if (Math.abs(curvePressure - operatingPressure) > 0.5) {
+      const pressureMode = comp.props.curvePressureMode === 'rated' ? 'Power is being used at the curve pressure without correction.' : 'Current power correction is an estimate.';
+      res.warnings.push(`Compressor "${comp.props.name || 'Compressor'}" custom curve is based on ${curvePressure.toFixed(1)} psi, while system operating pressure is ${operatingPressure.toFixed(1)} psi. ${pressureMode} Verify the curve at the operating pressure.`);
+    }
+  });
 
   // Compute drain losses first (needed for total demand)
   res.totalDrainLoss = drains.reduce((s,n)=>{
@@ -2696,6 +3134,7 @@ function clearAll(){
   selectNode(null); selectConn(null);
   window._pressureMin=60; window._pressureMax=130;
   resizeCanvas(); // resets canvas transform and clears by reassigning width/height
+  resetMainViewport();
   updateSummary();
   document.getElementById('emptyState').style.display='';
   analysisRan=false;
@@ -5577,6 +6016,7 @@ function getHourFactor(nodeId, date, hour, holidays, equipMap, schedList) {
 function open8760() {
   initSchedules();
   initDetailedCanvas();
+  initPanelResizer('detailedPanelResizer','detailedResultsPanel',260,560,'--detailed-panel-width');
   document.getElementById('sim8760Overlay').style.display = 'flex';
   setSimCase('pre');
   renderScheduleList();
@@ -5605,6 +6045,41 @@ function syncMainCanvasFromState() {
   renderConnections();
   updateSummary();
   document.getElementById('emptyState').style.display = nodes.length ? 'none' : '';
+}
+
+function initPanelResizer(handleId, panelId, minWidth, maxWidth, cssVariable) {
+  const handle = document.getElementById(handleId);
+  const panel = document.getElementById(panelId);
+  if (!handle || !panel || handle.dataset.ready === 'true') return;
+  handle.dataset.ready = 'true';
+  const setWidth = width => {
+    const bounded = Math.max(minWidth, Math.min(maxWidth, width));
+    document.documentElement.style.setProperty(cssVariable, `${bounded}px`);
+    handle.setAttribute('aria-valuenow', String(Math.round(bounded)));
+    resizeCanvas();
+    if (detailedCanvas) resizeDetailedCanvas();
+  };
+  handle.addEventListener('pointerdown', event => {
+    event.preventDefault();
+    const startX = event.clientX;
+    const startWidth = panel.getBoundingClientRect().width;
+    const onMove = moveEvent => setWidth(startWidth + startX - moveEvent.clientX);
+    const onUp = () => {
+      document.removeEventListener('pointermove', onMove);
+      document.body.style.userSelect = '';
+      document.body.style.cursor = '';
+    };
+    document.body.style.userSelect = 'none';
+    document.body.style.cursor = 'col-resize';
+    document.addEventListener('pointermove', onMove);
+    document.addEventListener('pointerup', onUp, {once:true});
+  });
+  handle.addEventListener('keydown', event => {
+    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+    event.preventDefault();
+    const direction = event.key === 'ArrowLeft' ? 1 : -1;
+    setWidth(panel.getBoundingClientRect().width + direction * 10);
+  });
 }
 
 function initDetailedCanvas() {
@@ -6041,30 +6516,128 @@ function detailedLabelUnit(node, key) {
   return labels[key] || [key, ''];
 }
 
+function detailedCurveRows(node) {
+  const points = Array.isArray(node.props.performanceCurve) ? node.props.performanceCurve : [];
+  return `<table class="cagi-curve-table"><thead><tr><th>#</th><th>Package input power</th><th>Flow</th><th>Flow fraction</th><th>Specific package power</th><th></th></tr></thead><tbody>${points.map((point,index) => `
+    <tr><td>${index + 1}</td>
+      <td><input type="number" min="0" step="0.1" value="${point.powerKw ?? ''}" onchange="updateDetailedCurvePoint('${node.id}',${index},'powerKw',this.value)"></td>
+      <td><input type="number" min="0" step="0.1" value="${point.flowCfm ?? ''}" onchange="updateDetailedCurvePoint('${node.id}',${index},'flowCfm',this.value)"></td>
+      <td class="cagi-readonly">${node.props.flowRate > 0 && Number.isFinite(point.flowCfm) ? (point.flowCfm / node.props.flowRate * 100).toFixed(1) + '%' : '—'}</td>
+      <td class="cagi-readonly">${point.flowCfm > 0 && Number.isFinite(point.powerKw) ? (point.powerKw / (point.flowCfm / 100)).toFixed(2) : '—'}</td>
+      <td><button title="Remove point" onclick="removeDetailedCurvePoint('${node.id}',${index})">&#10005;</button></td>
+    </tr>`).join('')}</tbody></table>
+    <div class="cagi-curve-actions"><button class="btn" onclick="addDetailedCurvePoint('${node.id}')">+ Add Point</button></div>`;
+}
+
+function updateDetailedCurvePoint(nodeId, index, key, value) {
+  const ctxData = getDetailedCaseData();
+  const node = ctxData.nodes.find(item => item.id === nodeId);
+  if (!node) return;
+  if (!Array.isArray(node.props.performanceCurve)) node.props.performanceCurve = [];
+  const point = node.props.performanceCurve[index];
+  if (!point) return;
+  point[key] = value === '' ? '' : parseFloat(value);
+  detailedSelectNode(node);
+  commitDetailedCaseChange(ctxData);
+}
+
+function addDetailedCurvePoint(nodeId) {
+  const ctxData = getDetailedCaseData();
+  const node = ctxData.nodes.find(item => item.id === nodeId);
+  if (!node) return;
+  if (!Array.isArray(node.props.performanceCurve)) node.props.performanceCurve = [];
+  const last = node.props.performanceCurve[node.props.performanceCurve.length - 1];
+  node.props.performanceCurve.push({flowCfm:last?.flowCfm || node.props.flowRate || 100, powerKw:last?.powerKw || node.props.power || 25});
+  detailedSelectNode(node);
+  commitDetailedCaseChange(ctxData);
+}
+
+function removeDetailedCurvePoint(nodeId, index) {
+  const ctxData = getDetailedCaseData();
+  const node = ctxData.nodes.find(item => item.id === nodeId);
+  if (!node || !Array.isArray(node.props.performanceCurve)) return;
+  node.props.performanceCurve.splice(index, 1);
+  detailedSelectNode(node);
+  commitDetailedCaseChange(ctxData);
+}
+
 function renderDetailedProperties(node) {
   const ctxData = getDetailedCaseData();
+  const field = (key, label, unit, options = {}) => {
+    const value = node.props[key] ?? '';
+    const type = options.type || 'number';
+    const step = options.step || (type === 'number' ? 'any' : undefined);
+    const min = options.min !== undefined ? ` min="${options.min}"` : '';
+    const max = options.max !== undefined ? ` max="${options.max}"` : '';
+    const placeholder = options.placeholder ? ` placeholder="${options.placeholder}"` : '';
+    return `<div class="prop-row"><span class="prop-label">${label}</span><input class="prop-input" type="${type}" value="${value}"${step ? ` step="${step}"` : ''}${min}${max}${placeholder} onchange="updateDetailedProp('${node.id}','${key}',this.value)"><span class="prop-unit">${unit}</span></div>`;
+  };
+  const select = (key, label, unit, choices) => `<div class="prop-row"><span class="prop-label">${label}</span><select onchange="updateDetailedProp('${node.id}','${key}',this.value)" style="font-size:11px;padding:3px 5px;background:var(--surface3);border:1px solid var(--border);border-radius:5px;color:var(--text);width:140px">${choices.map(choice => `<option value="${choice.value}" ${String(node.props[key])===String(choice.value)?'selected':''}>${choice.label}</option>`).join('')}</select><span class="prop-unit">${unit}</span></div>`;
+  const toggle = (key, choices) => `<div class="mode-toggle" style="margin-bottom:8px">${choices.map(choice => `<button class="mode-toggle-btn ${String(node.props[key])===String(choice.value)?'active':''}" onclick="updateDetailedProp('${node.id}','${key}','${choice.value}')">${choice.label}</button>`).join('')}</div>`;
+  const commonName = field('name', 'Name', '', {type:'text'});
   const schedulePicker = ['compressor','load'].includes(node.type) ? `
     <div class="prop-divider">Schedule</div>
     <div class="prop-row"><span class="prop-label">Assignment</span>
       <select onchange="updateDetailedSchedule('${node.id}',this.value)" style="font-size:11px;padding:3px 5px;background:var(--surface3);border:1px solid var(--border);border-radius:5px;color:var(--text);width:130px">
         ${SIM.schedules.map(s=>`<option value="${s.id}" ${ctxData.equipment[node.id]===s.id?'selected':''}>${s.name}</option>`).join('')}
       </select><span class="prop-unit"></span></div>` : '';
-  const rows = Object.entries(node.props).filter(([key]) => key !== 'load').map(([key, value]) => {
-    const [label, unit] = detailedLabelUnit(node, key);
-    const options = detailedControlOptions(node, key);
-    if (options) {
-      return `<div class="prop-row"><span class="prop-label">${label}</span>
-        <select onchange="updateDetailedProp('${node.id}','${key}',this.value)" style="font-size:11px;padding:3px 5px;background:var(--surface3);border:1px solid var(--border);border-radius:5px;color:var(--text);width:130px">
-          ${options.map(o=>`<option value="${o.value}" ${String(value)===String(o.value)?'selected':''}>${o.label}</option>`).join('')}
-        </select><span class="prop-unit">${unit}</span></div>`;
-    }
-    const defaultValue = compDefs[node.type]?.defaultProps?.[key];
-    const numericKeys = new Set(['minStableLoad']);
-    const inputType = typeof value === 'number' || typeof defaultValue === 'number' || numericKeys.has(key) ? 'number' : 'text';
-    return `<div class="prop-row"><span class="prop-label">${label}</span>
-      <input class="prop-input" type="${inputType}" value="${value ?? ''}" ${inputType==='number'?'step="any"':''} onchange="updateDetailedProp('${node.id}','${key}',this.value)">
-      <span class="prop-unit">${unit}</span></div>`;
-  }).join('');
+  let rows = '';
+  if (node.type === 'compressor') {
+    const ct = node.props.controlType || 'lu';
+    const curvePoints = Array.isArray(node.props.performanceCurve) ? node.props.performanceCurve : [];
+    const curveLabel = node.props.curveMode === 'custom' && curvePoints.length >= 2 ? `${curvePoints.length} manufacturer points` : 'Analytical fallback';
+    rows = commonName + `<div class="prop-divider">CAGI Performance Data</div>`
+      + `<div class="prop-row"><span class="prop-label">Full-load rated capacity</span><div class="prop-computed">${node.props.flowRate??'—'}</div><span class="prop-unit">scfm</span></div>`
+      + `<div class="prop-row"><span class="prop-label">Rated discharge pressure</span><div class="prop-computed">${node.props.pressure??'—'}</div><span class="prop-unit">psi</span></div>`
+      + `<div class="prop-row"><span class="prop-label">Full-load package power</span><div class="prop-computed">${node.props.power??'—'}</div><span class="prop-unit">kW</span></div>`
+      + `<div class="prop-row"><span class="prop-label">Curve</span><div class="prop-computed" style="width:140px;font-size:10px">${curveLabel}</div><span class="prop-unit"></span></div>`
+      + `<button class="btn" style="width:100%;margin-bottom:8px" onclick="openCagiModal('${node.id}',true)">Edit CAGI Performance</button>`
+      + `<div class="prop-divider">Operating Conditions</div>`
+      + field('operatingPressure','Operating pressure','psi',{min:0,step:1})
+      + `<div class="prop-divider">Control Type</div>${toggle('controlType',[{value:'lu',label:'Load/Unload'},{value:'mod',label:'Modulating'},{value:'vsd',label:'VSD'}])}`
+      + (ct === 'lu' ? field('unloadPower','Unload power','% rated',{min:0,max:50,step:1}) : '')
+      + `<div class="prop-divider">Staging</div>`
+      + field('stagingPriority','Priority','#',{min:1,max:10,step:1})
+      + field('minStableLoad','Min stable load','%',{min:0,max:100,step:1,placeholder:String((MIN_STABLE_LOAD[ct]??0.3)*100)})
+      + `<div class="prop-divider">Computed</div>`
+      + `<div class="prop-row"><span class="prop-label">Load fraction</span><div class="prop-computed">${node._stagedLoadFrac!=null?(node._stagedLoadFrac*100).toFixed(1):'—'}</div><span class="prop-unit">%</span></div>`
+      + `<div class="mode-note">Load fraction is calculated from system demand. Run Simulation to update Detailed Mode results.</div>`;
+  } else if (node.type === 'dryer') {
+    const dt = node.props.dryerType || 'refrigerated';
+    rows = commonName + `<div class="prop-divider">Dryer Type</div>${toggle('dryerType',[{value:'refrigerated',label:'Refrigerated'},{value:'heated',label:'Heated Desic.'},{value:'heatless',label:'Heatless'}])}`
+      + `<div class="prop-divider">Performance</div>`
+      + field('flowRate','Flow capacity','scfm',{min:0,step:10})
+      + field('pressureDrop','Rated dP','psi',{min:0,step:0.5})
+      + field('dewPoint','Pressure dewpoint','°F PDP',{step:1})
+      + (dt === 'heatless' ? field('purgeFraction','Purge fraction','%',{min:10,max:30,step:1}) + `<div class="mode-note">Purge air is modeled as system demand. Heatless dryers have no electrical power input.</div>` : field('power','Electrical power','kW',{min:0,step:0.1}) + `<div class="mode-note">${dt === 'heated' ? 'Enter average heater power over the regeneration cycle.' : 'Runs continuously whenever the compressor is on.'}</div>`);
+  } else if (node.type === 'lineloss') {
+    rows = commonName + toggle('measured',[{value:'false',label:'Flow-Scaled'},{value:'true',label:'Measured'}])
+      + field('ratedDp',node.props.measured?'Fixed dP':'Rated dP','psi',{min:0,step:0.1})
+      + (node.props.measured ? '' : field('ratedFlow','Rated flow','scfm',{min:0,step:1}))
+      + `<div class="mode-note">${node.props.measured ? 'Measured mode applies this exact pressure drop at every flow.' : 'Flow-scaled mode applies quadratic pressure-drop scaling.'}</div>`;
+  } else if (node.type === 'regulator') {
+    rows = commonName + `<div class="prop-divider">Regulator Settings</div>`
+      + field('setPressure','Set pressure','psi',{min:0,step:1})
+      + field('flowCapacity','Flow capacity','scfm',{min:0,step:1})
+      + field('upstreamMargin','Upstream margin','psi',{min:5,step:1})
+      + `<div class="mode-note">The regulator maintains set pressure when upstream pressure exceeds the setpoint plus margin.</div>`;
+  } else if (node.type === 'drain') {
+    const dt = node.props.drainType || 'timer';
+    rows = commonName + `<div class="prop-divider">Drain Type</div>${toggle('drainType',[{value:'timer',label:'Timer'},{value:'float',label:'Float'},{value:'zeroloss',label:'Zero-Loss'},{value:'manual',label:'Manual'}])}`;
+    if (dt === 'timer') rows += field('orificeDia','Orifice diameter','in',{min:0,step:0.0625}) + field('onTime','On-time','sec',{min:1,step:1}) + field('cycleTime','Cycle time','sec',{min:10,step:10});
+    else if (dt === 'float') rows += field('orificeDia','Orifice diameter','in',{min:0,step:0.0625}) + toggle('condition',[{value:'normal',label:'Normal'},{value:'failed_open',label:'Failed Open'}]);
+    else if (dt === 'manual') rows += field('orificeDia','Orifice diameter','in',{min:0,step:0.0625}) + field('opensPerDay','Opens per day','×/day',{min:0,step:1}) + field('openDuration','Duration','min',{min:0,step:0.5});
+    else rows += `<div class="mode-note">Zero-loss electronic drain — no modeled air waste.</div>`;
+  } else {
+    rows = commonName + `<div class="prop-divider">Inputs</div>` + Object.entries(node.props).filter(([key]) => key !== 'name' && key !== 'load').map(([key,value]) => {
+      const [label, unit] = detailedLabelUnit(node, key);
+      const options = detailedControlOptions(node, key);
+      if (options) return select(key,label,unit,options);
+      const defaultValue = compDefs[node.type]?.defaultProps?.[key];
+      const inputType = typeof value === 'number' || typeof defaultValue === 'number' ? 'number' : 'text';
+      return field(key,label,unit,{type:inputType});
+    }).join('');
+  }
   const replaceTools = SIM.currentCase === 'post' ? `<div class="prop-divider">Change Tools</div>
     <div class="mode-note" style="margin-bottom:8px">Select the replacement equipment type below, then click Apply Replacement. Editable numeric/text characteristics will be cleared so the new equipment must be defined.</div>
     <div class="prop-row"><span class="prop-label">Replace with</span>
@@ -6072,7 +6645,7 @@ function renderDetailedProperties(node) {
         ${compatibleReplacementTypes(node.type).map(t=>`<option value="${t}" ${t===node.type?'selected':''}>${compDefs[t].label}</option>`).join('')}
       </select><span class="prop-unit"></span></div>
     <button class="btn" style="width:100%;margin-bottom:8px" onclick="replaceDetailedNode('${node.id}',document.getElementById('replaceType-${node.id}').value)">Apply Replacement</button>` : '';
-  document.getElementById('detailedPropFields').innerHTML = schedulePicker + replaceTools + `<div class="prop-divider">Inputs</div>` + rows;
+  document.getElementById('detailedPropFields').innerHTML = schedulePicker + replaceTools + rows;
 }
 
 function detailedControlOptions(node, key) {
@@ -7364,6 +7937,31 @@ function addInputsSheet(wb, name, rows) {
   return ws;
 }
 
+function addCompressorCurvesSheet(wb, caseName, nodeList) {
+  const ws = wb.addWorksheet(`Curves_${caseName}`);
+  ws.addRow(['Case','Component ID','Compressor','Manufacturer','Model','Curve Mode','Pressure Handling','Curve Pressure psi','Full-load Capacity scfm','Full-load Package Power kW','Point','Package Input Power kW','Flow scfm','Flow Fraction','Specific Package Power kW/100 scfm','Data Sheet Source','Notes']);
+  nodeList.filter(node => node.type === 'compressor').forEach(node => {
+    const points = Array.isArray(node.props.performanceCurve) ? node.props.performanceCurve : [];
+    const base = [caseName,node.id,node.props.name || 'Compressor',node.props.cagiManufacturer || '',node.props.cagiModel || '',node.props.curveMode || 'analytical',node.props.curvePressureMode || 'estimate',node.props.curvePressure ?? node.props.pressure ?? '',node.props.flowRate ?? '',node.props.power ?? ''];
+    if (!points.length) {
+      ws.addRow([...base,'','','','','',node.props.cagiSource || '',node.props.cagiNotes || '']);
+      return;
+    }
+    points.forEach((point,index) => {
+      const flow = Number.isFinite(point.flowCfm) ? point.flowCfm : '';
+      const power = Number.isFinite(point.powerKw) ? point.powerKw : '';
+      const flowFraction = flow !== '' && node.props.flowRate > 0 ? flow / node.props.flowRate : '';
+      const specificPower = flow > 0 && power !== '' ? power / (flow / 100) : '';
+      ws.addRow([...base,index + 1,power,flow,flowFraction,specificPower,node.props.cagiSource || '',node.props.cagiNotes || '']);
+    });
+  });
+  setHeader(ws);
+  ws.getColumn(14).numFmt = '0.0%';
+  ws.getColumn(15).numFmt = '0.00';
+  autoWidth(ws, 32);
+  return ws;
+}
+
 function addSchedulesSheet(wb) {
   const ws = wb.addWorksheet('Schedules');
   ws.addRow(['Schedule ID','Schedule Name','Day Type','Start Hour','Stop Hour','Factor %']);
@@ -7739,6 +8337,8 @@ async function buildFormulaWorkbookFile() {
   const postRows = buildInputRows('Post', SIM.postNodes || nodes, SIM.postEquipment || SIM.equipment);
   addInputsSheet(wb, 'Inputs_Pre', preRows);
   addInputsSheet(wb, 'Inputs_Post', postRows);
+  addCompressorCurvesSheet(wb, 'Pre', nodes);
+  addCompressorCurvesSheet(wb, 'Post', SIM.postNodes || nodes);
   const schedWs = addSchedulesSheet(wb);
   const lastScheduleRow = Math.max(2, schedWs.rowCount);
   addAssignmentsSheet(wb, preRows, postRows);
@@ -8144,6 +8744,8 @@ canvas.addEventListener('drop',     _onDrop);
 document.getElementById('canvasArea').addEventListener('dragover', _onDragOver);
 document.getElementById('canvasArea').addEventListener('drop',     _onDrop);
 
+initPanelResizer('mainPanelResizer','mainResultsPanel',240,520,'--main-panel-width');
+applyMainViewport();
 updateSummary();
 
 </script>
@@ -8153,6 +8755,63 @@ updateSummary();
   <div id="methodsModalBox">
     <button class="meth-close" onclick="closeMethodsModal()">&#10005;</button>
     <div id="methodsModalContent"></div>
+  </div>
+</div>
+<!-- CAGI PERFORMANCE DATA MODAL -->
+<div id="cagiModal" onclick="if(event.target===this)closeCagiModal()">
+  <div id="cagiModalBox">
+    <div class="cagi-modal-header">
+      <div>
+        <div class="cagi-modal-title">CAGI Performance Data</div>
+        <div class="cagi-modal-subtitle">Enter values from the compressor manufacturer data sheet. These are rated equipment properties, separate from system operating conditions.</div>
+      </div>
+      <button class="cagi-close" onclick="closeCagiModal()">&#10005;</button>
+    </div>
+
+    <div class="cagi-section">
+      <div class="cagi-section-title">Equipment Identification</div>
+      <div class="cagi-grid">
+        <div class="cagi-field"><label for="cagiManufacturer">Manufacturer</label><input id="cagiManufacturer" type="text" onchange="cagiModalFieldChanged('cagiManufacturer',this.value)"></div>
+        <div class="cagi-field"><label for="cagiModel">Model</label><input id="cagiModel" type="text" onchange="cagiModalFieldChanged('cagiModel',this.value)"></div>
+        <div class="cagi-field"><label for="cagiSource">Data sheet / source</label><input id="cagiSource" type="text" placeholder="File name or URL" onchange="cagiModalFieldChanged('cagiSource',this.value)"></div>
+      </div>
+    </div>
+
+    <div class="cagi-section">
+      <div class="cagi-section-title">CAGI Rated Performance</div>
+      <div class="cagi-grid">
+        <div class="cagi-field"><label for="cagiRatedCapacity">Full-load rated capacity</label><input id="cagiRatedCapacity" type="number" min="0" step="0.1" onchange="cagiModalFieldChanged('cagiRatedCapacity',this.value)"><span class="cagi-unit">scfm</span></div>
+        <div class="cagi-field"><label for="cagiRatedPressure">Rated discharge pressure</label><input id="cagiRatedPressure" type="number" min="0" step="1" onchange="cagiModalFieldChanged('cagiRatedPressure',this.value)"><span class="cagi-unit">psi</span></div>
+        <div class="cagi-field"><label for="cagiPackagePower">Full-load package input power</label><input id="cagiPackagePower" type="number" min="0" step="0.1" onchange="cagiModalFieldChanged('cagiPackagePower',this.value)"><span class="cagi-unit">kW</span></div>
+        <div class="cagi-field"><label>Specific package power</label><div class="cagi-readonly" id="cagiSpecificPower">—</div><span class="cagi-unit">kW/100</span></div>
+        <div class="cagi-field"><label for="cagiRatedInletPres">Rated inlet pressure</label><input id="cagiRatedInletPres" type="number" min="0" step="0.001" onchange="cagiModalFieldChanged('cagiRatedInletPres',this.value)"><span class="cagi-unit">psia</span></div>
+        <div class="cagi-field"><label for="cagiRatedInletTemp">Rated inlet temperature</label><input id="cagiRatedInletTemp" type="number" step="1" onchange="cagiModalFieldChanged('cagiRatedInletTemp',this.value)"><span class="cagi-unit">°F</span></div>
+      </div>
+      <div class="cagi-help">Rated pressure and package input power describe the data-sheet test condition. They are not the same as the system operating pressure.</div>
+    </div>
+
+    <div class="cagi-section">
+      <div class="cagi-section-title">Flow / Package Power Curve</div>
+      <div class="cagi-grid">
+        <div class="cagi-field"><label for="cagiCurveMode">Curve mode</label><select id="cagiCurveMode" onchange="setCagiCurveMode(document.getElementById('cagiModal').dataset.nodeId,this.value)"><option value="analytical">Analytical control curve</option><option value="custom">Manufacturer points</option></select></div>
+        <div class="cagi-field"><label for="cagiCurvePressure">Curve test pressure</label><input id="cagiCurvePressure" type="number" min="0" step="1" onchange="cagiModalFieldChanged('cagiCurvePressure',this.value)"><span class="cagi-unit">psi</span></div>
+        <div class="cagi-field"><label for="cagiCurvePressureMode">Pressure handling</label><select id="cagiCurvePressureMode" onchange="cagiModalFieldChanged('curvePressureMode',this.value)"><option value="estimate">Estimate at operating pressure</option><option value="rated">Use curve at rated pressure</option></select></div>
+      </div>
+      <div class="cagi-help">Enter the CFM and package input kW pairs published for this pressure and compressor control mode. Points are interpolated linearly; values outside the point range are clamped. Estimated pressure correction is the default; use rated-pressure mode only when the curve should be applied without pressure correction.</div>
+      <table class="cagi-curve-table">
+        <thead><tr><th>#</th><th>Package input power</th><th>Flow</th><th>Flow fraction</th><th>Specific package power</th><th></th></tr></thead>
+        <tbody id="cagiCurveEditorBody"></tbody>
+      </table>
+      <div class="cagi-curve-actions"><button class="btn" onclick="addCagiCurvePoint(document.getElementById('cagiModal').dataset.nodeId)">+ Add Point</button><div class="cagi-status" id="cagiCurveStatus"></div></div>
+      <canvas id="cagiCurvePreview" class="cagi-curve-preview" width="720" height="180" aria-label="Compressor CFM versus package input power curve preview"></canvas>
+    </div>
+
+    <div class="cagi-section">
+      <div class="cagi-section-title">Source Notes</div>
+      <div class="cagi-field"><textarea id="cagiNotes" placeholder="Page, table reference, assumptions, or curve interpretation notes" onchange="cagiModalFieldChanged('cagiNotes',this.value)"></textarea></div>
+    </div>
+
+    <div style="display:flex;justify-content:flex-end;gap:8px;"><button class="btn primary" onclick="closeCagiModal()">Done</button></div>
   </div>
 </div>
 
@@ -8272,7 +8931,8 @@ updateSummary();
     </div>
 
     <!-- Right: Detailed summary / properties -->
-    <div class="panel" style="width:310px;">
+    <div id="detailedPanelResizer" class="panel-resizer" role="separator" aria-label="Resize detailed results sidebar" aria-orientation="vertical" aria-valuemin="260" aria-valuemax="560" aria-valuenow="310" tabindex="0"></div>
+    <div id="detailedResultsPanel" class="panel detailed-results-panel" style="width:310px;">
       <div class="panel-section" id="detailedConnEditor" style="display:none">
         <div class="panel-title">Connection</div>
         <div style="font-size:11px;color:var(--text2);margin-bottom:12px;line-height:1.6;">Connection selected. Insert a Line Loss element in series to model pressure loss on this segment.</div>

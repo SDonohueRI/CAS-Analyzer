@@ -110,7 +110,7 @@ Because the copies are pinned manually, security patches for these libraries are
 
 | Component | Description | Key Inputs |
 |-----------|-------------|------------|
-| **Compressor** | Rotary screw or similar positive-displacement unit | Rated capacity (scfm), CAGI rated pressure (psi), operating pressure (psi), package input power (kW), control type, staging priority |
+| **Compressor** | Rotary screw or similar positive-displacement unit | CAGI-rated performance entered in the CAGI Performance Data popup; operating pressure, control behavior, and staging entered in the right panel |
 | **Dryer** | Refrigerated, heated desiccant, or heatless desiccant | Flow capacity, rated dP, pressure dewpoint (°F PDP), electrical power or purge fraction |
 | **Filter** | Coalescing, particulate, or mist eliminator | Flow capacity, rated dP |
 | **Receiver** | Storage vessel | Volume (gal), working pressure |
@@ -132,19 +132,32 @@ Drag from the **green output port** (right side of a node) to the **gray input p
 
 ### Compressor Data Entry
 
-Compressor properties come from the **CAGI data sheet** for the specific machine:
+Select a compressor and open **Edit CAGI Performance** to enter manufacturer-rated information. The popup keeps the data-sheet record together and separates it from system operating assumptions.
+
+**CAGI Performance Data popup:**
 
 | Property | Where to Find It |
 |----------|-----------------|
-| Rated Capacity (scfm) | CAGI Performance Data Sheet |
-| CAGI Rated Pressure (psi) | CAGI Performance Data Sheet — the test discharge pressure |
-| Package Input Power (kW) | CAGI Performance Data Sheet |
-| Operating Pressure (psi) | Your pressure gauge / controller setpoint |
-| Control Type | Equipment nameplate or manufacturer spec |
-| Rated Inlet Pressure (psia) | CAGI Data Sheet — typically 14.696 (sea level) |
-| Rated Inlet Temperature (°F) | CAGI Data Sheet — typically 68°F |
+| Manufacturer and model | CAGI Performance Data Sheet or equipment records |
+| Rated capacity (scfm) | CAGI Performance Data Sheet |
+| Rated discharge pressure (psi) | CAGI Performance Data Sheet — the test discharge pressure |
+| Package input power (kW) | CAGI Performance Data Sheet |
+| Rated inlet pressure (psia) | CAGI Data Sheet — typically 14.696 at sea-level reference conditions |
+| Rated inlet temperature (°F) | CAGI Data Sheet — typically 68°F |
+| Flow / package-power points | Manufacturer curve or performance table at a stated pressure |
+| Data sheet source and notes | File name, URL, page, table, and interpretation notes |
 
-**CAGI Rated Pressure vs Operating Pressure:** The CAGI data sheet is measured at a specific test pressure (e.g. 125 psi). Your system may actually run at 110 psi. Enter both — the tool corrects power using isentropic scaling between the two conditions.
+**System operating inputs in the right panel:**
+
+| Property | Where to Find It |
+|----------|-----------------|
+| Operating pressure (psi) | Pressure gauge, controller setpoint, or system study |
+| Control type / behavior | Equipment nameplate, controller, or manufacturer specification |
+| Staging priority | System sequencing strategy |
+| Minimum stable load | Manufacturer specification or documented operating assumption |
+| Unload power | Manufacturer data or validated assumption for load/unload machines |
+
+**CAGI Rated Pressure vs Operating Pressure:** The CAGI data sheet is measured at a specific test pressure. Your system may operate at another pressure. Enter both and review the pressure-basis warning shown with a custom curve. Custom curves default to an estimated pressure correction; the popup also allows the reviewer to use the curve directly at its rated pressure when that is the intended basis.
 
 **Load fraction is computed, not entered.** The tool determines each compressor's operating load from system demand using the staging logic. You cannot type in a load fraction.
 
@@ -234,6 +247,7 @@ Workbook sheets include:
 - **Project** — export metadata, basis, ambient inputs, QC threshold
 - **System_Diagram** — generated canvas-style PNG image of the current system model
 - **Inputs_Pre** and **Inputs_Post** — component inputs by case
+- **Curves_Pre** and **Curves_Post** — compressor CFM/package-power points, normalized flow fractions, specific package power, pressure basis, and data-sheet provenance by case
 - **Schedules** — schedule blocks by day type
 - **Assignments** — component-to-schedule mapping
 - **Calendar_8760** — hourly calendar used by the formulas
