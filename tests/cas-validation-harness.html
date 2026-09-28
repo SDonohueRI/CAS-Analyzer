@@ -120,6 +120,84 @@ async function runChecks() {
       record('pass', 'Compressor staging and part-load power', `Demand 70 scfm produced ${(staged.loadFrac*100).toFixed(1)}% load and ${staged.actualPower.toFixed(6)} kW.`);
     } catch (err) { record('fail', 'Compressor staging and part-load power', err.message); }
 
+    try {
+      const curveCompressor = JSON.parse(JSON.stringify(compressor));
+      curveCompressor.props.curveMode = 'custom';
+      curveCompressor.props.performanceCurve = [
+        {flowCfm:0, powerKw:5},
+        {flowCfm:50, powerKw:15},
+        {flowCfm:100, powerKw:25}
+      ];
+      const staged = win.stageCompressors([curveCompressor], 75, ambient)[0];
+      const expectedCurvePower = 20 * isoScale(curveCompressor, ambient);
+      approx(staged.actualPower, expectedCurvePower, 1e-9, 'custom curve interpolated kW');
+      curveCompressor.props.curvePressureMode = 'rated';
+      const ratedPressureCurve = win.stageCompressors([curveCompressor], 75, ambient)[0];
+      approx(ratedPressureCurve.actualPower, 20, 1e-9, 'rated-pressure curve kW');
+      record('pass', 'Custom CFM / package-power curve', `75 scfm interpolated to ${staged.actualPower.toFixed(6)} kW at the configured operating pressure.`);
+    } catch (err) { record('fail', 'Custom CFM / package-power curve', err.message); }
+
+    try {
+      const invalidCurveCompressor = JSON.parse(JSON.stringify(compressor));
+      invalidCurveCompressor.props.name = 'Incomplete Curve Compressor';
+      invalidCurveCompressor.props.curveMode = 'custom';
+      invalidCurveCompressor.props.performanceCurve = [{flowCfm:50, powerKw:15}];
+      win.eval(`
+        nodes = ${JSON.stringify([invalidCurveCompressor, load])};
+        connections = ${JSON.stringify([{id:'invalid-c1', from:'c1', to:'l1'}])};
+        drainAttachments = [];
+      `);
+      const invalidResult = win.analyzeSystem();
+      if (!invalidResult.warnings.some(warning => warning.includes('curve is incomplete or invalid'))) throw new Error('Expected invalid custom curve warning.');
+      record('pass', 'Invalid custom curve warning', 'Incomplete manufacturer-point curves are surfaced before analysis relies on the analytical fallback.');
+    } catch (err) { record('fail', 'Invalid custom curve warning', err.message); }
+
+    try {
+      const outOfRangeCompressor = JSON.parse(JSON.stringify(compressor));
+      outOfRangeCompressor.props.name = 'Limited Curve Compressor';
+      outOfRangeCompressor.props.curveMode = 'custom';
+      outOfRangeCompressor.props.performanceCurve = [{flowCfm:20, powerKw:8}, {flowCfm:80, powerKw:22}];
+      const highLoad = {...load, props:{...load.props, flowRate:90}};
+      win.eval(`
+        nodes = ${JSON.stringify([outOfRangeCompressor, highLoad])};
+        connections = ${JSON.stringify([{id:'range-c1', from:'c1', to:'l1'}])};
+        drainAttachments = [];
+      `);
+      const outOfRangeResult = win.analyzeSystem();
+      if (outOfRangeResult.valid || !outOfRangeResult.errors.some(error => error.includes('Limited Curve Compressor') && error.includes('requires') && error.includes('20.0 to 80.0 scfm'))) throw new Error('Expected a blocking error when the staged flow is outside the custom curve range.');
+      const outOfRangeHour = win.runOneHour(calendarRows[0], [outOfRangeCompressor, highLoad], [{id:'range-c1', from:'c1', to:'l1'}], {c1:'always', l1:'always'}, schedules, ambient);
+      if (!outOfRangeHour.curveRangeErrors?.some(error => error.includes('Limited Curve Compressor'))) throw new Error('Expected the 8760 calculation to report an out-of-range custom curve.');
+      record('pass', 'Custom curve operating-range error', 'Out-of-range custom-curve operation is blocked with the required and covered CFM range.');
+    } catch (err) { record('fail', 'Custom curve operating-range error', err.message); }
+
+    try {
+      const catalog = win.normalizeCagiCatalog({datasheets:[{
+        manufacturer:'Example Air', model:'EA-100', ratedPressurePsig:125, ratedCapacityScfm:100,
+        fullLoadPackagePowerKw:25, zeroFlowPackagePowerKw:6, performanceCurve:[
+          {flowCfm:100, powerKw:25}, {flowCfm:0, powerKw:6}
+        ]
+      }]});
+      if (catalog.length !== 1 || catalog[0].performanceCurve[0].flowCfm !== 0 || catalog[0].zeroFlowPackagePowerKw !== 6) throw new Error('Catalog did not retain the zero-flow package input power and sorted curve points.');
+      record('pass', 'CAGI catalog normalization', 'Verified catalog entries retain searchable rated data and zero-flow performance points.');
+    } catch (err) { record('fail', 'CAGI catalog normalization', err.message); }
+
+    try {
+      const twoLoadCompressor = JSON.parse(JSON.stringify(compressor));
+      twoLoadCompressor.props.name = 'Two Load Compressor';
+      const loadTwo = {id:'l2', type:'load', props:{name:'Second Load', flowRate:20, pressure:90, dutyCycle:100}};
+      win.eval(`
+        nodes = ${JSON.stringify([twoLoadCompressor, load, loadTwo])};
+        connections = ${JSON.stringify([{id:'two-c1', from:'c1', to:'l1'}, {id:'two-c2', from:'c1', to:'l2'}])};
+        drainAttachments = [];
+      `);
+      const twoLoadResult = win.analyzeSystem();
+      if (twoLoadResult.warnings.some(warning => warning.includes('only 0.0 scfm is available'))) throw new Error('A connected load was reported as having zero available flow.');
+      const twoLoadFlows = win.eval(`connections.map(connection => connection._actualFlow)`);
+      approx(twoLoadFlows[0], 60, 1e-9, 'first connected load flow');
+      approx(twoLoadFlows[1], 20, 1e-9, 'second connected load flow');
+      record('pass', 'Two-load connection flow propagation', 'Both connected loads receive their modeled demand flow from the compressor branch.');
+    } catch (err) { record('fail', 'Two-load connection flow propagation', err.message); }
+
     let preAgg = null;
     let postAgg = null;
     let preHours = null;
@@ -255,6 +333,8 @@ async function runChecks() {
       const postRows = win.buildInputRows('Post', nodesPost, equipment);
       win.addInputsSheet(wb, 'Inputs_Pre', preRows);
       win.addInputsSheet(wb, 'Inputs_Post', postRows);
+      win.addCompressorCurvesSheet(wb, 'Pre', nodesPre);
+      win.addCompressorCurvesSheet(wb, 'Post', nodesPost);
       const schedWs = win.addSchedulesSheet(wb);
       win.addAssignmentsSheet(wb, preRows, postRows);
       win.addCalendarSheet(wb, 2025);
@@ -263,9 +343,14 @@ async function runChecks() {
       const postCalc = win.addCalcSheet(wb, 'Calc_Post', nodesPost, equipment, 'Inputs_Post', postHours, lastScheduleRow, ambient);
       win.addResultsSheet(wb, win.aggHours(preHours), win.aggHours(postHours), preCalc, postCalc);
       win.addWarningsSheet(wb);
-      const requiredSheets = ['Inputs_Pre','Inputs_Post','Schedules','Assignments','Calendar_8760','Calc_Pre','Calc_Post','Results_QC','Warnings_Assumptions'];
+      const projectSheet = wb.addWorksheet('Project');
+      win.addWorkbookNavigation(projectSheet, wb);
+      const requiredSheets = ['Inputs_Pre','Inputs_Post','Curves_Pre','Curves_Post','Schedules','Assignments','Calendar_8760','Calc_Pre','Calc_Post','Results_QC','Warnings_Assumptions'];
       const missing = requiredSheets.filter(name => !wb.getWorksheet(name));
       if (missing.length) throw new Error('Missing sheets: ' + missing.join(', '));
+      const navigationHeading = projectSheet.getSheetValues().find(row => row && row[1] === 'Workbook Navigation');
+      const calcPreNavigation = projectSheet.getSheetValues().find(row => row && row[1]?.text === 'Calc_Pre');
+      if (!navigationHeading || !calcPreNavigation || calcPreNavigation[1].hyperlink !== "#'Calc_Pre'!A1" || !String(calcPreNavigation[2]).includes('Baseline hourly demand')) throw new Error('Project sheet is missing the linked workbook navigation index.');
       if (wb.getWorksheet('Calc_Pre').rowCount !== 8761) throw new Error('Calc_Pre should include header + 8760 rows.');
       if (wb.getWorksheet('Calc_Post').rowCount !== 8761) throw new Error('Calc_Post should include header + 8760 rows.');
       const qcHeader = wb.getWorksheet('Results_QC').getRow(1).values.join('|');
@@ -279,6 +364,10 @@ async function runChecks() {
       if (inputsHeader.indexOf('Dryer Type') !== 17) throw new Error('Inputs_Pre Dryer Type column moved; Calc formulas expect it in column Q.');
       if (inputsHeader.indexOf('Orifice Dia in') !== 22) throw new Error('Inputs_Pre drain audit columns should be appended after Schedule Name.');
       if (inputsHeader.indexOf('Drain Line Pressure psig') !== 28) throw new Error('Inputs_Pre drain line pressure column should be appended as column AB.');
+      if (inputsHeader.indexOf('Curve Mode') !== 29 || inputsHeader.indexOf('Curve Pressure Mode') !== 30) throw new Error('Inputs_Pre curve settings should be appended after drain audit columns.');
+      if (inputsHeader.indexOf('Zero-Flow Package Input Power kW') !== 31) throw new Error('Inputs_Pre should export zero-flow package input power after curve settings.');
+      const curveHeader = wb.getWorksheet('Curves_Pre').getRow(1).values;
+      if (!curveHeader.includes('Package Input Power kW') || !curveHeader.includes('Specific Package Power kW/100 scfm') || !curveHeader.includes('Data Sheet Source')) throw new Error('Curves_Pre is missing required compressor curve audit columns.');
       const assignmentsHeader = wb.getWorksheet('Assignments').getRow(1).values;
       if (!assignmentsHeader.includes('Schedule Name')) throw new Error('Assignments is missing the Schedule Name review column.');
       const assignmentScheduleNameCol = assignmentsHeader.indexOf('Schedule Name');
@@ -289,11 +378,15 @@ async function runChecks() {
       const formulaDryer = {id:'fd1', type:'dryer', props:{name:'Formula Dryer', flowRate:100, pressureDrop:2, power:1.5, dryerType:'refrigerated', purgeFraction:0}};
       const formulaDrain = {id:'dr1', type:'drain', props:{name:'Formula Drain', drainType:'timer', orificeDia:0.25, onTime:5, cycleTime:300, condition:'normal', opensPerDay:4, openDuration:1}};
       const formulaWb = new win.ExcelJS.Workbook();
-      const formulaRows = win.buildInputRows('Pre', [compressor, formulaDryer, formulaDrain, load], {c1:'always', l1:'always'});
+      const formulaCompressor = JSON.parse(JSON.stringify(compressor));
+      formulaCompressor.props.curveMode = 'custom';
+      formulaCompressor.props.performanceCurve = [{flowCfm:0, powerKw:5}, {flowCfm:50, powerKw:15}, {flowCfm:100, powerKw:25}];
+      const formulaRows = win.buildInputRows('Pre', [formulaCompressor, formulaDryer, formulaDrain, load], {c1:'always', l1:'always'});
       win.addInputsSheet(formulaWb, 'Inputs_Pre', formulaRows);
+      win.addCompressorCurvesSheet(formulaWb, 'Pre', [formulaCompressor, formulaDryer, formulaDrain, load]);
       const formulaSchedWs = win.addSchedulesSheet(formulaWb);
       win.addCalendarSheet(formulaWb, 2025);
-      const formulaCalc = win.addCalcSheet(formulaWb, 'Calc_Pre', [compressor, formulaDryer, formulaDrain, load], {c1:'always', l1:'always'}, 'Inputs_Pre', preHours, Math.max(2, formulaSchedWs.rowCount), ambient);
+      const formulaCalc = win.addCalcSheet(formulaWb, 'Calc_Pre', [formulaCompressor, formulaDryer, formulaDrain, load], {c1:'always', l1:'always'}, 'Inputs_Pre', preHours, Math.max(2, formulaSchedWs.rowCount), ambient);
       const formulaHeaders = formulaWb.getWorksheet('Calc_Pre').getRow(1).values;
       const dryerKwCol = formulaHeaders.indexOf('Formula Dryer Dryer kW');
       if (dryerKwCol < 1) throw new Error('Calc_Pre is missing the dryer kW column.');
@@ -308,6 +401,9 @@ async function runChecks() {
       if (!totalDemandFormula.includes(win.xlCol(drainScfmCol) + '2')) throw new Error('Total Demand scfm formula should include drain air loss.');
       const formulaSystemKw = formulaWb.getWorksheet('Calc_Pre').getRow(2).getCell(formulaCalc.systemKwCol).value.formula;
       if (!formulaSystemKw.includes(win.xlCol(dryerKwCol) + '2')) throw new Error('System kW formula should include refrigerated dryer kW.');
+      const compressorKwCol = formulaHeaders.indexOf('Baseline Compressor kW');
+      const curveFormula = formulaWb.getWorksheet('Calc_Pre').getRow(2).getCell(compressorKwCol).value.formula;
+      if (!curveFormula.includes("'Curves_Pre'!$M$2") || !curveFormula.includes("'Curves_Pre'!$L$2") || !curveFormula.includes('Inputs_Pre!AC2="custom"') || /\b(LET|FILTER|SORT|SORTBY|XMATCH)\b/.test(curveFormula)) throw new Error('Custom compressor curves should use portable formulas linked to Curves_Pre.');
       record('pass', 'Excel workbook audit structure', `Required sheets present; Calc sheets have 8,760 formula rows; Results_QC exposes web-vs-Excel QC fields.`);
     } catch (err) { record(err.message.includes('ExcelJS is not loaded') ? 'skip' : 'fail', 'Excel workbook audit structure', err.message); }
 
