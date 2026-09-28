@@ -8592,6 +8592,38 @@ function addWarningsSheet(wb) {
   autoWidth(ws, 80);
 }
 
+function addWorkbookNavigation(projectSheet, workbook) {
+  const descriptions = {
+    Project: 'Project metadata, calculation basis, and links to every workbook tab.',
+    Inputs_Pre: 'Baseline equipment inputs, schedules, and CAGI-rated compressor data.',
+    Inputs_Post: 'Proposed equipment inputs, schedules, and CAGI-rated compressor data.',
+    Curves_Pre: 'Baseline manufacturer compressor flow and package-power curve points.',
+    Curves_Post: 'Proposed manufacturer compressor flow and package-power curve points.',
+    Schedules: 'Schedule definitions used to determine hourly equipment availability and demand.',
+    Assignments: 'Equipment-to-schedule assignments for the Pre and Post cases.',
+    Calendar_8760: 'Hourly calendar, day type, and holiday flags used by the 8,760 calculations.',
+    Calc_Pre: 'Baseline hourly demand, compressor staging, power formulas, and web-versus-Excel QC.',
+    Calc_Post: 'Proposed hourly demand, compressor staging, power formulas, and web-versus-Excel QC.',
+    Results_QC: 'Annual energy, demand, savings, and formula-quality-control summary.',
+    System_Diagram: 'Exported system diagram for the modeled project.',
+    MonitoredData: 'Imported monitored data, calibration results, and measured-versus-modeled comparisons.',
+    Warnings_Assumptions: 'Calculation assumptions and model warnings or errors present at export.'
+  };
+
+  projectSheet.addRow([]);
+  const heading = projectSheet.addRow(['Workbook Navigation', 'Description']);
+  setHeader(projectSheet, heading.number);
+  workbook.worksheets.forEach(sheet => {
+    const escapedName = sheet.name.replace(/'/g, "''");
+    projectSheet.addRow([
+      { text: sheet.name, hyperlink: `#'${escapedName}'!A1`, tooltip: `Go to ${sheet.name}` },
+      descriptions[sheet.name] || 'Workbook calculation or supporting data.'
+    ]);
+  });
+  projectSheet.getColumn(1).width = Math.max(projectSheet.getColumn(1).width || 10, 24);
+  projectSheet.getColumn(2).width = Math.max(projectSheet.getColumn(2).width || 10, 90);
+}
+
 async function buildFormulaWorkbookFile() {
   if (!window.ExcelJS) {
     alert('Excel export library did not load. Check your internet connection or vendor ExcelJS for offline use.');
@@ -8621,7 +8653,6 @@ async function buildFormulaWorkbookFile() {
     ['QC Threshold', '1%']
   ]);
   project.getCell('A1').font = { bold:true, size:14 };
-  autoWidth(project);
 
   const preRows = buildInputRows('Pre', nodes, SIM.equipment);
   const postRows = buildInputRows('Post', SIM.postNodes || nodes, SIM.postEquipment || SIM.equipment);
@@ -8640,6 +8671,7 @@ async function buildFormulaWorkbookFile() {
   addDiagramSheet(wb);
   addMonitoredDataSheet(wb);
   addWarningsSheet(wb);
+  addWorkbookNavigation(project, wb);
 
   const buffer = await wb.xlsx.writeBuffer();
   const projectSlug = (PROJECT.projectName || 'cas_formula_8760').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'cas_formula_8760';

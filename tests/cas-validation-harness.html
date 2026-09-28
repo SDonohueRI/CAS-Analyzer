@@ -343,9 +343,14 @@ async function runChecks() {
       const postCalc = win.addCalcSheet(wb, 'Calc_Post', nodesPost, equipment, 'Inputs_Post', postHours, lastScheduleRow, ambient);
       win.addResultsSheet(wb, win.aggHours(preHours), win.aggHours(postHours), preCalc, postCalc);
       win.addWarningsSheet(wb);
+      const projectSheet = wb.addWorksheet('Project');
+      win.addWorkbookNavigation(projectSheet, wb);
       const requiredSheets = ['Inputs_Pre','Inputs_Post','Curves_Pre','Curves_Post','Schedules','Assignments','Calendar_8760','Calc_Pre','Calc_Post','Results_QC','Warnings_Assumptions'];
       const missing = requiredSheets.filter(name => !wb.getWorksheet(name));
       if (missing.length) throw new Error('Missing sheets: ' + missing.join(', '));
+      const navigationHeading = projectSheet.getSheetValues().find(row => row && row[1] === 'Workbook Navigation');
+      const calcPreNavigation = projectSheet.getSheetValues().find(row => row && row[1]?.text === 'Calc_Pre');
+      if (!navigationHeading || !calcPreNavigation || calcPreNavigation[1].hyperlink !== "#'Calc_Pre'!A1" || !String(calcPreNavigation[2]).includes('Baseline hourly demand')) throw new Error('Project sheet is missing the linked workbook navigation index.');
       if (wb.getWorksheet('Calc_Pre').rowCount !== 8761) throw new Error('Calc_Pre should include header + 8760 rows.');
       if (wb.getWorksheet('Calc_Post').rowCount !== 8761) throw new Error('Calc_Post should include header + 8760 rows.');
       const qcHeader = wb.getWorksheet('Results_QC').getRow(1).values.join('|');
